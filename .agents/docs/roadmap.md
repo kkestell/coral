@@ -55,8 +55,6 @@ Done when: `uv sync --frozen`, `ruff check`, `mypy`, and `pytest` all run clean 
 Status: not started
 Depends on: 1
 
-Everything this item builds is written, and `examples/coral.yml` is installed on the default branch of `kkestell/coral-test`. The five live checks are waiting on a GitHub Actions incident that opened at 15:22 UTC on 2026-08-06. GitHub is throttling webhook triggers to about 15% while it recovers, so pushes, pull requests, and comments mostly create no workflow run at all. `workflow_dispatch` is an API call rather than a webhook delivery and goes through in seconds, and a dispatch run confirms the setup action on a GitHub-hosted runner: `uv sync --frozen` builds the environment under `RUNNER_TEMP`, and the console script runs from there by absolute path. Everything else this item exists to learn needs the trigger paths back.
-
 The second repository Coral installs into is `kkestell/coral-test`, and this item is where it gets its first pull request to review. `.agents/docs/testing.md` covers how it is used.
 
 Get the whole workflow running end to end with no model call in it. `coral review` returns one hardcoded finding on a line it picked from the diff, and one hardcoded summary. Everything around it is real: the composite actions, the reusable workflow, the `$/` references between them, the reaction, the sentinel, and the batched review.
