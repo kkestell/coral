@@ -6,7 +6,7 @@ The order the work happens in, and what has to be true before each piece starts.
 
 This document is a sequence of milestones, not a schedule. A milestone is done when the thing it names works and the documents that describe it agree with the code. Each one lists what it depends on, so a reader can tell what is safe to start.
 
-Status: nothing is built. Milestone 0 is the current work.
+Status: nothing is built. Milestone 1 is the current work.
 
 ## Decisions this roadmap assumes
 
@@ -46,21 +46,7 @@ tests/
 actions/                      the composite actions the workflow's steps run
 ```
 
-## Milestone 0 — Make the requirements true
-
-The research passes contradict four technical requirements. Code written against them today would be wrong, so this comes before any code. It is a documentation change only.
-
-- **TR-52, the shell timeout.** Rewrite it. The middleware rejects an over-long request and tells the model the maximum; it does not lower the value and proceed. A wrapper that merely holds a backend is invisible to the `isinstance` check against `SandboxBackendProtocol` that decides whether execution is supported at all. The mechanism is to construct `FilesystemMiddleware` with `max_execute_timeout=300` and pass it through `middleware=`, where a name collision replaces the framework's own instance at its position in the stack. Record the cost: the caller now owns the backend, the harness profile's tool-description overrides, and the private permissions list, all three of which the factory used to pass. Record the failure mode: the collision is by class-name string, so a rename upstream turns replacement into addition and two middlewares each register a `read_file` tool.
-- **TR-38, the agent's environment.** Rewrite it. `LocalShellBackend` does not inherit the parent environment. `inherit_env` defaults to false and the shell's environment is an empty dictionary, so the work is building an environment up rather than stripping one down. State what Coral puts in it and what it leaves out. This also changes how TR-10 reads, because secrets absent from an environment the shell never inherits are absent for a second reason.
-- **TR-40, the provider pin.** Rewrite it. The alias returns an empty endpoint list, so its provider set cannot be read from the API and there is no tested list to pin. `require_parameters` on OpenRouter's routing object is the instrument that matches the need: it names the capability rather than the providers, and the capability is what varies. Six of the twenty-two endpoints on the concrete release the alias points at do not list `structured_outputs`, and DeepAgents selects the native structured-output path from the model profile rather than from the serving endpoint, so an unconstrained request can land somewhere that cannot serve it. Add a second fact: DeepAgents injects `openrouter_provider={"ignore": ["azure"]}` only when the model arrives as a string, and Coral constructs `ChatOpenRouter` itself, so Coral has to carry that ignore rule deliberately. It exists because OpenRouter's stateless `/responses` beta cannot look up a replayed reasoning item.
-- **TR-11, the token's permissions.** Add `issues: write`. A reaction on a pull request's top-level comment goes through `POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions`, and that endpoint lists Issues at write as its only permission set. `pull-requests: write` does not grant it. The reaction on a comment attached to the diff needs `pull-requests: write`, and Coral leaves both kinds, so it needs both permissions. Delete the first item under "Undecided", which this answers.
-- **TR-3, a wrong cross-reference.** It cites TR-21 for the concurrency group. TR-21 is the fork check. Concurrency is TR-22.
-
-Done when `.agents/docs/technical-requirements.md` reads as though it had always been correct, and `.agents/docs/architecture.md` agrees with it.
-
 ## Milestone 1 — Skeleton and contract
-
-Depends on Milestone 0.
 
 Create the project. `pyproject.toml` with the console script and the dependency set, a committed `uv.lock`, `.python-version`, and configuration for `ruff`, `pytest`, and `mypy`.
 
