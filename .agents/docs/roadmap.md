@@ -55,14 +55,13 @@ Done when: `uv sync --frozen`, `ruff check`, `mypy`, and `pytest` all run clean 
 Status: not started
 Depends on: 1
 
-Needs a second repository to install Coral into, with a pull request to review.
+The second repository Coral installs into is `kkestell/coral-test`, and this item is where it gets its first pull request to review. `.agents/docs/testing.md` covers how it is used.
 
 Get the whole workflow running end to end with no model call in it. `coral review` returns one hardcoded finding on a line it picked from the diff, and one hardcoded summary. Everything around it is real: the composite actions, the reusable workflow, the `$/` references between them, the reaction, the sentinel, and the batched review.
 
 This is early because it settles the things that fail on the first run and cannot be checked any other way.
 
 - Whether `issues: write` and `pull-requests: write` together actually reach the reaction endpoints from inside a job. Every permission requirement in `.agents/docs/research/github-api-contract.md` is read from GitHub's own generated data, not observed from a runner.
-- Whether a private publishing repository is reachable from the calling repository at all, which depends on an Access setting on Coral's own repository and is unreachable by design from a public caller.
 - Whether the `$/` reference resolves. It reached general availability recently, it does not exist on GitHub Enterprise Server, and a self-hosted runner below 2.336.0 cannot resolve it.
 - Whether a batched review with `event: COMMENT` posts and is visible. Omitting `event` creates a review in the pending state that nobody but its author can read.
 - How state actually crosses the step boundary: the head SHA as a step output, the conversation as a file under the runner's temporary directory, and the reported-failure marker.
