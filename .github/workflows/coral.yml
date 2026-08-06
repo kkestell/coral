@@ -22,19 +22,20 @@ jobs:
     # line by line, so whether `/coral` really stands alone on its own line is decided in the
     # resolve step. What this does is keep a runner from being allocated for a delivery that is
     # certainly not a trigger.
+    # Every line of this expression sits at one indentation. A line indented deeper than the
+    # first is "more indented" in a YAML folded scalar, which keeps its line break instead of
+    # folding it to a space.
     if: >-
       (github.event_name == 'pull_request'
-        && github.event.pull_request.draft == false
-        && github.event.pull_request.user.type != 'Bot')
+      && github.event.pull_request.draft == false
+      && github.event.pull_request.user.type != 'Bot')
       || (github.event_name == 'issue_comment'
-        && github.event.issue.pull_request != null
-        && contains(github.event.comment.body, '/coral')
-        && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
-                    github.event.comment.author_association))
+      && github.event.issue.pull_request != null
+      && contains(github.event.comment.body, '/coral')
+      && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
       || (github.event_name == 'pull_request_review_comment'
-        && contains(github.event.comment.body, '/coral')
-        && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
-                    github.event.comment.author_association))
+      && contains(github.event.comment.body, '/coral')
+      && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
     steps:
       - id: setup
         uses: $/actions/setup
