@@ -20,6 +20,6 @@ The `FR-*` and `TR-*` numbers are internal to the documents above. They never ap
 
 ## Artifacts
 
-The ox stages write into `.agents/docs/`: `research/` for how a problem is solved elsewhere, `plans/` for a settled change, `builds/` for what actually landed, `reviews/` for findings against a build. Read the relevant artifact before repeating work someone already did.
+Write plans to `.agents/docs/plans` in the format `YYYY-MM-DD-HH-MM-NNN-slug.md`.
 
-One roadmap item has one plan, one set of build notes, and one review, and all three share a filename ending in that item's number. Research is separate: it is named for its question, and a plan uses any number of research documents or none.
+Write research findings which may be useful in the future to `.agents/docs/research`.
