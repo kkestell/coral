@@ -52,7 +52,7 @@ Done when: `uv sync --frozen`, `ruff check`, `mypy`, and `pytest` all run clean 
 
 ## 2. Walking skeleton
 
-Status: not started
+Status: built
 Depends on: 1
 
 The second repository Coral installs into is `kkestell/coral-test`, and this item is where it gets its first pull request to review. `.agents/docs/testing.md` covers how it is used.

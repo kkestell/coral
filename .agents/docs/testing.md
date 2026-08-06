@@ -68,4 +68,4 @@ Run these in `kkestell/coral-test`, in order, after pushing a change to the bran
 2. Comment `/coral` on that pull request. The comment gets the `eyes` reaction and a second review appears. This is the issues-namespace reaction, and the `issues: write` half of the permissions block.
 3. Reply `/coral` on the diff. That comment gets the `eyes` reaction and a third review appears. This is the pulls-namespace reaction.
 4. Close a pull request and comment `/coral` on it. The run starts, resolve declines, the checkout and review steps are skipped, no review is posted, and the run is green.
-5. Open a pull request as a draft. No job runs at all, because the job-level condition rejects it before a runner is allocated.
+5. Open a pull request as a draft. GitHub records a run and the job inside it is skipped, so no runner is allocated and nothing is posted. Marking the same pull request ready for review then produces a full run, which is the control that tells a rejected delivery apart from a dropped one.
