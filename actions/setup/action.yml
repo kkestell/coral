@@ -1,0 +1,27 @@
+name: Coral setup
+description: >
+  Build Coral's own virtual environment and publish the directory holding its console script.
+
+outputs:
+  bin:
+    description: The directory holding the `coral` console script.
+    value: ${{ steps.environment.outputs.bin }}
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+
+    - id: environment
+      shell: bash
+      run: |
+        set -euo pipefail
+        # The action directory is where the runner unpacked Coral's own repository, so two
+        # levels up is the tree holding `pyproject.toml`, `uv.lock`, and `.python-version`.
+        # `uv` reads that last file and installs the interpreter itself, so there is no
+        # `setup-python` step here.
+        coral_root="${GITHUB_ACTION_PATH}/../.."
+        # Outside the workspace, so the checkout between resolve and review cannot disturb it.
+        export UV_PROJECT_ENVIRONMENT="${RUNNER_TEMP}/coral-venv"
+        uv sync --frozen --project "$coral_root"
+        echo "bin=${RUNNER_TEMP}/coral-venv/bin" >>"$GITHUB_OUTPUT"

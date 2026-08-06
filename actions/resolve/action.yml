@@ -1,0 +1,32 @@
+name: Coral resolve
+description: Decide whether there is a review to do, and pin the commit it is of.
+
+inputs:
+  coral-bin:
+    description: The directory holding the `coral` console script.
+    required: true
+  github-token:
+    description: The job's token, scoped by the calling workflow's permissions block.
+    required: true
+
+outputs:
+  proceed:
+    description: Whether the run goes on. `false` is a decline rather than a failure.
+    value: ${{ steps.resolve.outputs.proceed }}
+  head-sha:
+    description: The commit the review is of, and the commit the checkout takes.
+    value: ${{ steps.resolve.outputs.head-sha }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      # The inputs reach the shell as environment variables rather than being interpolated into
+      # the script, so nothing in an input is ever parsed as shell.
+      env:
+        CORAL_BIN: ${{ inputs.coral-bin }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        "$CORAL_BIN/coral" resolve

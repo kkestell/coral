@@ -1,14 +1,11 @@
 """The console script: `coral resolve`, `coral review`, and `coral report`."""
 
 import argparse
+import logging
+import sys
 
-
-def resolve() -> None:
-    raise NotImplementedError
-
-
-def review() -> None:
-    raise NotImplementedError
+from coral.resolve import resolve
+from coral.review import review
 
 
 def report() -> None:
@@ -16,6 +13,8 @@ def report() -> None:
 
 
 def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
+
     parser = argparse.ArgumentParser(prog="coral", description="Review a pull request.")
     subcommands = parser.add_subparsers(required=True)
 

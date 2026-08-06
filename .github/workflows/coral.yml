@@ -1,0 +1,63 @@
+name: Coral
+
+on:
+  workflow_call:
+    secrets:
+      openrouter_api_key:
+        description: The credential for the model provider.
+        required: false
+
+jobs:
+  coral:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # A filter rather than a grant. The token arrives with whatever the calling job was given,
+    # and this narrows it. `issues: write` and `pull-requests: write` are both needed because
+    # the two reaction namespaces do not grant each other.
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    # Coarse by necessity: Actions expressions have no regular expressions and no way to work
+    # line by line, so whether `/coral` really stands alone on its own line is decided in the
+    # resolve step. What this does is keep a runner from being allocated for a delivery that is
+    # certainly not a trigger.
+    if: >-
+      (github.event_name == 'pull_request'
+        && github.event.pull_request.draft == false
+        && github.event.pull_request.user.type != 'Bot')
+      || (github.event_name == 'issue_comment'
+        && github.event.issue.pull_request != null
+        && contains(github.event.comment.body, '/coral')
+        && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+                    github.event.comment.author_association))
+      || (github.event_name == 'pull_request_review_comment'
+        && contains(github.event.comment.body, '/coral')
+        && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+                    github.event.comment.author_association))
+    steps:
+      - id: setup
+        uses: $/actions/setup
+
+      - id: resolve
+        uses: $/actions/resolve
+        with:
+          coral-bin: ${{ steps.setup.outputs.bin }}
+          github-token: ${{ github.token }}
+
+      - if: steps.resolve.outputs.proceed == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The resolved SHA rather than the branch, which may have moved. Full history so the
+          # merge base is exact and the base commit is present locally. No persisted credentials,
+          # because the default writes the token into the repository's own git config.
+          ref: ${{ steps.resolve.outputs.head-sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - if: steps.resolve.outputs.proceed == 'true'
+        uses: $/actions/review
+        with:
+          coral-bin: ${{ steps.setup.outputs.bin }}
+          github-token: ${{ github.token }}
+          openrouter-api-key: ${{ secrets.openrouter_api_key }}

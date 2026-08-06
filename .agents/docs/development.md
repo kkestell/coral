@@ -25,6 +25,12 @@ There is no build step. Coral is a console script over one package, and `uv sync
 - Format: `uv run ruff format`
 - Type-check: `uv run mypy`
 
+## Installing Coral Into A Repository
+
+Copy `examples/coral.yml` into the repository as `.github/workflows/coral.yml`, on its default branch, and add an `OPENROUTER_API_KEY` secret. That one file is the whole installation. It carries the triggers, the permissions block, the concurrency group, the version pin, and the secret, because a reusable workflow cannot declare any of those for its caller.
+
+The default branch matters. On the comment paths GitHub always reads the workflow file from there, so a copy that lives only on a branch never runs.
+
 ## Environment
 
 - `OPENROUTER_API_KEY` — the credential for the model provider. Required. In a run it comes from the secret the calling repository passes to the reusable workflow; locally, from a key you supply yourself.
@@ -36,4 +42,5 @@ Both are read once at start-up and are deliberately kept out of the agent's envi
 
 - `uv sync --frozen` fails rather than re-resolving when `pyproject.toml` and `uv.lock` disagree. The fix is `uv lock`, and the lockfile is committed.
 - Add and upgrade dependencies with `uv add`, so the resolver writes the version. A version typed into `pyproject.toml` by hand is a version nothing resolved.
+- The composite actions run the console script by absolute path, out of a virtual environment under `RUNNER_TEMP`. Nothing activates it and nothing puts it on `PATH`, so a step's own `PATH`, `VIRTUAL_ENV`, and `UV_*` are exactly what the runner set and reveal nothing about Coral. A step that ran `coral` bare rather than as `"$CORAL_BIN/coral"` would have to change that, and would break the property TR-42 rests on.
 - `ruff format` reformats Python inside Markdown fences, which would rewrite the example code in the documents under `.agents/docs/`. `extend-exclude` in `pyproject.toml` keeps it away from Markdown; leave that setting in place.

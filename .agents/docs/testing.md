@@ -53,8 +53,19 @@ A module that talks to GitHub, the model, or the runner gets two things rather t
 
 ## Not Covered by `pytest`
 
-None of the following is built. Each one is checked live against `kkestell/coral-test` as it lands, and a unit test covers only the decisions it makes on its own.
+Each of the following is checked live against `kkestell/coral-test`, and a unit test covers only the decisions Coral makes on its own.
 
-- The GitHub API — no client exists yet.
-- The agent, the model, and the deadline.
+- The GitHub API. A test asserting what GitHub returns is a test of a fixture somebody wrote down.
+- That `git diff` produces the format `coral/diff.py` parses. The parser is tested against captured output; whether git still produces it is what a live run finds out.
 - The workflow and the composite actions. A real run is the only thing that exercises these at all.
+- The agent, the model, and the deadline. Not built.
+
+### The Live Checks
+
+Run these in `kkestell/coral-test`, in order, after pushing a change to the branch the example file pins. Each one's evidence is on the pull request rather than in the run log.
+
+1. Open a pull request that changes one file. A review from Coral appears, carrying one inline comment on a changed line and a summary naming the commit.
+2. Comment `/coral` on that pull request. The comment gets the `eyes` reaction and a second review appears. This is the issues-namespace reaction, and the `issues: write` half of the permissions block.
+3. Reply `/coral` on the diff. That comment gets the `eyes` reaction and a third review appears. This is the pulls-namespace reaction.
+4. Close a pull request and comment `/coral` on it. The run starts, resolve declines, the checkout and review steps are skipped, no review is posted, and the run is green.
+5. Open a pull request as a draft. No job runs at all, because the job-level condition rejects it before a runner is allocated.

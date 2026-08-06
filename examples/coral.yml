@@ -1,0 +1,31 @@
+# Copy this file into a repository as `.github/workflows/coral.yml` to install Coral.
+#
+# It carries the five things a reusable workflow cannot declare for its caller: the triggers,
+# the token permissions, the concurrency group, the version pin, and the OpenRouter key.
+
+name: Coral
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+# Declared here and never in the called workflow: a group shared between caller and called
+# cancels the caller. A run already going finishes, and a newly queued run replaces whichever
+# run was waiting, which is how several requests collapse into one.
+concurrency:
+  group: coral-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  coral:
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    uses: kkestell/coral/.github/workflows/coral.yml@main
+    secrets:
+      openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
