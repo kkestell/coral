@@ -55,6 +55,8 @@ Done when: `uv sync --frozen`, `ruff check`, `mypy`, and `pytest` all run clean 
 Status: not started
 Depends on: 1
 
+Everything this item builds is written and installed. The done condition is unmet and cannot currently be met: `kkestell/coral-test` creates no workflow run for any event, for any workflow, including a two-step one that only echoes. Only `workflow_dispatch` produces a run, and it does so within seconds. Under `workflow_dispatch` the setup action is confirmed working on a GitHub-hosted runner — `uv sync --frozen` builds the environment under `RUNNER_TEMP` and the console script runs from there by absolute path. The five live checks are waiting on event delivery, and so are the four things this item exists to learn.
+
 The second repository Coral installs into is `kkestell/coral-test`, and this item is where it gets its first pull request to review. `.agents/docs/testing.md` covers how it is used.
 
 Get the whole workflow running end to end with no model call in it. `coral review` returns one hardcoded finding on a line it picked from the diff, and one hardcoded summary. Everything around it is real: the composite actions, the reusable workflow, the `$/` references between them, the reaction, the sentinel, and the batched review.
