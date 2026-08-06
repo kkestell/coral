@@ -2,47 +2,38 @@
 
 THIS FILE MUST BE KEPT UP TO DATE AT ALL TIMES
 
-A scaffold, not a cage. Drop sections that don't apply and expand the ones that matter.
-
 Everything needed to build, run, and check this project on a working machine. Every command here is a real command from this repository — never a plausible guess.
 
 ## Prerequisites
 
-{The toolchain and its versions, plus anything that has to exist outside the repository — a database, a container runtime, a credential. Where a version is pinned in a file, name the file rather than repeating the number, so this document cannot drift out of agreement with it.}
+- `uv` — installs the interpreter, resolves the dependencies, and runs every command below.
+- Python — the version is pinned in `.python-version`, which is what `uv` reads when it builds the environment, and again as `requires-python` in `pyproject.toml`. `uv` installs a matching interpreter itself, so nothing has to be installed by hand.
 
-- {Tool and version, or the file that pins it}
+Nothing else has to exist outside the repository to run the checks. Running Coral against a real pull request needs the two credentials under "Environment", and in normal operation both are supplied by the workflow rather than by a person.
 
 ## Setup
 
-{What a fresh checkout needs before any of the commands below will work: installing dependencies, creating a config file from an example, running migrations, seeding data. Numbered steps, in order. Omit this section if `git clone` is enough.}
-
-1. {Step}
+1. `uv sync` — creates `.venv/` and installs the project along with its dependencies and the development group. On the runner this is `uv sync --frozen` instead, which refuses to re-resolve.
 
 ## Commands
 
-{The commands this project actually defines. Omit any line you cannot verify from a manifest, a task runner, a CI config, or the README. If distinct parts of the project have different toolchains, use one subsection per part.}
+There is no build step. Coral is a console script over one package, and `uv sync` is what makes it runnable.
 
-- Build: `{command}`
-- Run: `{command}`
-- Test: `{command}`
-- Lint: `{command}`
-- Format: `{command}`
-- Type-check: `{command}`
+- Run: `uv run coral <subcommand>`, where the subcommand is `resolve`, `review`, or `report`
+- Test: `uv run pytest`
+- Lint: `uv run ruff check`
+- Format: `uv run ruff format`
+- Type-check: `uv run mypy`
 
 ## Environment
 
-{The environment variables the project reads, one line each: what it is for, whether it is required, and where a real value comes from. Coral needs at least an OpenRouter credential and something that authorizes it against the forge it comments on, but the variable names are not chosen yet. Name the file that documents or loads them — `.env.example`, a config module — and never record a secret here.}
+- `OPENROUTER_API_KEY` — the credential for the model provider. Required. In a run it comes from the secret the calling repository passes to the reusable workflow; locally, from a key you supply yourself.
+- `GITHUB_TOKEN` — authorizes the API calls that read the pull request and post the review. Required. The job supplies it, scoped by the `permissions` block in the calling workflow, and it expires when the job ends.
 
-- `{VAR}` — {what it controls, required or optional, where the value comes from}
-
-## Services and Ports
-
-{What listens where when the project is running locally, including anything started by a container definition. Omit if nothing does.}
-
-- {Service} — {port, and how it is started}
+Both are read once at start-up and are deliberately kept out of the agent's environment. No file in the repository records either value.
 
 ## Gotchas
 
-{The things that waste an hour: a step that must run after a dependency change, a cache that has to be cleared, a command that fails in a confusing way for a mundane reason. One line each, and only what this repository actually does.}
-
-- {Gotcha}
+- `uv sync --frozen` fails rather than re-resolving when `pyproject.toml` and `uv.lock` disagree. The fix is `uv lock`, and the lockfile is committed.
+- Add and upgrade dependencies with `uv add`, so the resolver writes the version. A version typed into `pyproject.toml` by hand is a version nothing resolved.
+- `ruff format` reformats Python inside Markdown fences, which would rewrite the example code in the documents under `.agents/docs/`. `extend-exclude` in `pyproject.toml` keeps it away from Markdown; leave that setting in place.

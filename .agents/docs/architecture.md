@@ -6,7 +6,7 @@ What this project is built out of, where each part lives, and how the parts fit 
 
 ## Tech Stack
 
-- **Language(s):** Python — {version, and the file that pins it}
+- **Language(s):** Python 3.14 — pinned in `.python-version`, which is what `uv` builds against, and again as `requires-python` in `pyproject.toml`, which is what makes an install on an older interpreter fail outright
 - **Frameworks:** DeepAgents
 - **Build system:** `uv`, against a committed lockfile
 - **Datastores:** None. Coral owns no state. What Coral has said about a pull request lives on the pull request, and Coral reads it back from GitHub at the start of every run.
@@ -15,9 +15,27 @@ What this project is built out of, where each part lives, and how the parts fit 
 
 ## Codebase Map
 
-{A short description of each major part of the codebase — what it is, what it does, and where it lives. Organize this however suits the project: by directory, by layer, by domain area. One line per entry. Only break into subsections if the project has genuinely separate deployable units with different stacks, such as "### Client" and "### Server".}
+This is the whole layout, and every part of it that does not exist yet is marked. What exists today is `coral/schema.py`, `coral/cli.py` with three subcommands that raise `NotImplementedError`, and `tests/`.
 
-- `{path/}` — {what this part does}
+- `coral/cli.py` — the console script. One `argparse` parser, three subcommands, and nothing else.
+- `coral/resolve.py` — the gatekeeper step. Not built.
+- `coral/review.py` — the review step: build the agent, run it, post the result. Not built.
+- `coral/report.py` — the failure step, which runs on the job's failure path. Not built.
+- `coral/agent.py` — the only module that imports `deepagents`. Not built.
+- `coral/schema.py` — the review object and its anchors: the contract with the agent, and the only place structure originates.
+- `coral/command.py` — recognizing `/coral` in a comment body. Not built.
+- `coral/environment.py` — building the environment the agent's shell gets. Not built.
+- `coral/deadline.py` — the four parts of the time budget. Not built.
+- `coral/diff.py` — the merge-base diff and anchor validation. Not built.
+- `coral/github/client.py` — the one authenticated transport. Not built.
+- `coral/github/conversation.py` — the GraphQL query and its bounds. Not built.
+- `coral/github/marker.py` — the sentinel: writing it and reading it back. Not built.
+- `coral/github/reactions.py` — the two reaction namespaces. Not built.
+- `coral/github/post.py` — creating the review, demoting anchors, retrying a rejection. Not built.
+- `coral/prompts/review.md` — what Coral looks for. Not built.
+- `tests/` — one `test_<module>.py` per module under test.
+- `.github/workflows/coral.yml` — the `workflow_call` workflow. Not built.
+- `actions/` — the composite actions the workflow's steps run. Not built.
 
 ## How It Fits Together
 
@@ -54,3 +72,8 @@ Facts that stay true as the code moves, recorded so a later plan does not have t
 - Every way a review can fail ends in a comment on the pull request. The review step reports what it can reach; the report step covers everything that fails before it.
 - Coral runs on the runner, not in a container, because it needs the runner's toolchain to run the repository's tests.
 - Anything the agent is told not to do — run the whole suite, commit its scratch files, write outside the checkout — is a prompt-level request. Only the missing credentials and the output schema are enforced.
+- The review object is the only place structure originates. It is a set of frozen dataclasses handed to the agent framework unchanged, so the type the model fills is the type the posting code reads.
+- A finding's anchor is a union of four frozen dataclasses, each naming itself with a `kind` literal. Reading one is an exhaustive `match` over the four classes, so a fifth kind is a type error at every site rather than a runtime surprise.
+- The schema's JSON form uses `anyOf` and no `oneOf`, which is what a strict provider-side validator accepts.
+- The agent's structured result is required. Its absence, and a `structured_response` of `None`, are the same failure, and there is no path that recovers a review from prose or substitutes an empty one.
+- The interpreter is pinned in `.python-version` and by `requires-python`; `ruff`, `pytest`, and `mypy` are all configured in `pyproject.toml`.

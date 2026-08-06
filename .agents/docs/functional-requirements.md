@@ -4,6 +4,8 @@ THIS FILE MUST BE KEPT UP TO DATE AT ALL TIMES
 
 What Coral does, written as behavior someone could watch happen. How it does it is in `.agents/docs/technical-requirements.md`.
 
+Every requirement carries a number. Numbers are permanent and are never reused, so a retired requirement leaves a gap. They exist for the documents in `.agents/docs/` to cite each other with, and they never appear in code, comments, or commit messages.
+
 Coral is a proof of concept. The requirements below are the whole of it. Anything not listed here is out of scope until this document says otherwise.
 
 ## Trigger

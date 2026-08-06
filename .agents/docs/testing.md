@@ -2,46 +2,39 @@
 
 THIS FILE MUST BE KEPT UP TO DATE AT ALL TIMES
 
-A scaffold, not a cage. Drop sections that don't apply and expand the ones that matter.
-
 How this project tests itself: where the tests live, how to run them, and what a new test is expected to look like. The full-suite commands live in `.agents/docs/development.md`; this document covers everything narrower than that.
 
 Coral runs the tests of the repository under review. Those are not this project's tests, and nothing about them belongs in this document.
 
 ## Frameworks and Tools
 
-{The test runner, the assertion library, and anything that supports them — a mocking library, a snapshot tool, a coverage tool, a container harness for integration tests. One line each.}
-
-- {Tool} — {what it is used for}
+- `pytest` — the runner, configured in `pyproject.toml`. Assertions are plain `assert`, and a failure that is the point of the test is caught with `pytest.raises`.
+- No mocking library, and no fake of Coral's own code.
 
 ## Layout
 
-{Where tests live and how that maps onto the code under test: alongside the source, in a parallel tree, split by kind. Give the convention a new file is expected to follow, including the naming pattern.}
-
-- `{path/}` — {what is tested here}
+- `tests/` — at the repository root, one `test_<module>.py` per module under test. `tests/test_schema.py` covers `coral/schema.py`.
 
 ## Kinds of Test
 
-{The tiers this project actually has, and what each is for. Say where the line between them falls — what a unit test is allowed to touch, what earns an integration test, what only the end-to-end suite covers. Drop the tiers the project does not have rather than describing them aspirationally.}
-
-- **{Kind}** — {what it covers, what it is allowed to touch, where it lives}
+- **Unit** — one module, real input, no network and no credentials. This is the only tier that exists, because nothing that reaches GitHub, the model, or the workflow has been built yet.
 
 ## Running Tests
 
-{Narrower invocations than the full suite: one file, one test by name, one tier, with output shown, in a loop on change. The exact flags, since this is the section a reader copies from.}
-
-- {What you want to run} — `{command}`
+- One file — `uv run pytest tests/test_schema.py`
+- One test by name — `uv run pytest -k <name>`
+- With everything the test printed shown — add `-s`
 
 ## Fixtures and Test Data
 
-{How a test gets the data it needs — factories, builders, fixture files, a seeded database, a golden-file directory — and where those live. Say what a new test should reuse instead of building its own.}
+No fixtures yet. A test writes its input inline, as the JSON-shaped dictionaries the model would produce, and validates them through `pydantic.TypeAdapter`, which is the validator the agent framework itself uses on the review object. A test of the schema builds its payloads with the helpers already in `tests/test_schema.py` rather than adding its own.
 
 ## Writing a New Test
 
-{What this project expects of a test that is being added: the structure it follows, what gets asserted, how much setup belongs in the test body, what may be mocked and what must be real. Written as the rules a reviewer would hold a new test to.}
+What `.agents/docs/code-style.md` asks for: real input rather than a mock, edge cases rather than another happy path, and a case for every bug that gets fixed. A test asserts behavior the contract promises and not behavior a dependency happens to have — where recording a dependency's behavior is the point, the test says so in a comment, so tightening it later reads as a deliberate change.
 
 ## Not Covered
 
-{Parts of the system the suite does not exercise, and why — no harness for it, needs credentials, checked by hand. Worth recording: it tells a later plan where a change carries risk the tests will not catch.}
-
-- {Area} — {why}
+- The GitHub API — no client exists yet.
+- The agent, the model, and the deadline — none of it is built.
+- The workflow and the composite actions — they do not exist, and once they do, the only thing that exercises them is a real run against a real pull request.
