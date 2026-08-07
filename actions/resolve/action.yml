@@ -24,8 +24,9 @@ outputs:
     value: ${{ steps.resolve.outputs.head-sha }}
   minted-key:
     description: >
-      This run's own OpenRouter API key, when the caller passed a management key. Unmasked here:
-      the runner drops a job output its masker would alter, so the mask waits for the review job.
+      This run's own OpenRouter API key, when the caller passed a management key. Unmasked, and it
+      cannot be otherwise: the runner drops a job output its masker would alter. The job that
+      receives it masks it in its first step.
     value: ${{ steps.resolve.outputs.minted-key }}
 
 runs:

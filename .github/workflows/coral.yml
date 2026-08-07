@@ -90,6 +90,16 @@ jobs:
     permissions:
       contents: read
     steps:
+      # First, so every later echo of the key is masked. The runner prints each step's `with:`
+      # and `env:` block before running it, and a key the caller never set is registered nowhere,
+      # so this step's own header carries it in the clear. That one line is what crossing a job
+      # boundary costs; it is why the key is capped and expires. Skipped in pass-through mode,
+      # where the caller's secret is registered and masked already.
+      - if: needs.resolve.outputs.minted-key != ''
+        env:
+          MINTED_KEY: ${{ needs.resolve.outputs.minted-key }}
+        run: echo "::add-mask::$MINTED_KEY"
+
       - id: setup
         uses: $/actions/setup
 

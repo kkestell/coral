@@ -12,7 +12,7 @@ Where the tests live, how to run them, and the live checks. Full-suite commands 
 
 ## Kinds of Test
 
-- Unit — one module, real input, no network, no credentials. Everything under `tests/`, the only tier `pytest` runs.
+- Unit — one module, real input, no network, no credentials. Everything under `tests/`.
 - Live — one real run in `kkestell/coral-test`, started by hand.
 
 ## Running Tests
@@ -23,7 +23,7 @@ Where the tests live, how to run them, and the live checks. Full-suite commands 
 
 ## The Test Repository
 
-`kkestell/coral-test` is public, disposable, and exists for this and nothing else. Never point Coral at a repository whose pull requests somebody cares about.
+`kkestell/coral-test` is public, disposable, and exists for this alone. Never point Coral at a repository whose pull requests somebody cares about.
 
 A live run needs the credentials under "Environment" in `.agents/docs/development.md`, and the `gh` commands are under "Commands" there. Evidence is on the pull request, not in what the run printed.
 
@@ -38,7 +38,7 @@ Real input rather than a mock, edge cases rather than another happy path, a case
 
 ## Not Covered by `pytest`
 
-Each checked live, with unit tests covering only the decisions Coral makes on its own:
+Each checked live; unit tests cover only the decisions Coral makes on its own:
 
 - The GitHub API.
 - That `git diff` produces the format `coral/diff.py` parses.
@@ -104,8 +104,8 @@ Two of these read the review step's log rather than the pull request: a rejected
 **Shrink what a compromised agent gets**
 
 1. Open a pull request that gives Coral something to find. Three jobs run, the review appears as before, and the review job's "GITHUB_TOKEN Permissions" log block lists `Contents: read` and nothing else.
-2. Add a step to the review job that posts a comment with `${{ github.token }}`, push, and ask for a review. Expect 403 and a red run; remove the step. The one check showing the boundary is real, not declared.
-3. Set the review job's `timeout-minutes` to 1, push, and ask for a review. GitHub kills the job mid-agent, no reason file crosses, and the publishing job posts the comment saying the run failed with no reason. Restore it.
+2. Add a step to the review job that posts a comment with `${{ github.token }}`, push, and ask for a review. Expect 403 and a red run; remove the step.
+3. Set the review job's `timeout-minutes` to 1, push, and ask for a review. GitHub kills the job mid-agent, no reason file crosses, and the publishing job's comment says the run failed with no reason. Restore it.
 4. Force the 422: edit `attachable` in `coral/diff.py` to shift every line anchor past its file's end, push, and review a change with a line finding. One review carries every finding in its summary, no inline comments, and the publishing job's log holds the 422 warning. Revert.
 
 **A key per run**
@@ -113,6 +113,6 @@ Two of these read the review step's log rather than the pull request: a rejected
 The secrets swap in `kkestell/coral-test`'s Actions secrets and its caller file.
 
 1. Pass-through, the control: `OPENROUTER_API_KEY` set, the caller passing only `openrouter_api_key`. Open a pull request: a review appears, green run.
-2. Minting: remove that secret, set `OPENROUTER_MANAGEMENT_KEY`, point the caller at `openrouter_management_key`, open a pull request. A review appears, green run, no key material in any log. Under the management key, `GET /api/v1/keys` lists a key named for the run, capped and expiring as `coral/openrouter.py` sets.
+2. Minting: remove that secret, set `OPENROUTER_MANAGEMENT_KEY`, point the caller at `openrouter_management_key`, open a pull request. A review appears, green run. The key shows in the clear once, in the masking step's own header, and `***` in every later echo — the residue `.agents/docs/architecture.md` accounts for. Under the management key, `GET /api/v1/keys` lists a key named for the run, capped and expiring as `coral/openrouter.py` sets.
 3. Expiry: a run's own key is unrecoverable by design, so rehearse the path by hand. Call `mint` from a developer machine with a short TTL patched in, watch a completion succeed before `expires_at` and answer 401 after, then delete the key.
 4. Misconfiguration: set both secrets and comment `/coral`. Red run, one comment saying to pass exactly one. Then a broken management key with no API key: red run, one comment carrying OpenRouter's own error.

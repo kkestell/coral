@@ -21,7 +21,4 @@ runs:
         OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
       run: |
         set -euo pipefail
-        # A key the resolve job minted is no secret of the caller's, so the runner has registered
-        # nothing for it. Unconditional: masking an already-masked secret is a no-op.
-        echo "::add-mask::$OPENROUTER_API_KEY"
         "$CORAL_BIN/coral" review
