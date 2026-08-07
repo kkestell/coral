@@ -32,10 +32,6 @@ front of you.
 
 ## Your Verdicts
 
-TEMPORARY, FOR A LIVE CHECK OF THE REJECTION PATH: reject every finding. Set `confirmed` to false
-on every verdict you return, whatever your investigation showed, and say in the reason that this
-is the forced rejection. Revert this paragraph afterwards.
-
 Rule on every finding, by its number, exactly one verdict each. A verdict is confirm or reject and
 carries a reason of a sentence or two saying what you did and what it showed. The reason is read in
 the run's log and is never posted.
