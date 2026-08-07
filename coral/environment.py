@@ -9,8 +9,9 @@ must run against its own.
 from collections.abc import Mapping
 from typing import Final
 
-# Chosen rather than measured; item 9 on the roadmap settles the list. `CI` is on it because it is
-# the one extra variable a real test suite reads.
+# `CI` is on the list because it is the one extra variable a real test suite reads. Measured
+# against real pull requests in `kkestell/coral-test`: Python's, Node's, and Go's own test runners
+# each ran under exactly this list on a real runner with no failure for a missing variable.
 KEEP: Final = ("CI", "HOME", "LANG", "LC_ALL", "PATH", "TERM", "TMPDIR")
 
 

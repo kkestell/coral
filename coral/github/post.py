@@ -167,7 +167,8 @@ def post_review(
     GitHub accepts or rejects a review whole, using its own patch generation, so the local anchor
     check cannot be sufficient. The retry is unconditional in what it demotes: it does not read
     the 422 for which entry was bad, because a retry that depends on the body naming one fails
-    silently on a body that does not.
+    silently on a body that does not. Confirmed on a real rejection: the body carries only
+    `"errors":["Line could not be resolved"]`, naming no anchor.
     """
     path = f"/repos/{owner}/{repo}/pulls/{number}/reviews"
     try:

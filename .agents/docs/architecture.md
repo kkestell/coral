@@ -86,5 +86,4 @@ Rules:
 
 Decisions arrive here before they are made, not after.
 
-- Whether GitHub's 422 names the offending anchor. The blunt retry is correct either way; a 422 that names entries would allow demoting only those.
 - Which provider serves the alias. `require_parameters` survives any answer.

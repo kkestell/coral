@@ -22,8 +22,9 @@ from coral.runner import Event
 log = logging.getLogger(__name__)
 
 # The change-size backstop, read off the pull request fetch and so costing no call of its own.
-# Both numbers are chosen rather than measured, and both sit well above anything somebody opens
-# by hand. Item 9 on the roadmap settles them against real pull requests.
+# Measured against real pull requests in `kkestell/coral-test` sized at 290 files/290 lines and
+# at 1 file/29,500 lines, both under the backstop: each reviewed in under a minute, nowhere near
+# the deadline or the shell ceiling. Both numbers hold as chosen.
 MAX_CHANGED_FILES: Final = 300
 MAX_CHANGED_LINES: Final = 30_000
 

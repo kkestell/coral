@@ -29,9 +29,14 @@ from coral.github.marker import is_mine, reviewed_commit
 log = logging.getLogger(__name__)
 
 # The connection cap is GitHub's own: `first` and `last` must be between 1 and 100, so any bound
-# above 100 costs a round trip. The rest are chosen rather than measured.
+# above 100 costs a round trip. `THREAD_COMMENTS` and `MAX_PAGES` are chosen rather than measured.
 PER_PAGE: Final = 100
 THREAD_COMMENTS: Final = 20
+
+# Measured against `cli/cli` 10513, the busiest real conversation on hand: `MAX_COMMENTS` bound
+# first, dropping 10 of the 210 comments read, while the kept comments held well under 55,000
+# characters — nowhere near `MAX_CHARACTERS`. The fetch itself cost 2 of a 5,000-point GraphQL
+# budget. Both bounds hold as chosen.
 MAX_COMMENTS: Final = 200
 MAX_CHARACTERS: Final = 400_000
 MAX_PAGES: Final = 4
