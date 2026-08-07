@@ -10,7 +10,7 @@ Each document owns a subject and is the only place that subject is written down.
 
 - `.agents/docs/functional-requirements.md` — what Coral does, why that behavior, and what is out of scope.
 - `.agents/docs/architecture.md` — how the code is organized and how it runs on GitHub Actions: the stack, the layout, the run, the rules that hold everywhere, and the decisions still open.
-- `.agents/docs/roadmap.md` — what each item builds and the mechanics of that part, what it depends on, its status, and its done condition.
+- `.agents/docs/roadmap.md` — the order the work happens in: what each item builds, what it depends on, its status, and its done condition.
 - `.agents/docs/development.md` — prerequisites, setup, commands, environment variables, and gotchas.
 - `.agents/docs/testing.md` — where the tests live, how to run a subset, what a new test looks like, and the live checks.
 - `.agents/docs/code-style.md` — the conventions this code follows, including the ones no linter checks.
@@ -26,13 +26,15 @@ A reason earns one clause — "X, because Y" — only when it protects the fact 
 
 No rhetoric. Never restate a fact from a second angle, never write a sentence whose only job is emphasis or transition, and never narrate — no "this is what makes X possible", no walking the reader through rejected alternatives, no building up to a conclusion. If deleting a sentence loses no fact, delete it.
 
-Ceilings, checked with `wc -w`: `roadmap.md` holds at most 3,500 words; every other document under `.agents/docs/`, `plans/` excepted, holds at most 1,500. An edit that would cross a ceiling deletes something old before it adds. Ceilings never rise.
+Ceilings, checked with `wc -w`: `roadmap.md` holds at most 3,500 words; every other document under `.agents/docs/`, `plans/` and `reviews/` excepted, holds at most 1,500. An edit that would cross a ceiling deletes something old before it adds. Ceilings never rise, and a ceiling is a limit rather than a target.
+
+An item's bullets hold only what constrains work still to come: a decision a later item is written against, a number that must not be tuned, a shape the next build has to match. A mechanic the code explains where it lives is a comment there. Verifying an item settles its mechanics, so the bullets describing them go then, leaving what the item built, what it depended on, its status, and its done condition. The roadmap shrinks as the work finishes.
 
 ## Where Things Go
 
 One fact, one home. A second copy will disagree with the first, and nothing will catch which one went stale.
 
-Pick the home by the question the fact answers. What does Coral do, and why that? Functional requirements. How is the code organized, and what holds everywhere? Architecture. How does this part work, what gets built next, and when is it done? Roadmap, in that part's item. What do I type? Development. How do I check it? Testing. How do I write this Python? Code style. How do I install Coral? README. Why is this line like this? A comment on that line.
+Pick the home by the question the fact answers. What does Coral do, and why that? Functional requirements. How is the code organized, and what holds everywhere? Architecture. What gets built next, and when is it done? Roadmap, in that item. What do I type? Development. How do I check it? Testing. How do I write this Python? Code style. How do I install Coral? README. Why is this line like this? A comment on that line.
 
 State a fact you do not own in one clause. Never explain it. Writing "because" about something another document owns means stopping and pointing at that document instead.
 
@@ -52,6 +54,6 @@ An item's done condition includes the live checks named for it in `.agents/docs/
 
 ## Artifacts
 
-Plans go in `.agents/docs/plans` as `YYYY-MM-DD-HH-MM-NNN-slug.md`.
+Plans go in `.agents/docs/plans` and code reviews go in `.agents/docs/reviews`, both as `YYYY-MM-DD-HH-MM-NNN-slug.md`.
 
-A plan is a record: true as of its date, never edited afterwards, and never where a current fact is read. A decision a plan makes that the project keeps goes into the document that owns it.
+A plan and a review are records: true as of their date, never edited afterwards, and never where a current fact is read. A decision either one makes that the project keeps goes into the document that owns it.

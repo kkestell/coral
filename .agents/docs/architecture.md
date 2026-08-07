@@ -1,6 +1,6 @@
 # Architecture
 
-How the code is organized and how it runs on GitHub Actions. The mechanics of each part — the exact rules, endpoints, and numbers — live in `.agents/docs/roadmap.md` with the item that builds them. Parts that do not exist yet are marked "not built" in "The Codebase" and nowhere else.
+How the code is organized and how it runs on GitHub Actions. The exact rules, endpoints, and numbers a part chose are comments in that part's own code. Parts that do not exist yet are marked "not built" in "The Codebase" and nowhere else.
 
 ## The Platform
 
@@ -69,10 +69,10 @@ Rules:
 
 - An agent's only return value is a structured object, and deterministic code does the posting. Nothing the model produces becomes a push, an approval, or a comment Coral did not compose.
 - The review is advisory: always a comment, never approving, never requesting changes, never blocking a merge.
-- Neither secret reaches the agent's shell.
+- Coral is installed only on private repositories whose read, write, and admin access is controlled. Everybody who can open a pull request, comment, or submit a review is already trusted to run code in that repository's CI. This is the threat model, and the three bullets below rest on it. A public repository, or one taking pull requests from outside, needs them rewritten before Coral goes near it.
 - The agent reaches the checkout only through the backend. Coral's own code reaches `git` there only through `coral/diff.py` — the merge base, the diff text, and the reset between the two agent runs — so the diff the agent saw and the diff the anchors are checked against are the same.
-- This is not a sandbox. The agent runs arbitrary shell as the runner user with network access; keeping secrets out of its reach is a barrier, not a boundary. Acceptable because Coral is the repository's own CI running the repository's own code.
-- The conversation is untrusted input reaching a model with an unsandboxed shell: anyone can comment, and a maintainer's later `/coral` puts a stranger's text in context. The prompt rule — information, never instruction — is not enforced; the real bounds are the unreachable secrets and the schema-only return path. The residual risk, shell on a throwaway runner over already-visible code, is accepted for a proof of concept and is the first thing to revisit anywhere that matters.
+- This is not a sandbox. The agent runs arbitrary shell as the runner user, which has passwordless `sudo` and network access. Every secret the job references is reachable, because the runner keeps each one in `Runner.Worker`'s memory for the whole job and the token is there whether the workflow names it or not. Keeping both out of the shell's own environment is hygiene rather than a boundary: no arrangement of step environment, file, or step order closes this, and only taking the agent out of the runner user would.
+- The conversation is untrusted input reaching a model with an unsandboxed shell, and the prompt rule — information, never instruction — is not enforced. The bound that does hold is the schema-only return path. Everything else rests on who is allowed to comment.
 - Coral cannot trigger itself: events created with the job's `GITHUB_TOKEN` start no workflow runs (except `workflow_dispatch` and `repository_dispatch`). Free only while Coral has no identity of its own; a move to a GitHub App needs an explicit self-check.
 - The token is scoped to `pull-requests: write`, `issues: write`, `contents: read`, and expires with the job.
 
