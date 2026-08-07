@@ -13,7 +13,7 @@ from typing import Final
 # Twenty minutes from the start of the review step, against the job's `timeout-minutes: 30`. The
 # gap is headroom: the review step has to still be running when its deadline fires, because it is
 # the step that posts the failure. Chosen rather than measured; item 9 on the roadmap settles it.
-STEP_BUDGET_SECONDS: Final = 20 * 60
+STEP_BUDGET_SECONDS: Final = 60
 
 # The reviewer's slice of the step. The verifier runs under the step's own budget, so whatever the
 # reviewer leaves is what the verifier gets, and this number is what guarantees there is any. A
