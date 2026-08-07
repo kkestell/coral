@@ -55,7 +55,9 @@ Each checked live, with unit tests covering only the decisions Coral makes on it
 - The GitHub API.
 - That `git diff` produces the format `coral/diff.py` parses.
 - The workflow and the composite actions.
-- The agent, the model, and the deadline. Not built.
+- The model call and which structured-output strategy the framework resolves to.
+- The agent's shell on a real runner, and summarization firing mid-run.
+- The deadline actually firing. The arithmetic has unit tests; a deadline that fires during a real run does not.
 
 ### The Live Checks
 
@@ -87,3 +89,8 @@ Run in `kkestell/coral-test`, in order within their group, after pushing to the 
 6. Let Coral review a pull request, convert to draft, mark ready again. The run declines on the marker. Then comment `/coral` on the same commit and get a review — the automatic-paths-only half of that gate.
 7. Open a pull request adding a generated file over 30,000 lines. One comment saying the change exceeds what Coral will read, no review, green.
 8. From a fork under another account, open a pull request and comment `/coral`. The run declines on the fork gate. Where no second account exists, the unit test covers it and this check is recorded as not run.
+
+**The agent**
+
+1. Open a pull request with a small real change. A model-written review appears whose summary and findings are about that change — which is also the evidence that the review object validated.
+2. Watch the deadline fire: set `REVIEW_BUDGET_SECONDS` in `coral/deadline.py` to about 60, push, ask for a review of a change big enough to outlast it, and read the review step's log in the Actions tab for the `RuntimeError` naming the elapsed seconds and the budget. Restore the constant afterwards. A red run is the correct outcome until item 8 on the roadmap exists.

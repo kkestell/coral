@@ -10,7 +10,7 @@ inputs:
     required: true
   openrouter-api-key:
     description: The credential for the model provider.
-    required: false
+    required: true
 
 runs:
   using: composite

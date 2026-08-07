@@ -72,6 +72,25 @@ def added_lines(workspace: Path, first: str, second: str) -> list[AddedLine]:
     )
 
 
+def diff_text(workspace: Path, first: str, second: str) -> str:
+    """The change between the two commits, as the agent reads it.
+
+    Default context rather than `--unified=0`, because this text is for a reader. The same module
+    produces it and the added lines an anchor is checked against, which is what makes the diff the
+    agent saw and the diff the anchors are checked against one diff.
+    """
+    return git(
+        workspace,
+        "-c",
+        "core.quotePath=false",
+        "diff",
+        "--no-color",
+        "--no-ext-diff",
+        first,
+        second,
+    )
+
+
 def merge_base(workspace: Path, base: str, head: str) -> str:
     """The commit the two branches last had in common."""
     return git(workspace, "merge-base", base, head).strip()

@@ -5,7 +5,7 @@ on:
     secrets:
       openrouter_api_key:
         description: The credential for the model provider.
-        required: false
+        required: true
 
 jobs:
   coral:

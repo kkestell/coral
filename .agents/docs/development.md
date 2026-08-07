@@ -44,7 +44,7 @@ The log line the fetch writes to stderr says how many queries it took and what t
 - `OPENROUTER_API_KEY` — the credential for the model provider. Required. In a run it comes from the secret the calling repository passes to the reusable workflow; locally, from a key you supply yourself.
 - `GITHUB_TOKEN` — authorizes the API calls that read the pull request and post the review. Required. The job supplies it, scoped by the `permissions` block in the calling workflow, and it expires when the job ends.
 
-Both are read once at start-up and are deliberately kept out of the agent's environment. No file in the repository records either value.
+Both are read once at start-up and are deliberately kept out of the agent's environment. `coral review` deletes both from its own process environment before it does anything else, so a later reader finds neither. No file in the repository records either value.
 
 ## Gotchas
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-The order the work happens in. A sequence, not a schedule: one item is one plan, one build, and one review, and those artifacts carry the item's number in their filenames.
+The order the work happens in, and the mechanics of what each item builds. A sequence, not a schedule: one item is one plan, one build, and one review, and those artifacts carry the item's number in their filenames.
 
 Item numbers are permanent and never reused; `000` is reserved for a plan deliberately run outside the roadmap. Status is `not started`, `built`, or `verified`: `/build` sets `built` when the done condition is met, `/review` sets `verified` after checking that claim. The current item is the lowest-numbered one not yet verified.
 
@@ -9,11 +9,15 @@ Item numbers are permanent and never reused; `000` is reserved for a plan delibe
 Status: built
 Depends on: nothing
 
-Create the project: `pyproject.toml` with the console script and dependencies, a committed `uv.lock`, `.python-version`, and configuration for `ruff`, `pytest`, and `mypy`.
+Create the project: `pyproject.toml` with the console script and dependencies, a committed `uv.lock`, `.python-version`, and configuration for `ruff`, `pytest`, and `mypy`. Fill in `.agents/docs/development.md` and `.agents/docs/testing.md` against what exists.
 
-Write `coral/schema.py` first and on its own — it is the contract every later item is written against. "The Review Object" in `.agents/docs/architecture.md` says what it carries.
+Write `coral/schema.py` first and on its own — the contract every later item is written against. The review object:
 
-Write the layout into "The Codebase" there, and fill in `.agents/docs/development.md` and `.agents/docs/testing.md` against what exists.
+- Frozen dataclasses handed to the framework unchanged through `response_format` on `create_deep_agent` — no wire type, no conversion.
+- A summary, findings (text plus anchor), and a flag saying whether an empty list means nothing to find or everything already said still stands.
+- An anchor is a union of four frozen dataclasses with `kind` literals: line span, single line, whole file, whole pull request. Read with exhaustive `match`.
+- The JSON schema uses `anyOf`, never `oneOf`, which strict provider-side validators require.
+- The structured result is required. A `structured_response` of `None` is failure; nothing recovers a review from prose.
 
 Done when: `uv sync --frozen`, `ruff check`, `mypy`, and `pytest` run clean on an empty suite, and no document in `.agents/docs/` contains a template placeholder.
 
@@ -29,9 +33,9 @@ Early because it settles what fails on the first run and cannot be checked anoth
 - Whether `issues: write` plus `pull-requests: write` actually reach the reaction endpoints from a job.
 - Whether the `$/` reference resolves — recently GA, absent on GitHub Enterprise Server, unresolvable below runner 2.336.0.
 - Whether a batched review with `event: COMMENT` posts and is visible; omitting `event` creates a pending review only its author can read.
-- How state crosses the step boundary: the head SHA as an output, the conversation as a file, the reported-failure marker.
+- How state crosses the step boundary. Every step output is a SHA or a boolean, so the heredoc form of the Actions output protocol is not built and an assertion rejects a newline.
 
-One decision landed: five steps rather than four, with a step of its own building Coral's virtual environment. "The Run" in `.agents/docs/architecture.md` records it.
+One decision landed: five steps rather than four, with a step of its own building Coral's virtual environment.
 
 Done when: a pull request in the test repository carries a review from Coral, posted by a workflow installed by adding one file.
 
@@ -40,9 +44,17 @@ Done when: a pull request in the test repository carries a review from Coral, po
 Status: built
 Depends on: 2
 
-Build `coral/github/conversation.py` and `coral/github/marker.py`: the GraphQL query, the bound, the file the conversation crosses the step boundary on, the sentinel. "The Conversation" in `.agents/docs/architecture.md` says what the query asks for and what cannot be trusted about ordering.
+Build `coral/github/conversation.py` and `coral/github/marker.py`. The conversation is the agent's context and, through the markers, the record of reviewed commits — all of Coral's memory.
 
-The bound needs care: it sits above the per-connection cap, so satisfying it takes cursor-driven paging, and the dependence on `last:` returning the newest is observed rather than promised. Label every comment with its author's association.
+- Fetched with GraphQL: `isResolved` and `isOutdated` on review threads have no REST equivalent. The query returns reviews, review threads with comments, and issue comments, each with author and association. Inline comments are read under `reviewThreads` only — the flags live on the thread, and reading both ways duplicates every comment. That the token reaches `reviewThreads` under the three declared permissions is observed from a real run; GitHub documents no GraphQL permission requirements.
+- A comment is prose somebody wrote: an issue comment, a review with a non-empty body, or a thread comment. An empty-bodied review is the envelope around one inline comment and does not count against the bound, but is still read for its marker.
+- The bound is the 200 most recent comments and 400,000 characters, whichever binds first, taken across all three connections. The review reports what was dropped, counting generously — overstating what went unread is the safe direction. A surviving thread keeps its flags, path, and lines whole.
+- A connection returns at most 100 items. The first query asks each for its newest 100; a connection reporting a previous page and short of the bound is paged backwards from its cursor, at most four pages. The rule is per connection: a comment can only be missed if its own connection was not paged deep enough.
+- No connection accepts a useful ordering argument (`UPDATED_AT` ranks edited-old above written-new), so default order plus `last:` is trusted to return the newest — observed, not promised — and the bound sorts on comment timestamps, compared as strings since ISO-8601 UTC sorts lexically. A thread has no timestamp; its recency is its comments'.
+- Every comment Coral posts opens with an HTML comment carrying a fixed sentinel and the reviewed commit SHA — invisible rendered, exact to match. Coral posts as the repository's automation login, shared with every other bot, so the marker is the only reliable self-identification.
+- The reviewed-commit set is read from review bodies only: an inline finding or a failure comment names a commit without meaning it was reviewed.
+- The conversation crosses the step boundary as a file under the runner's temporary directory — too large for a step output.
+- Every comment handed to the agent is labeled with its author's association — the cheapest basis the model gets for judging a comment. Nothing is enforced by it.
 
 Done when: a real pull request's conversation round-trips into the shape the agent gets, the bound reports what it dropped, and the already-reviewed commits come back out of the markers.
 
@@ -51,9 +63,30 @@ Done when: a real pull request's conversation round-trips into the shape the age
 Status: built
 Depends on: 3
 
-Finish `coral resolve` and write `coral/command.py`. The gates, their order, and which requests get a reaction are "Triggering" and "The Run" in `.agents/docs/architecture.md`.
+Finish `coral resolve` and write `coral/command.py`: which deliveries reach a runner, which requests count, which runs proceed, and who gets acknowledged. `coral/command.py` has the most edge cases and the fewest dependencies, so the test suite starts in earnest there; "Trigger" in `.agents/docs/functional-requirements.md` lists every way a `/coral` can be inert.
 
-`coral/command.py` has the most edge cases and the fewest dependencies, so the test suite starts in earnest there. "Trigger" in `.agents/docs/functional-requirements.md` lists every way a `/coral` can be inert.
+Triggering:
+
+- Events: `pull_request` (`opened`, `ready_for_review`), `issue_comment` (`created`), `pull_request_review_comment` (`created`). Never `synchronize`. Never `pull_request_review` — GitHub cannot react to a review, so the request could not be acknowledged.
+- The job-level condition is coarse (Actions expressions have no regex): body contains `/coral`, the comment is on a pull request (the `pull_request` key on the issue object), author association passes. The real parse runs in resolve; a mere mention allocates a runner and stops in seconds.
+- The command is a line that is exactly `/coral`, lowercase, nothing before it, nothing after but whitespace, outside a fenced code block. Quotes, inline code, list items, and indented lines fail that rule without being named; only fences need tracked state. `contains` is case-insensitive, so `/CORAL` reaches a runner and stops as inert.
+- Write access is `author_association` in OWNER, MEMBER, COLLABORATOR — from the payload, no API call. Broader than real write access (org members and read-only collaborators pass); narrowing costs a permissions call per comment.
+- The bot exclusion (payload author `type` of `Bot`) applies to the automatic paths only; a `/coral` from a bot is a person's request relayed. It catches Apps, not scripts driving user accounts.
+- A comment event runs in the base repository with its token and secrets, so resolve stops when the head repository differs from the base, treating a deleted head repository as a fork. The `pull_request` path is filtered too, though GitHub already withholds secrets there.
+- Concurrency is a group keyed on the pull request number, `cancel-in-progress: false`: a running review finishes, a new run cancels the pending one. Issues and pull requests share one number sequence, so keys cannot collide.
+
+The gates, in order: inert command, closed pull request, fork, already-reviewed (automatic paths only), size backstop. The order decides which reason is reported when several apply: a closed pull request and a fork are reasons Coral was never going to look at the change at all, and an automatic run on a commit Coral has already read stops silently rather than announcing the change is too large.
+
+- The already-reviewed gate applies to the automatic entry points only; somebody who asks gets a review whether or not the code moved.
+- The size backstop is 300 changed files or 30,000 changed lines, read off the pull request fetch, checked before the clone.
+- Only the size stop comments on the pull request, one marker-carrying comment — the only stop that leaves somebody waiting with nothing visible to explain it. The others are silent.
+
+Reactions:
+
+- The `eyes` reaction lands when a request is accepted, before the review — a comment-triggered run shows no check, so the reaction is the only acknowledgment. Resolve reacts to every qualifying `/coral` in the conversation lacking Coral's reaction, not only the triggering comment, covering requests whose runs were cancelled while pending.
+- The conversation query returns `databaseId` (the REST id the reaction endpoints take) and `reactionGroups` (whether the token's account already reacted). A duplicate reaction POST returns 200.
+- The triggering comment is reacted to from the payload — the bounded conversation may not contain it — and deduplicated against the conversation. Reviews are skipped: a review is not a reaction target.
+- Both write permissions are needed: reactions on diff comments go through `/pulls/comments/{id}/reactions` (Pull requests permission), on whole-pull-request comments through `/issues/comments/{id}/reactions` (Issues permission), and neither grants the other.
 
 Done when: each gate stops the run for its reason, the reaction lands on both kinds of comment, and the parser has a test for every inert form.
 
@@ -62,9 +95,28 @@ Done when: each gate stops the run for its reason, the reaction lands on both ki
 Status: not started
 Depends on: 4
 
-Write `coral/agent.py`, `coral/environment.py`, and `coral/deadline.py`. "The Agent" and "The Time Budget" in `.agents/docs/architecture.md` say what each is.
+Write `coral/agent.py`, `coral/environment.py`, and `coral/deadline.py`.
 
-Three traps look like something else when they fail: the shell environment must be built variable by variable, the deadline needs all four of its parts, and structured output needs its strategy picked deliberately rather than left to the framework's per-request choice.
+The agent:
+
+- The backend is the single swappable compute dependency: `LocalShellBackend` rooted at the checkout, behind the middleware below. It supplies the `execute` tool; its filesystem operations run as direct Python, not shelled-out scripts.
+- The agent is constructed only after the working tree exists and the secrets are stripped. Setup is not the agent's job.
+- The input is one rendered request: the title, the description, the conversation, and the whole diff. Rendered rather than handed over as JSON, because the association on each comment and the resolution and staleness flags on each thread are what item 6's rules read against, and turning them into prose is Coral's deterministic job.
+- `create_deep_agent` installs summarization middleware by default, so a long review is compacted mid-run — a reason to keep the conversation bound and size backstop tight, not a thing to switch off.
+- Neither secret reaches the agent's shell, twice over: the shell environment is built rather than inherited and names neither; and the review step reads both from `os.environ` at start-up, holds them in memory, deletes them from `os.environ`, and only then constructs the model client and backend. Without this, `pull-requests: write` in the environment is an approving review one `curl` away.
+- The shell environment is an allowlist copied out of the review step's own: `inherit_env` defaults to false and an empty environment runs nothing, so Coral constructs it. In, when present: `CI`, `HOME`, `LANG`, `LC_ALL`, `PATH`, `TERM`, `TMPDIR`. A missing `PATH` fails an assertion, since a shell without one runs nothing. Out by construction: both secrets, `VIRTUAL_ENV`, every `UV_*` — without those exclusions the reviewed repository's `pytest` runs against Coral's interpreter.
+- The request sets `require_parameters` on the `openrouter_provider` kwarg. A provider allowlist is impossible — the alias's endpoint list comes back empty — and LangChain picks its structured-output strategy from the model profile rather than the serving endpoint, so an unconstrained request can be routed to an endpoint that cannot serve it. The same kwarg carries `ignore: ["azure"]`, which Coral must supply itself: DeepAgents injects it only when resolving a string model, and Coral passes an instance. OpenRouter's `/responses` beta is stateless, so a replayed reasoning item fails outright.
+- The model profile is supplied by hand through `profile=`, five keys copied from the bundled table's entry for the concrete release. The table is looked up by exact name, so the alias misses it, and a profile-less model silently gets the synthetic tool-calling structured-output strategy instead of the native request and summarization triggers scaled to 170,000 tokens instead of the real million.
+
+The time budget — one agent run per automatic review and one per request, and a failed run costs the same minutes as a productive one:
+
+- Coral owns its deadline: 20 minutes from the start of the review step, with headroom to post afterwards, so the review step is always still running when its deadline fires — item 8 depends on this.
+- The job's `timeout-minutes: 30` is a backstop, never the mechanism: a job GitHub cancels cannot post a failure comment.
+- The deadline takes all five of: a step cap of 200, applied by overriding `recursion_limit` on the compiled graph (DeepAgents sets 9,999); an elapsed-time check between steps; a 180-second model request timeout, passed in milliseconds because `ChatOpenRouter` takes `timeout` in milliseconds; the shell ceiling below; and the auto-added general-purpose subagent disabled.
+- The general-purpose subagent `create_deep_agent` adds is disabled through `register_harness_profile("openrouter", ...)`, the key being the provider `ChatOpenRouter` reports. It is outside every other bound: its own filesystem middleware keeps the 3,600-second ceiling, and the elapsed check cannot run between steps that happen inside a `task` call. Disabled, with no subagents passed, the `task` tool is not exposed at all.
+- The model client takes one retry rather than the default two, which is deadline arithmetic: the elapsed check runs between steps, so the worst overshoot past a passing check is one in-flight request, and two retries make that three 180-second attempts plus a 300-second backoff window — past the ten minutes of headroom before the job's own timeout.
+- The per-command shell ceiling is 300 seconds and takes both halves. `FilesystemMiddleware(max_execute_timeout=300)`, passed through `create_deep_agent`'s `middleware` argument, rejects rather than clamps a command whose own `timeout` argument overshoots, which tells the model the ceiling; `LocalShellBackend(timeout=300)` bounds the case where the model omits the argument, which is the common one. Middleware merges by `AgentMiddleware.name`, which defaults to the class name, so Coral's instance replaces the framework's in place — and an upstream rename turns replacement into addition, leaving two middlewares each registering a `read_file` tool. The replacement mirrors only the backend instance: the factory also passes the harness profile's tool-description overrides and a private permissions list, and for an instance-passed OpenRouter model the harness profile is the empty null object, so both of those are the parameter defaults. A forwarding wrapper around the backend is not an alternative — it fails the framework's `isinstance` check against `SandboxBackendProtocol` and its `execute`-signature inspection, losing the timeout argument entirely. Left alone the ceiling is 3,600 seconds, and the elapsed check cannot run until a command returns.
+- A fired deadline raises out of `invoke` rather than ending the run gracefully, because a graceful end would arrive as "the agent returned no structured review" with the reason lost. Until item 8 exists that is a red run.
 
 Done when: the agent reviews a real pull request and returns a valid review object, and the deadline fires and is observed to fire.
 
@@ -84,7 +136,15 @@ Done when: a review of a real pull request produces findings a person would want
 Status: not started
 Depends on: 6
 
-Finish `coral/github/post.py` and `coral/diff.py`. "Posting The Review" in `.agents/docs/architecture.md` gives the rules: the diff computed locally between the pinned commits, unanchorable findings demoted with file and line named, whole-file findings in the summary by construction, the blunt demote-everything retry on rejection, and the state recheck before posting.
+Finish `coral/github/post.py` and `coral/diff.py`. Posting is deterministic code.
+
+- Anchors are checked against the diff of the two pinned commits, computed locally — not the working tree (the agent writes scratch files into it) and not refetched (either branch may have moved).
+- One review per run, one API call: summary as body, anchored findings as comments, naming the reviewed commit — which positions each comment, lets GitHub mark it outdated later, and writes the record the next run reads. Always `COMMENT`.
+- Findings that will not attach are demoted into the summary with their file and line named. Expected to fire regularly.
+- Whole-file findings go to the summary by construction: the create-review `comments` array accepts no `subject_type`, and posting them separately costs one call per finding.
+- GitHub accepts or rejects a review whole, using its own patch generation, so the local pre-check cannot be sufficient. A rejected review is reposted with every anchored finding demoted — unconditionally, because a retry that depends on the 422 naming the bad entry fails silently when it does not. No finding is lost.
+- The pull request's state is rechecked immediately before posting; resolve's check was minutes ago.
+- The same module posts the plain marker-carrying comment the size stop and the failure path use.
 
 Done when: a review with a deliberately bad anchor still delivers every finding, and no finding is lost on any path.
 
@@ -93,18 +153,24 @@ Done when: a review with a deliberately bad anchor still delivers every finding,
 Status: not started
 Depends on: 7
 
-Write `coral/report.py` and the failure path inside `coral review`. The two halves, the marker file they meet at, and what each covers are "Failure" in `.agents/docs/architecture.md`.
+Write `coral/report.py` and the failure path inside `coral review`. Every way a review can fail ends in one comment on the pull request — a reaction followed by silence is worse than no reaction. The two halves meet at a marker file.
 
-Done when: each failure mode listed there produces exactly one comment, and the review step and report step together never produce two.
+- The review step reports its own failures: owning the deadline means it is still running, still holds the checkout, and still has the posting code. It posts the reason immediately, drops the partial review, and writes a marker into the runner's temporary directory recording that it reported.
+- The report step runs on job failure and covers everything before the agent: a rate-limited resolve, a missing secret, a failed checkout, a failed install. It skips when the marker is present, so a failure is reported once.
+- A death no step can report — the runner vanishing, GitHub's own timeout — is visible in the Actions tab. The recovery is asking again.
+
+Done when: each failure mode listed here produces exactly one comment, and the review step and report step together never produce two.
 
 ## 9. Settle the numbers
 
 Status: not started
 Depends on: 8
 
-Run Coral against real pull requests and replace every number under "Numbers Chosen Rather Than Measured" in `.agents/docs/architecture.md` with one that has a reason. The two "Undecided" items settle here too — both need a real run.
+Every number below was chosen rather than measured, stated so the design is complete and testable. Run Coral against real pull requests and replace each with a number that has a reason, where the number lives: the conversation bound (200 comments / 400,000 characters, item 3), the size backstop (300 files / 30,000 lines, item 4), and the deadline (20 minutes), job timeout (30 minutes), step cap (200), model timeout (180 seconds), model retries (1), shell ceiling (300 seconds), and the shell environment's allowlist, all item 5.
 
-Done when: `.agents/docs/architecture.md` carries no "Numbers Chosen Rather Than Measured" section and nothing under "Undecided".
+The two decisions under "Undecided" in `.agents/docs/architecture.md` settle here too — both need a real run.
+
+Done when: every number here carries a measured reason, and nothing is left under "Undecided" in `.agents/docs/architecture.md`.
 
 ## Not On This Roadmap
 
