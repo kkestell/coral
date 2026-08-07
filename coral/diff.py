@@ -80,11 +80,7 @@ def attachable(anchor: Anchor, added: set[AddedLine]) -> LineAnchor | SpanAnchor
                 return LineAnchor(kind="line", path=path, line=start_line)
             return anchor
         case LineAnchor(path=path, line=line):
-            # Live check 4 of "Shrink what a compromised agent gets": every line anchor lands
-            # past the end of its file, so GitHub rejects the anchored body with a 422.
-            if AddedLine(path=path, line=line) in added:
-                return LineAnchor(kind="line", path=path, line=line + 10_000)
-            return None
+            return anchor if AddedLine(path=path, line=line) in added else None
         case FileAnchor() | PullRequestAnchor():
             return None
 
