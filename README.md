@@ -39,8 +39,8 @@ jobs:
 
 Add one of these under Settings → Secrets and variables → Actions:
 
-- `OPENROUTER_API_KEY` — a plain API key, used as it is. Set a credit limit on it; that limit is the only bound on what it can spend if it leaks.
-- `OPENROUTER_MANAGEMENT_KEY` — a [provisioning key](https://openrouter.ai/settings/provisioning-keys). Coral mints a fresh API key for each run, capped at a couple of dollars and expiring within the hour. Nothing to rotate if one leaks.
+- `OPENROUTER_API_KEY` — a plain API key, used as it is. Set a credit limit on it; that limit is what bounds the damage if it leaks.
+- `OPENROUTER_MANAGEMENT_KEY` — a [provisioning key](https://openrouter.ai/settings/provisioning-keys). Coral mints a fresh API key for each run, capped at `spend_cap_dollars` and expiring within the hour. Nothing to rotate if one leaks.
 
 Prefer the management key if your account balance would hurt to lose. The workflow above passes the plain key; comment that line out and uncomment the other to switch.
 
@@ -54,11 +54,13 @@ Coral is configured in that workflow file and nowhere else, so a pull request ca
       model: openai/gpt-5.6-luna
       reasoning_effort: ""
       time_budget_minutes: 20
+      spend_cap_dollars: "2.00"
 ```
 
 - `model` — any model on [OpenRouter](https://openrouter.ai/models), named exactly as it appears there. A `~` alias is refused, so the model a review ran on is always knowable from this file. Coral fetches the model's context window from OpenRouter at run time; a model it does not list stops the run and says so.
 - `reasoning_effort` — passed to the provider as given. Empty asks for no reasoning block, leaving the provider its own default. What values a model accepts is the provider's rule, and its refusal is what you will read on the pull request.
 - `time_budget_minutes` — how long Coral gets to review. The job's own timeout is ten minutes more than this, so the largest budget is 350.
+- `spend_cap_dollars` — what one review may spend. A review that reaches it stops, and says what it spent on the pull request. With a management key it is also the limit the run's own key is minted with, so the provider refuses the spending too. Quote it: a cap of a fraction of a cent is a string, not a number.
 
 ## Asking for a review
 

@@ -17,6 +17,9 @@ inputs:
   time-budget-minutes:
     description: How long the review step gets, validated here and derived into the job's timeout.
     required: true
+  spend-cap-dollars:
+    description: What one review may spend, validated here and minted onto this run's key.
+    required: true
 
 outputs:
   proceed:
@@ -48,6 +51,7 @@ runs:
         OPENROUTER_MANAGEMENT_KEY: ${{ inputs.openrouter-management-key }}
         OPENROUTER_API_KEY_PRESENT: ${{ inputs.openrouter-api-key-present }}
         CORAL_TIME_BUDGET_MINUTES: ${{ inputs.time-budget-minutes }}
+        CORAL_SPEND_CAP_DOLLARS: ${{ inputs.spend-cap-dollars }}
       run: |
         set -euo pipefail
         "$CORAL_BIN/coral" resolve

@@ -28,6 +28,19 @@ on:
         type: number
         required: false
         default: 20
+      spend_cap_dollars:
+        description: >
+          What one review may spend. It caps a minted key at mint time and stops a review whose own
+          accounting reaches it, so it holds in both key modes. Two orders of magnitude above the
+          most expensive review measured: the account's `Coral` key spent $0.063 across every live
+          check up to 2026-08-07, so no single review has yet cost a cent. Low enough that a leaked
+          key is not worth extracting; re-measure before raising it.
+        # A string rather than a number, because the expression engine renders a number back into
+        # text on the way into a composite action's `env:` block and a cap of a fraction of a cent
+        # is where that rendering is not worth trusting.
+        type: string
+        required: false
+        default: "2.00"
     # Exactly one of the two, which `coral resolve` is what enforces: Actions cannot express
     # "one of these", and a run passed neither or both fails there with a comment saying so.
     secrets:
@@ -90,6 +103,8 @@ jobs:
           # Validated here, before the fetch, so a budget the caller got wrong is loud on every
           # triggered run rather than only on the ones that reach a review.
           time-budget-minutes: ${{ inputs.time_budget_minutes }}
+          # Validated here for the same reason, and the limit the minted key is created with.
+          spend-cap-dollars: ${{ inputs.spend_cap_dollars }}
           openrouter-management-key: ${{ secrets.openrouter_management_key }}
           # Whether, never what. Resolve decides which mode this run is in and has no other use
           # for the plain key, so its value stays out of this job.
@@ -157,6 +172,7 @@ jobs:
           model: ${{ inputs.model }}
           reasoning-effort: ${{ inputs.reasoning_effort }}
           time-budget-minutes: ${{ inputs.time_budget_minutes }}
+          spend-cap-dollars: ${{ inputs.spend_cap_dollars }}
           # Whichever mode the caller chose. Resolve has already refused a run that supplied both
           # or neither, so exactly one side of this is ever set.
           openrouter-api-key: ${{ secrets.openrouter_api_key || needs.resolve.outputs.minted-key }}

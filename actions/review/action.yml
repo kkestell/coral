@@ -17,6 +17,9 @@ inputs:
   time-budget-minutes:
     description: How long the review step gets, out of which the reviewer takes its own slice.
     required: true
+  spend-cap-dollars:
+    description: What one review may spend, across both agent runs.
+    required: true
 
 runs:
   using: composite
@@ -31,6 +34,7 @@ runs:
         CORAL_MODEL: ${{ inputs.model }}
         CORAL_REASONING_EFFORT: ${{ inputs.reasoning-effort }}
         CORAL_TIME_BUDGET_MINUTES: ${{ inputs.time-budget-minutes }}
+        CORAL_SPEND_CAP_DOLLARS: ${{ inputs.spend-cap-dollars }}
       run: |
         set -euo pipefail
         "$CORAL_BIN/coral" review

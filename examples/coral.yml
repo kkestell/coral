@@ -39,6 +39,9 @@ jobs:
     #   reasoning_effort: ""
     #   # How long the review gets. The job's own timeout is ten minutes more than this.
     #   time_budget_minutes: 20
+    #   # What one review may spend. A review that reaches this stops and says so, and a minted
+    #   # key is created with this as its limit.
+    #   spend_cap_dollars: "2.00"
     # Pass the one you created, and only that one. A management key gets each run its own key,
     # capped and expiring; a plain API key is used as it is.
     secrets:

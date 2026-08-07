@@ -1,13 +1,13 @@
 # Architecture
 
-How the code is organized and how it runs on GitHub Actions. The exact rules, endpoints, and numbers a part chose are comments in that part's own code.
+How the code is organized and how it runs on GitHub Actions.
 
 ## The Platform
 
 - A GitHub Actions workflow. No cloud account, no standing service; GitHub supplies the trigger, compute, checkout, and credential.
 - Python, built with `uv`. Dependencies install with `uv sync --frozen` against the committed lockfile; nothing resolves at run time.
 - The agent is DeepAgents. Models are reached only through OpenRouter, via `langchain-openrouter`'s `ChatOpenRouter`.
-- The model, the reasoning effort, and the review's time budget are `workflow_call` inputs, defaulted in the reusable workflow and nowhere else. The model is named exactly and a `~` alias is refused, so the concrete model cannot change under a review; its profile is fetched from OpenRouter's model listing at run time.
+- The model, the reasoning effort, the review's time budget, and the spend cap are `workflow_call` inputs, defaulted in the reusable workflow and nowhere else. The model is named exactly and a `~` alias is refused, so the concrete model cannot change under a review; its profile is fetched from OpenRouter's model listing at run time.
 - No datastore. Everything Coral remembers about a pull request is written on the pull request and read back each run.
 
 ## Installation and Packaging
@@ -21,7 +21,7 @@ How the code is organized and how it runs on GitHub Actions. The exact rules, en
 
 Three jobs in fixed order — resolve, review, publish — each on its own runner with its own `permissions`.
 
-- Resolve holds `contents: read`, `issues: write`, and `pull-requests: write`. The gatekeeper: it fetches the pull request and the conversation, acknowledges requests, and decides whether a review runs. Both commits are pinned here and never re-read. It validates the time budget before the fetch and derives the review job's `timeout-minutes` from it, because Actions expressions have no arithmetic. It is also the only job the management key reaches, minting once the gates pass and handing the key on as a job output the review job masks on receipt. That crossing costs one cleartext log line, readable by whoever can already read the repository's logs.
+- Resolve holds `contents: read`, `issues: write`, and `pull-requests: write`. The gatekeeper: it fetches the pull request and the conversation, acknowledges requests, and decides whether a review runs. Both commits are pinned here and never re-read. It validates the time budget before the fetch and derives the review job's `timeout-minutes` from it, because Actions expressions have no arithmetic. It is also the only job the management key reaches, minting once the gates pass, at the caller's spend cap, and handing the key on as a job output the review job masks on receipt. That crossing costs one cleartext log line, readable by whoever can already read the repository's logs.
 - Review runs the agent and holds `contents: read` — what the checkout needs and nothing more; its review step makes no API call and its environment carries no token. Its `timeout-minutes` is resolve's derived output. Each agent run gets a fresh copy of the checkout and a container of its own, so no agent writes the workspace. It verifies the reviewer's findings with a second run and writes the two finished create-review bodies: the anchored one and the one with every finding demoted. The review object never crosses: both bodies need the added-line set the anchors were checked against, which exists only here.
 - The checkout takes the pinned head SHA, full history, and no persisted credentials; the workflow file says why. A force-pushed SHA can make it fail; the publishing job covers that.
 - Publish holds resolve's three scopes and is the only job that posts: the review, or the failure comment — including for a review job that died whole and crossed no reason file. It stamps `commit_id` and `event` on whichever body it posts; the agent's job gets no say in either.
@@ -44,6 +44,7 @@ One console script, three subcommands — `coral resolve`, `coral review`, `cora
 - `coral/command.py` — what counts as a request: the command, who may make one, Coral's own comments.
 - `coral/environment.py` — the agent's container environment, built from the toolcache.
 - `coral/deadline.py` — the time budget.
+- `coral/spend.py` — the spend cap and the run's total against it.
 - `coral/diff.py` — the merge-base diff and which anchors may attach.
 - `coral/github/client.py` — the one authenticated transport.
 - `coral/github/conversation.py` — the GraphQL query, the bound, the conversation's file.

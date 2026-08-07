@@ -11,7 +11,6 @@ from typing import Any
 import pytest
 
 from coral.openrouter import (
-    KEY_LIMIT_DOLLARS,
     ModelFacts,
     facts_of,
     key_request,
@@ -83,16 +82,23 @@ def test_the_request_carries_the_cap_the_expiry_and_the_name() -> None:
     # The expiry is the TTL past `now`, in the format the endpoint echoes back: ISO 8601 UTC,
     # milliseconds, `Z`.
     now = datetime(2026, 8, 7, 17, 54, 34, 500_000, tzinfo=UTC)
-    assert key_request(RUN_URL, now, 3600) == {
+    assert key_request(RUN_URL, now, 3600, 2.00) == {
         "name": RUN_URL,
-        "limit": KEY_LIMIT_DOLLARS,
+        "limit": 2.00,
         "expires_at": "2026-08-07T18:54:34.500Z",
     }
 
 
+def test_the_key_is_capped_at_whatever_the_caller_named() -> None:
+    # No constant of its own: the caller's `spend_cap_dollars` is the limit, and the endpoint takes
+    # a fractional cent and echoes it back exactly.
+    now = datetime(2026, 8, 7, 17, 54, 34, 500_000, tzinfo=UTC)
+    assert key_request(RUN_URL, now, 3600, 0.0005)["limit"] == 0.0005
+
+
 def test_the_expiry_moves_with_the_ttl_it_is_given() -> None:
     now = datetime(2026, 8, 7, 17, 54, 34, 500_000, tzinfo=UTC)
-    assert key_request(RUN_URL, now, 60)["expires_at"] == "2026-08-07T17:55:34.500Z"
+    assert key_request(RUN_URL, now, 60, 2.00)["expires_at"] == "2026-08-07T17:55:34.500Z"
 
 
 def test_the_ttl_outlives_the_job_the_key_is_for() -> None:

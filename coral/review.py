@@ -19,6 +19,7 @@ from coral.github.post import count, payloads, write_payloads
 from coral.openrouter import model_facts
 from coral.publish import described
 from coral.schema import Review, confirmed, where
+from coral.spend import Ledger, cap_dollars
 
 log = logging.getLogger(__name__)
 
@@ -210,12 +211,16 @@ def review() -> None:
         # step sees: the job's token is not in its environment at all.
         api_key = os.environ.pop("OPENROUTER_API_KEY")
 
-        # The three the caller configured, each already defaulted by the reusable workflow. The
+        # The four the caller configured, each already defaulted by the reusable workflow. The
         # budget runs from the top of the step, so everything below is spent out of it; the resolve
         # step validated the same value and derived this job's own timeout from it.
         name = os.environ["CORAL_MODEL"]
         effort = os.environ["CORAL_REASONING_EFFORT"]
         deadline = start(budget_seconds(os.environ["CORAL_TIME_BUDGET_MINUTES"]))
+        # One ledger for both runs, which is what makes the cap cover the run rather than each run
+        # alone. A reviewer that spends it all leaves nothing to verify with, and the comment says
+        # so.
+        ledger = Ledger(cap=cap_dollars(os.environ["CORAL_SPEND_CAP_DOLLARS"]))
 
         pull_request = json.loads(runner.pull_request_path().read_text())
         head = pull_request["head"]["sha"]
@@ -251,6 +256,7 @@ def review() -> None:
             REVIEWER,
             request,
             start(reviewer_budget(deadline.budget)),
+            ledger,
         )
 
         if review.findings:
@@ -266,6 +272,7 @@ def review() -> None:
                     pull_request["title"], pull_request["body"], diff, review
                 ),
                 deadline,
+                ledger,
             )
             # Every verdict is logged with its reason, because the log is the only record of one: a
             # reason is never posted, and a rejected finding is never posted either.
@@ -278,6 +285,7 @@ def review() -> None:
                     log.info("Finding %d %s: %s", index, outcome, ruling.reason)
             review = confirmed(review, verification)
 
+        log.info("The review spent $%.6f of its $%.6f cap.", ledger.spent, ledger.cap)
         write_payloads(runner.payloads_path(), payloads(head, review, added))
     except Exception as error:
         log.exception("The review failed; the publishing job will report it.")

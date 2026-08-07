@@ -42,7 +42,7 @@ Coral decides which of these to use, in what order, how many times.
 - A second agent run checks every finding against the code, and only the ones it confirms are posted. A rejected finding appears in the run's log, never on the pull request. A reviewer talks itself into findings; a reader cannot tell which ones.
 - A finding concerns a span of lines, a single line, a whole file, or the pull request as a whole. Coral chooses per finding.
 - Line and span findings anchor to their code. Whole-file and pull-request findings appear in the summary, the file named — "this file has no tests" and "this change has no tests" must read differently.
-- A confirmed finding that cannot anchor still appears, in the summary, naming its intended file and line. Nothing survives verification and is then silently discarded.
+- A confirmed finding that cannot anchor still appears, in the summary, naming its intended file and line.
 - One review per run, not a comment per finding. A pull request reviewed several times carries several reviews.
 - Every review names the commit it reviewed — readers need to know which state of the branch each review is about, and it is how Coral recognizes its own past work.
 - Every review says it is Coral's; the posting account belongs to the repository's automation, not to Coral.
@@ -58,11 +58,10 @@ Coral decides which of these to use, in what order, how many times.
 - A closed or merged pull request is not reviewed, checked at the start and again before posting. A merge landing in the last seconds still wins the race; accepted.
 - A review that dies partway does not block later reviews.
 - A review that does not finish is discarded: Coral says it ran out of time and posts nothing else, because a partial review is indistinguishable from a complete one. Distinct from an unanchorable finding, which survives into a completed review.
+- A review that spends past its cap is stopped the same way, saying what it spent against the cap.
 - A change too large is not reviewed: Coral says it exceeds what it will read and posts nothing else. A backstop, not an expected case.
 
 ## Out Of Scope
-
-Named so nobody has to guess whether the omission was deliberate.
 
 - Forges other than GitHub.
 - Pull requests from forks.

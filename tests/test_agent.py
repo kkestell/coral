@@ -12,6 +12,8 @@ from typing import Any
 
 import pytest
 from langchain.agents.structured_output import ToolStrategy
+from langchain_core.messages import AIMessage
+from langchain_core.outputs import ChatGeneration, LLMResult
 from langchain_core.tools import StructuredTool
 
 import coral.agent
@@ -19,6 +21,8 @@ from coral.agent import (
     SHELL_CEILING_SECONDS,
     ContainerBackend,
     DeadlineMiddleware,
+    SpendHandler,
+    SpendMiddleware,
     _run,
     caught,
     forgiving,
@@ -29,8 +33,10 @@ from coral.agent import (
 from coral.deadline import Deadline, budget_seconds
 from coral.openrouter import ModelFacts
 from coral.schema import Review
+from coral.spend import Ledger, cap_dollars
 
 BUDGET = budget_seconds("20")
+CAP = cap_dollars("2.00")
 
 # What `coral/openrouter.py` reduces the default model's entry in a real `GET /api/v1/models`
 # answer to, 2026-08-07.
@@ -77,6 +83,47 @@ def test_an_expired_deadline_stops_the_run_and_says_what_it_spent() -> None:
     middleware = DeadlineMiddleware(Deadline(started=started, budget=BUDGET))
     with pytest.raises(RuntimeError, match="ran out of time"):
         middleware.before_model(state={}, runtime=None)  # type: ignore[arg-type]
+
+
+def answered(metadata: dict[str, Any]) -> LLMResult:
+    """One model response, shaped the way LangChain hands it to a callback.
+
+    `response_metadata` is where `ChatOpenRouter` copies the `cost` OpenRouter's `usage` object
+    carries, on the streaming path and the other one both.
+    """
+    message = AIMessage(content="A step.", response_metadata=metadata)
+    return LLMResult(generations=[[ChatGeneration(message=message)]])
+
+
+def test_a_responses_cost_reaches_the_ledger() -> None:
+    ledger = Ledger(cap=CAP)
+    SpendHandler(ledger, "openai/gpt-5.6-luna").on_llm_end(
+        answered({"cost": 2.015e-05, "is_byok": False}), run_id=None
+    )
+    assert ledger.spent == 2.015e-05
+
+
+def test_a_response_carrying_no_cost_leaves_the_total_alone() -> None:
+    # Counted as zero rather than refused: every OpenRouter completion measured carries a cost, and
+    # a model that stops carrying one should not end a review. The minted key's cap still holds.
+    ledger = Ledger(cap=CAP)
+    SpendHandler(ledger, "openai/gpt-5.6-luna").on_llm_end(answered({}), run_id=None)
+    assert ledger.spent == 0.0
+
+
+def test_a_ledger_under_its_cap_lets_the_model_be_called() -> None:
+    middleware = SpendMiddleware(Ledger(cap=CAP, spent=0.5))
+    assert middleware.before_model(state={}, runtime=None) is None  # type: ignore[arg-type]
+
+
+def test_a_ledger_at_its_cap_stops_the_run_and_says_what_it_spent() -> None:
+    # Both numbers to six decimal places, because a cap of a fraction of a cent has to be legible
+    # in the comment this message becomes.
+    middleware = SpendMiddleware(Ledger(cap=0.0005, spent=0.000512))
+    with pytest.raises(RuntimeError) as raised:
+        middleware.before_model(state={}, runtime=None)  # type: ignore[arg-type]
+    assert "$0.000512" in str(raised.value)
+    assert "$0.000500" in str(raised.value)
 
 
 def test_a_failing_tool_answers_with_its_error() -> None:
@@ -160,6 +207,7 @@ def run_against(
         "coral-reviewer",
         "review this",
         Deadline(started=time.monotonic(), budget=BUDGET),
+        Ledger(cap=CAP),
         review_prompt(),
         Review,
     )

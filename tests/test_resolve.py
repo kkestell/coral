@@ -5,6 +5,7 @@ them makes a call, so all of them are decided here. Wiring those three together 
 a decline owes the pull request is a live run.
 """
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from coral import runner
 from coral.deadline import job_timeout_minutes
 from coral.github.conversation import Bound, Comment, Conversation, Thread, ThreadComment
 from coral.github.reactions import Request
+from coral.openrouter import key_request
 from coral.resolve import (
     MAX_CHANGED_FILES,
     MAX_CHANGED_LINES,
@@ -25,6 +27,7 @@ from coral.resolve import (
     subject_of,
 )
 from coral.runner import Event
+from coral.spend import cap_dollars
 
 HEAD = "9f3a1c2b4d5e6f708192a3b4c5d6e7f809a1b2c3"
 OTHER_COMMIT = "1a2b3c4d5e6f708192a3b4c5d6e7f809a1b2c3d4"
@@ -336,3 +339,23 @@ def test_a_budget_the_caller_got_wrong_leaves_its_reason_on_the_pull_request(
     with pytest.raises(RuntimeError):
         reported(lambda: job_timeout_minutes("400"))
     assert "between 1 and 350" in runner.reason_path().read_text()
+
+
+def test_a_cap_the_caller_got_wrong_leaves_its_reason_on_the_pull_request(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The same road as the budget, and for the same reason: a cap the caller got wrong is loud on
+    # every triggered run rather than only on the ones that reach a review.
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    with pytest.raises(RuntimeError):
+        reported(lambda: cap_dollars("two dollars"))
+    assert "above zero" in runner.reason_path().read_text()
+
+
+def test_the_key_is_minted_at_the_cap_that_was_validated() -> None:
+    # The one input driving both mechanisms: the number the validation let through is the number
+    # the key is created with. Wiring the two together inside `resolve()` is a live run.
+    cap = cap_dollars("0.0005")
+    now = datetime(2026, 8, 7, 17, 54, 34, 500_000, tzinfo=UTC)
+    request = key_request("https://github.com/kkestell/coral-test/actions/runs/17", now, 3600, cap)
+    assert request["limit"] == 0.0005

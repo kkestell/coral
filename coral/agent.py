@@ -24,8 +24,10 @@ from deepagents.backends import LocalShellBackend
 from deepagents.backends.protocol import ExecuteResponse
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.structured_output import ToolStrategy
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.model_profile import ModelProfile
 from langchain_core.messages import HumanMessage
+from langchain_core.outputs import ChatGeneration, LLMResult
 from langchain_core.tools import StructuredTool
 from langchain_openrouter import ChatOpenRouter
 from langgraph.runtime import Runtime
@@ -35,6 +37,7 @@ from coral import container
 from coral.deadline import Deadline
 from coral.openrouter import ModelFacts
 from coral.schema import Review, Verification, review_from_result, verification_from_result
+from coral.spend import Ledger
 
 log = logging.getLogger(__name__)
 
@@ -104,6 +107,55 @@ class DeadlineMiddleware(AgentMiddleware[Any, Any]):
             raise RuntimeError(
                 f"Coral ran out of time after {self.deadline.elapsed():.0f} seconds, against a "
                 f"budget of {self.deadline.budget:.0f}."
+            )
+        return None
+
+
+class SpendHandler(BaseCallbackHandler):
+    """Adds what each response cost to the ledger.
+
+    A callback rather than a middleware hook, because it is the only place that sees the
+    summarization middleware's own model call. That middleware calls the model from its own
+    `before_model`, keeps the text, and replaces the message list, so the message carrying that
+    call's cost never reaches a state a middleware can read — and those are the largest calls in a
+    run. LangChain hands the ambient callbacks the `LLMResult` holding that same message.
+    """
+
+    def __init__(self, ledger: Ledger, model: str) -> None:
+        self.ledger = ledger
+        self.model = model
+
+    def on_llm_end(self, response: LLMResult, **keywords: Any) -> None:
+        for generations in response.generations:
+            for generation in generations:
+                assert isinstance(generation, ChatGeneration), f"{type(generation).__name__}"
+                metadata = generation.message.response_metadata
+                # Every OpenRouter completion measured carries a cost, with nothing asked for. A
+                # model that stops carrying one says so in the log rather than ending a review; the
+                # minted key's own cap is what the run is still under.
+                if "cost" not in metadata:
+                    log.warning(
+                        "A response from %s carried no cost; counting it as $0.", self.model
+                    )
+                    continue
+                self.ledger.add(float(metadata["cost"]))
+
+
+class SpendMiddleware(AgentMiddleware[Any, Any]):
+    """Stops the run when the ledger reaches its cap, checked before each model call."""
+
+    def __init__(self, ledger: Ledger) -> None:
+        super().__init__()
+        self.ledger = ledger
+
+    def before_model(self, state: Any, runtime: Runtime[Any]) -> dict[str, Any] | None:
+        # Raised for the same reason `DeadlineMiddleware` raises, and checked in the same place:
+        # between steps, so the overshoot past a passing check is one in-flight model request. Six
+        # decimal places because a cap of a fraction of a cent has to be legible.
+        if self.ledger.exceeded():
+            raise RuntimeError(
+                f"Coral ran out of money after ${self.ledger.spent:.6f}, against a cap of "
+                f"${self.ledger.cap:.6f}."
             )
         return None
 
@@ -183,6 +235,7 @@ def _run(
     container_name: str,
     request: str,
     deadline: Deadline,
+    ledger: Ledger,
     system_prompt: str,
     response_format: type,
 ) -> dict[str, Any]:
@@ -233,6 +286,7 @@ def _run(
                 FilesystemMiddleware(backend=backend, max_execute_timeout=SHELL_CEILING_SECONDS)
             ),
             DeadlineMiddleware(deadline),
+            SpendMiddleware(ledger),
         ],
         backend=backend,
         # Named rather than left to the framework's auto-detection, which asks for the provider's
@@ -246,8 +300,12 @@ def _run(
         response_format=ToolStrategy(response_format),
     )
     # DeepAgents binds a recursion limit of 9,999 through `with_config`; a second `with_config`
-    # on the compiled graph overrides it. There is no constructor parameter for it.
-    bounded = agent.with_config({"recursion_limit": STEP_CAP})
+    # on the compiled graph overrides it. There is no constructor parameter for it. The handler
+    # rides along here because an ambient callback reaches every model call the run makes,
+    # including the summarization middleware's own.
+    bounded = agent.with_config(
+        {"recursion_limit": STEP_CAP, "callbacks": [SpendHandler(ledger, name)]}
+    )
 
     log.info("Running the agent over %s with %.0f seconds of budget.", checkout, deadline.budget)
     result: dict[str, Any] = bounded.invoke({"messages": [HumanMessage(request)]})
@@ -268,6 +326,7 @@ def produce_review(
     container_name: str,
     request: str,
     deadline: Deadline,
+    ledger: Ledger,
 ) -> Review:
     """Run the reviewer over its copy of the checkout and return the review it produced, or fail."""
     return review_from_result(
@@ -280,6 +339,7 @@ def produce_review(
             container_name,
             request,
             deadline,
+            ledger,
             review_prompt(),
             Review,
         )
@@ -295,6 +355,7 @@ def verify_findings(
     container_name: str,
     request: str,
     deadline: Deadline,
+    ledger: Ledger,
 ) -> Verification:
     """Run the verifier over its own fresh copy of the checkout and return its verdicts, or fail."""
     return verification_from_result(
@@ -307,6 +368,7 @@ def verify_findings(
             container_name,
             request,
             deadline,
+            ledger,
             verify_prompt(),
             Verification,
         )

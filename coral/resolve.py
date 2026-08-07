@@ -23,6 +23,7 @@ from coral.github.reactions import Request, react, requests_in
 from coral.openrouter import key_ttl_seconds, mint
 from coral.publish import described
 from coral.runner import Event
+from coral.spend import cap_dollars
 
 log = logging.getLogger(__name__)
 
@@ -184,6 +185,11 @@ def resolve() -> None:
         timeout,
     )
 
+    # Also before the fetch, and here rather than in the review job alone because this is where the
+    # minted key's own limit comes from. The review job validates the same value again to build the
+    # ledger its accounting runs against.
+    cap = reported(lambda: cap_dollars(os.environ["CORAL_SPEND_CAP_DOLLARS"]))
+
     event = runner.event()
     github = GitHub(token=os.environ["GITHUB_TOKEN"])
     pull_request = github.get(f"/repos/{event.owner}/{event.repo}/pulls/{event.number}")
@@ -233,7 +239,7 @@ def resolve() -> None:
     # fails leaves no `proceed=true` behind it. The key is named for the run, which is what ties
     # a key in the OpenRouter dashboard to the review that asked for it.
     if management is not None:
-        minted = partial(mint, management, runner.run_url(), key_ttl_seconds(timeout))
+        minted = partial(mint, management, runner.run_url(), key_ttl_seconds(timeout), cap)
         runner.write_output("minted-key", reported(minted))
 
     runner.write_output("head-sha", subject.head_sha)

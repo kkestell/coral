@@ -16,12 +16,6 @@ import httpx
 BASE_URL: Final = "https://openrouter.ai/api/v1"
 TIMEOUT: Final = 30.0
 
-# What a minted key may spend. Two orders of magnitude above the most expensive review measured:
-# the account's `Coral` key spent $0.063 across every live check up to 2026-08-07, so no single
-# review has yet cost a cent. Low enough that a leaked key is not worth extracting. Re-measure
-# before raising it.
-KEY_LIMIT_DOLLARS: Final = 2.00
-
 # The prefix OpenRouter's alias ids carry. An alias resolves to whichever model is current, so a
 # review's model would not be knowable from the caller's file, and the request would succeed
 # rather than fail: aliases are in the listing and the per-model route answers 200 for them, so
@@ -51,16 +45,17 @@ def key_ttl_seconds(job_timeout_minutes: int) -> int:
     return 2 * job_timeout_minutes * 60
 
 
-def key_request(name: str, now: datetime, ttl_seconds: int) -> dict[str, Any]:
-    """The create-key body: the name, the spend cap, and the expiry that revokes the key.
+def key_request(name: str, now: datetime, ttl_seconds: int, cap_dollars: float) -> dict[str, Any]:
+    """The create-key body: the name, the caller's spend cap, and the expiry that revokes the key.
 
     The expiry is what makes revocation independent of anything the rest of the run does. No
-    cleanup call can be skipped by a cancelled run, because there is no cleanup call.
+    cleanup call can be skipped by a cancelled run, because there is no cleanup call. The endpoint
+    takes a fractional-cent limit and echoes it back exactly, so a cap this small is a real one.
     """
     expiry = now + timedelta(seconds=ttl_seconds)
     return {
         "name": name,
-        "limit": KEY_LIMIT_DOLLARS,
+        "limit": cap_dollars,
         # ISO 8601 UTC, milliseconds, `Z`. The endpoint echoes back exactly what it was sent.
         "expires_at": expiry.astimezone(UTC)
         .isoformat(timespec="milliseconds")
@@ -82,17 +77,17 @@ def minted_key(answer: dict[str, Any]) -> str:
     return str(answer["key"])
 
 
-def mint(management_key: str, name: str, ttl_seconds: int) -> str:
+def mint(management_key: str, name: str, ttl_seconds: int, cap_dollars: float) -> str:
     """Create this run's own API key, capped and expiring, and return it.
 
     No retry: one mint per run, and a management key that cannot mint now will not mint on a
     second attempt either. The status and the body go into the failure comment, because
     OpenRouter's own words are what a broken secret has to say.
     """
-    log.info("Minting an OpenRouter key named %s, capped at $%.2f.", name, KEY_LIMIT_DOLLARS)
+    log.info("Minting an OpenRouter key named %s, capped at $%.6f.", name, cap_dollars)
     response = httpx.post(
         f"{BASE_URL}/keys",
-        json=key_request(name, datetime.now(UTC), ttl_seconds),
+        json=key_request(name, datetime.now(UTC), ttl_seconds, cap_dollars),
         timeout=TIMEOUT,
         headers={"Authorization": f"Bearer {management_key}"},
     )
