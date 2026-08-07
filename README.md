@@ -1,14 +1,12 @@
 # 🪸 Coral
 
-A code review agent that runs as a GitHub Actions workflow. When a pull request is opened or marked ready for review, or when somebody comments `/coral` on one, Coral clones the repository, reads the change, and leaves its findings as comments on the pull request.
+A code review agent that runs as a GitHub Actions workflow. When a pull request is opened or marked ready for review, or when somebody comments `/coral` on one, Coral reviews the change and leaves its findings as comments on the pull request.
 
-Coral is a proof of concept and is early. A run reads the pull request and its conversation, checks out the change, has a model review it — running tests of its own choosing along the way — verifies each finding with a second model pass, and posts what survives as one review.
+Coral is a proof of concept and is early.
 
 ## Adding Coral To Your Repository
 
-Two steps.
-
-**1. Add the workflow.** Copy [`examples/coral.yml`](examples/coral.yml) into your repository as `.github/workflows/coral.yml`, on your default branch:
+**1. Add the workflow.** Copy [`examples/coral.yml`](examples/coral.yml) to `.github/workflows/coral.yml` on your **default branch**. GitHub reads the file from there when a comment triggers a run, so a copy that lives only on a feature branch never runs.
 
 ```yaml
 name: Coral
@@ -37,34 +35,53 @@ jobs:
       # openrouter_management_key: ${{ secrets.OPENROUTER_MANAGEMENT_KEY }}
 ```
 
-**2. Add the secret.** Coral reaches its model through [OpenRouter](https://openrouter.ai), so an OpenRouter key is the only credential you supply. The GitHub token comes from the job itself and expires when the job ends.
+**2. Add the secret.** Coral reaches its model through [OpenRouter](https://openrouter.ai), so an OpenRouter key is the only credential you supply. The GitHub token comes from the job and expires with it.
 
-Pass one of two kinds of key, under Settings → Secrets and variables → Actions, and pass only the one you created:
+Add one of these under Settings → Secrets and variables → Actions:
 
-- `OPENROUTER_API_KEY` — a plain API key, used as it is. The simplest thing. Set a credit limit on it: that limit is the only bound on what the key can spend if it leaks.
-- `OPENROUTER_MANAGEMENT_KEY` — a [provisioning key](https://openrouter.ai/settings/provisioning-keys), which Coral uses to mint a fresh API key for each run, capped at a couple of dollars and expiring within the hour. A leaked key is then worth almost nothing, and there is nothing to rotate afterwards.
+- `OPENROUTER_API_KEY` — a plain API key, used as it is. Set a credit limit on it; that limit is the only bound on what it can spend if it leaks.
+- `OPENROUTER_MANAGEMENT_KEY` — a [provisioning key](https://openrouter.ai/settings/provisioning-keys). Coral mints a fresh API key for each run, capped at a couple of dollars and expiring within the hour. Nothing to rotate if one leaks.
 
-Choose the management key if your account's balance would hurt to lose. The workflow file above passes the plain key; comment that line out and uncomment the management one to switch.
-
-That is the whole installation. Nothing to host, nothing to provision, and nothing to rotate.
-
-Put the file on your **default branch**. GitHub always reads the workflow file from there when a comment triggers it, so a copy that lives only on a feature branch never runs.
+Prefer the management key if your account balance would hurt to lose. The workflow above passes the plain key; comment that line out and uncomment the other to switch.
 
 ## Asking For A Review
 
-Coral reviews a pull request automatically when it is opened, or when a draft is marked ready. To ask for another review at any time, comment `/coral` — either on the pull request itself or as a reply on the diff. Coral reacts with 👀 to say it heard you, then posts its review.
+Comment `/coral` on a pull request, or as a reply on the diff, to ask for a review at any time. Coral reacts with 👀, then posts its review.
 
-Anyone with write access can ask. Coral never pushes, never approves, and never requests changes; it only comments.
+Anyone with write access can ask. Coral only comments: it never pushes, approves, or requests changes.
+
+## Risks
+
+Coral runs shell commands a model chose, your test suite among them, and sends your source to a third party to do it. That is a decision about executing code, not about adding a linter. What follows narrows what a mistake costs. None of it stops a determined attacker from reaching your secrets.
+
+### What Coral Does To Contain This
+
+- Never reviews a fork, and ignores `/coral` from anyone below collaborator. Every change it runs is code somebody with push access could have pushed anyway.
+- Runs the agent's shell in an unprivileged container: no added capabilities, no Docker socket.
+- Puts no credential in that container: no OpenRouter key, no GitHub token, none of the runner's variables. It gets a copy of the checkout and the toolcache read-only.
+- Limits the agent's job to `contents: read`. The write scopes live in the jobs that post, which never run agent code.
+- Never pushes, approves, or requests changes. A bad review costs a comment, not a merge.
+- Mints a per-run API key from a management key, so a leak expires on its own.
+
+### What That Leaves Open
+
+- The container has network access, which dependency installs need. Anything the agent can read, it can send.
+- A container escape reaches the review job, which holds the OpenRouter key.
+- OpenRouter and whichever provider it routes to see the diff, files the agent opens, command output, and the conversation. Do not install Coral where that is unacceptable.
+- Prompt injection works. The diff and the conversation are attacker-controlled text in the model's context, so a review can be steered into missing a finding or posting text somebody else wrote.
+- Handing a minted key between jobs prints it in one log line before masking starts. Anyone who can read your Actions logs can spend it until it expires.
+
+Prefer the management key, set a credit limit on whichever key you use, keep write access narrow, and treat Coral's comments as suggestions from an unreliable reviewer.
 
 ## What Each Part Of The Workflow File Is For
 
-Every line in the file above has to be there. A reusable workflow cannot declare its caller's triggers, cannot grant itself permissions the caller withheld, and cannot key its caller's concurrency, so all three live with you rather than upstream.
+Every line has to be there. A reusable workflow cannot declare its caller's triggers, grant itself permissions the caller withheld, or key its caller's concurrency, so all three live with you rather than upstream.
 
-- `on:` — the three events Coral answers. The comment events are separate because GitHub sends one for a comment on the pull request and a different one for a reply on the diff.
-- `concurrency:` — one run per pull request. A run already going finishes; a newly queued run replaces whichever run was still waiting.
-- `permissions:` — the scopes the called workflow may use. It narrows them per job: the job that runs the agent gets `contents: read` alone, and the write scopes go only to the jobs that post. The agent's shell runs inside a container that holds no credential at all. Both write scopes are needed because the reaction on a pull request comment and the reaction on a diff reply go through different endpoints, and neither permission grants the other.
+- `on:` — the three events Coral answers. Two are comment events because GitHub sends a different one for a comment on the pull request than for a reply on the diff.
+- `concurrency:` — one run per pull request. A run in progress finishes; a newly queued run replaces whichever run was still waiting.
+- `permissions:` — the scopes the called workflow may use, narrowed per job inside it. Both write scopes are needed, because the two reactions go through different endpoints and neither permission grants the other.
 - `uses:` — the version pin. `@main` tracks the latest; pin a tag once there is one.
 
 ## Development
 
-`.agents/docs/development.md` covers setup and the commands. Coral is Python, built with `uv`.
+Coral is Python, built with `uv`. `.agents/docs/development.md` covers setup and the commands.
