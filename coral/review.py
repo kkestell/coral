@@ -6,19 +6,11 @@ import os
 
 from coral import runner
 from coral.deadline import REVIEWER_BUDGET_SECONDS, start
-from coral.diff import diff_text, merge_base, reset
+from coral.diff import added_lines, diff_text, merge_base, reset
 from coral.github.client import GitHub
 from coral.github.conversation import Comment, Conversation, Thread, read_conversation
-from coral.github.post import count, post_review
-from coral.schema import (
-    Anchor,
-    FileAnchor,
-    LineAnchor,
-    PullRequestAnchor,
-    Review,
-    SpanAnchor,
-    confirmed,
-)
+from coral.github.post import count, is_open, post_review
+from coral.schema import Review, confirmed, where
 
 log = logging.getLogger(__name__)
 
@@ -125,19 +117,6 @@ def render_request(title: str, body: str | None, diff: str, conversation: Conver
     )
 
 
-def where(anchor: Anchor) -> str:
-    """The place a finding concerns, as a phrase the verifier reads."""
-    match anchor:
-        case SpanAnchor(path=path, start_line=start_line, end_line=end_line):
-            return f"`{path}`, lines {start_line} to {end_line}"
-        case LineAnchor(path=path, line=line):
-            return f"`{path}`, line {line}"
-        case FileAnchor(path=path):
-            return f"`{path}`, the whole file"
-        case PullRequestAnchor():
-            return "the pull request as a whole"
-
-
 def render_verification_request(title: str, body: str | None, diff: str, review: Review) -> str:
     """Everything the verifier is given: the pull request, the change, and the findings to rule on.
 
@@ -200,7 +179,11 @@ def review() -> None:
 
     conversation = read_conversation(runner.conversation_path())
     workspace = runner.workspace()
-    diff = diff_text(workspace, merge_base(workspace, base, head), head)
+    # The merge base is hoisted out of the diff call so the lines an anchor is checked against
+    # come from the same diff the agent read.
+    common = merge_base(workspace, base, head)
+    diff = diff_text(workspace, common, head)
+    added = set(added_lines(workspace, common, head))
     request = render_request(pull_request["title"], pull_request["body"], diff, conversation)
     log.info("Asking the agent to review %s in %d characters.", head, len(request))
 
@@ -232,4 +215,10 @@ def review() -> None:
                 log.info("Finding %d %s: %s", index, outcome, ruling.reason)
         review = confirmed(review, verification)
 
-    post_review(github, owner, repo, number, head, review)
+    # Resolve's check was minutes and two agent runs ago, and a review landing after the merge is
+    # advice nobody can act on.
+    if not is_open(github, owner, repo, number):
+        log.info("Pull request %d is no longer open; posting nothing.", number)
+        return
+
+    post_review(github, owner, repo, number, head, review, added)

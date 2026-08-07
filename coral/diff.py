@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from coral.schema import Anchor, FileAnchor, LineAnchor, PullRequestAnchor, SpanAnchor
+
 HUNK: Final = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 
@@ -51,6 +53,32 @@ def parse_added_lines(text: str) -> list[AddedLine]:
         added.extend(AddedLine(path=path, line=start + offset) for offset in range(count))
 
     return added
+
+
+def attachable(anchor: Anchor, added: set[AddedLine]) -> LineAnchor | SpanAnchor | None:
+    """The anchor GitHub will take a comment on, or None when the finding must be demoted.
+
+    The set holds added lines only, so a finding on an unchanged line inside a hunk demotes even
+    though GitHub would have accepted a comment there. That is the conservative direction: a
+    demoted finding is still delivered, and a rejected review costs a second call.
+    """
+    match anchor:
+        case SpanAnchor(path=path, start_line=start_line, end_line=end_line):
+            if start_line > end_line:
+                return None
+            # Only the endpoints. A span covering a function crosses unchanged lines, and
+            # demoting every one of those would leave almost no span anchored.
+            if {AddedLine(path=path, line=start_line), AddedLine(path=path, line=end_line)} - added:
+                return None
+            # GitHub takes `start_line` as strictly before `line`, so a one-line span is a
+            # single-line comment rather than a finding to lose.
+            if start_line == end_line:
+                return LineAnchor(kind="line", path=path, line=start_line)
+            return anchor
+        case LineAnchor(path=path, line=line):
+            return anchor if AddedLine(path=path, line=line) in added else None
+        case FileAnchor() | PullRequestAnchor():
+            return None
 
 
 def added_lines(workspace: Path, first: str, second: str) -> list[AddedLine]:

@@ -46,12 +46,12 @@ One console script, three subcommands — `coral resolve`, `coral review`, `cora
 - `coral/command.py` — what counts as a request: the command, who may make one, Coral's own comments.
 - `coral/environment.py` — the agent's shell environment.
 - `coral/deadline.py` — the time budget.
-- `coral/diff.py` — the merge-base diff and the reset between the two agent runs. Anchor validation not built.
+- `coral/diff.py` — the merge-base diff, which anchors may attach, and the reset between the two agent runs.
 - `coral/github/client.py` — the one authenticated transport.
 - `coral/github/conversation.py` — the GraphQL query, the bound, the file the conversation crosses the step boundary on.
 - `coral/github/marker.py` — the sentinel: writing and reading it.
 - `coral/github/reactions.py` — which comments get the reaction, through both namespaces.
-- `coral/github/post.py` — the review, anchor demotion, the plain comment. Retry on rejection not built.
+- `coral/github/post.py` — the review, anchor demotion, the retry on rejection, the plain comment.
 - `coral/prompts/review.md` — what Coral looks for.
 - `coral/prompts/verify.md` — how Coral checks a finding it was handed.
 - `tests/` — one `test_<module>.py` per module under test.

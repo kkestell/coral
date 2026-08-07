@@ -25,6 +25,7 @@ from coral.schema import (
     confirmed,
     review_from_result,
     verification_from_result,
+    where,
 )
 
 NO_REVIEW = "The agent returned no structured review. Coral does not recover a review from prose."
@@ -222,6 +223,16 @@ def test_a_regression_test_validates_whole() -> None:
         content="def test_it() -> None:\n    assert False\n",
         command="pytest tests/test_parser.py::test_it",
     )
+
+
+def test_each_anchor_names_its_place() -> None:
+    # Read twice over: by the verifier's request and by a demoted finding's label.
+    assert where(SpanAnchor(kind="span", path="a.py", start_line=3, end_line=9)) == (
+        "`a.py`, lines 3 to 9"
+    )
+    assert where(LineAnchor(kind="line", path="a.py", line=7)) == "`a.py`, line 7"
+    assert where(FileAnchor(kind="file", path="a.py")) == "`a.py`, the whole file"
+    assert where(PullRequestAnchor(kind="pull_request")) == "the pull request as a whole"
 
 
 def test_a_verification_validates() -> None:

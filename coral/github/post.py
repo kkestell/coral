@@ -6,11 +6,15 @@ than by failure. The `comments` array on the create-review endpoint accepts seve
 batched review, and posting one would mean a second call per finding.
 """
 
+import logging
 from typing import Any
 
-from coral.github.client import GitHub
+from coral.diff import AddedLine, attachable
+from coral.github.client import ApiError, GitHub
 from coral.github.marker import marker
-from coral.schema import FileAnchor, Finding, LineAnchor, PullRequestAnchor, Review, SpanAnchor
+from coral.schema import Finding, LineAnchor, PullRequestAnchor, Review, SpanAnchor, where
+
+log = logging.getLogger(__name__)
 
 
 def rendered_finding(finding: Finding) -> str:
@@ -71,16 +75,34 @@ def post_comment(github: GitHub, owner: str, repo: str, number: int, commit: str
     )
 
 
-def post_review(
-    github: GitHub, owner: str, repo: str, number: int, commit: str, review: Review
-) -> Any:
-    """Post the whole review as one comment-event review naming the commit it reviewed."""
+def demotion(finding: Finding) -> str:
+    """A finding that will not attach, naming the place it concerns."""
+    match finding.anchor:
+        case PullRequestAnchor():
+            # No label: it concerns no place.
+            return rendered_finding(finding)
+        case _:
+            return f"**{where(finding.anchor)}** — {rendered_finding(finding)}"
+
+
+def nothing_to_report(review: Review) -> str:
+    """Which of the two empty outcomes this is, in Coral's words rather than the model's.
+
+    Coral writes the sentence rather than trusting the summary to make the distinction, because a
+    second "nothing found" that reads as retracting the first review is what this prevents.
+    """
+    if review.everything_already_said:
+        return "Everything Coral has to say about this change is already on this pull request."
+    return "Coral found nothing to report on this change."
+
+
+def review_payload(commit: str, review: Review, added: set[AddedLine]) -> dict[str, Any]:
+    """The create-review body: what attaches as a comment, and what the summary carries instead."""
     comments: list[dict[str, Any]] = []
     demoted: list[str] = []
 
     for finding in review.findings:
-        rendered = rendered_finding(finding)
-        match finding.anchor:
+        match attachable(finding.anchor, added):
             case SpanAnchor(path=path, start_line=start_line, end_line=end_line):
                 comments.append(
                     {
@@ -88,7 +110,7 @@ def post_review(
                         "start_line": start_line,
                         "line": end_line,
                         "side": "RIGHT",
-                        "body": signed(commit, rendered),
+                        "body": signed(commit, rendered_finding(finding)),
                     }
                 )
             case LineAnchor(path=path, line=line):
@@ -97,13 +119,11 @@ def post_review(
                         "path": path,
                         "line": line,
                         "side": "RIGHT",
-                        "body": signed(commit, rendered),
+                        "body": signed(commit, rendered_finding(finding)),
                     }
                 )
-            case FileAnchor(path=path):
-                demoted.append(f"**`{path}`** — {rendered}")
-            case PullRequestAnchor():
-                demoted.append(rendered)
+            case None:
+                demoted.append(demotion(finding))
 
     lines = [
         marker(commit),
@@ -113,16 +133,50 @@ def post_review(
         review.summary,
     ]
     if demoted:
-        lines += ["", *(bullet(entry) for entry in demoted)]
+        # Neutral about the cause: a whole-file finding was never going to attach, and a line
+        # finding that could not is not the reader's problem.
+        lines += ["", "Findings not anchored to a line:", "", *(bullet(entry) for entry in demoted)]
+    if not review.findings:
+        lines += ["", nothing_to_report(review)]
 
-    return github.post(
-        f"/repos/{owner}/{repo}/pulls/{number}/reviews",
-        {
-            "commit_id": commit,
-            "body": "\n".join(lines),
-            "comments": comments,
-            # Named explicitly: omitting it creates a review in the pending state that nobody
-            # but its author can read.
-            "event": "COMMENT",
-        },
-    )
+    return {
+        "commit_id": commit,
+        "body": "\n".join(lines),
+        "comments": comments,
+        # Named explicitly: omitting it creates a review in the pending state that nobody
+        # but its author can read.
+        "event": "COMMENT",
+    }
+
+
+def post_review(
+    github: GitHub,
+    owner: str,
+    repo: str,
+    number: int,
+    commit: str,
+    review: Review,
+    added: set[AddedLine],
+) -> Any:
+    """Post the whole review as one comment-event review, demoting every finding if that is refused.
+
+    GitHub accepts or rejects a review whole, using its own patch generation, so the local anchor
+    check cannot be sufficient. The retry is unconditional in what it demotes: it does not read
+    the 422 for which entry was bad, because a retry that depends on the body naming one fails
+    silently on a body that does not.
+    """
+    path = f"/repos/{owner}/{repo}/pulls/{number}/reviews"
+    try:
+        return github.post(path, review_payload(commit, review, added))
+    except ApiError as rejection:
+        if rejection.status != 422:
+            raise
+        log.warning("GitHub rejected the anchored review: %s", rejection.body)
+        # Nothing attaches to an empty set, so every finding lands in the summary. The retry is
+        # the same composition rather than a second path through it.
+        return github.post(path, review_payload(commit, review, set()))
+
+
+def is_open(github: GitHub, owner: str, repo: str, number: int) -> bool:
+    """Whether the pull request is still open, read at the last moment before posting."""
+    return bool(github.get(f"/repos/{owner}/{repo}/pulls/{number}")["state"] == "open")

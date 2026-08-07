@@ -23,6 +23,15 @@ There is no build step. Coral is a console script over one package, and `uv sync
 - Format: `uv run ruff format`
 - Type-check: `uv run mypy`
 
+### Driving A Live Check
+
+What to type to set a live check up and follow it. Which checks to run is in `.agents/docs/testing.md`.
+
+- Open a pull request — `gh pr create --repo kkestell/coral-test --base main --head <branch> --title <title> --body <body>`
+- Ask for a review — `gh pr comment --repo kkestell/coral-test <number> --body '/coral'`
+- Watch the run — `gh run list --repo kkestell/coral-test`
+- Read the review — `gh pr view --repo kkestell/coral-test <number> --comments`
+
 ### Reading A Conversation By Hand
 
 The conversation fetch is the one piece that pages, and no pull request in the test repository is busy enough to make it. Point it at a public pull request that is, with a token of your own. It reads and writes nothing.

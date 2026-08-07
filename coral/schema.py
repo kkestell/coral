@@ -50,6 +50,23 @@ class PullRequestAnchor:
 Anchor = SpanAnchor | LineAnchor | FileAnchor | PullRequestAnchor
 
 
+def where(anchor: Anchor) -> str:
+    """The place a finding concerns, as prose.
+
+    Read by the verifier's request and by the label on a finding demoted into the summary. It
+    lives here because this module is the one both readers already depend on.
+    """
+    match anchor:
+        case SpanAnchor(path=path, start_line=start_line, end_line=end_line):
+            return f"`{path}`, lines {start_line} to {end_line}"
+        case LineAnchor(path=path, line=line):
+            return f"`{path}`, line {line}"
+        case FileAnchor(path=path):
+            return f"`{path}`, the whole file"
+        case PullRequestAnchor():
+            return "the pull request as a whole"
+
+
 @dataclass(frozen=True)
 class RegressionTest:
     """A test that demonstrates a finding: fails at the head commit, passes once it is fixed."""

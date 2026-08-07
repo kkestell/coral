@@ -10,7 +10,8 @@ real repository built in a temporary directory.
 
 from pathlib import Path
 
-from coral.diff import AddedLine, git, parse_added_lines, reset
+from coral.diff import AddedLine, attachable, git, parse_added_lines, reset
+from coral.schema import FileAnchor, LineAnchor, PullRequestAnchor, SpanAnchor
 
 TWO_FILES = """\
 diff --git a/coral/cli.py b/coral/cli.py
@@ -120,6 +121,64 @@ diff --git a/a.txt b/a.txt
 +++ still a line of content
 """
     assert parse_added_lines(diff) == [AddedLine(path="a.txt", line=2)]
+
+
+ADDED = {
+    AddedLine(path="a.py", line=4),
+    AddedLine(path="a.py", line=5),
+    AddedLine(path="a.py", line=9),
+    AddedLine(path="b.py", line=4),
+}
+
+
+def line(number: int, path: str = "a.py") -> LineAnchor:
+    return LineAnchor(kind="line", path=path, line=number)
+
+
+def span(start: int, end: int, path: str = "a.py") -> SpanAnchor:
+    return SpanAnchor(kind="span", path=path, start_line=start, end_line=end)
+
+
+def test_a_line_anchor_on_an_added_line_attaches() -> None:
+    assert attachable(line(4), ADDED) == line(4)
+
+
+def test_a_line_anchor_off_the_added_lines_is_demoted() -> None:
+    assert attachable(line(6), ADDED) is None
+
+
+def test_a_line_anchor_matches_on_the_path_as_well_as_the_line() -> None:
+    # The right path with the wrong line and the right line with the wrong path both demote.
+    assert attachable(line(1), ADDED) is None
+    assert attachable(line(4, "c.py"), ADDED) is None
+
+
+def test_a_span_anchored_at_both_ends_attaches() -> None:
+    # The lines between are not checked: a span covering a function crosses unchanged lines.
+    assert attachable(span(4, 9), ADDED) == span(4, 9)
+
+
+def test_a_span_missing_either_endpoint_is_demoted() -> None:
+    assert attachable(span(3, 9), ADDED) is None
+    assert attachable(span(4, 10), ADDED) is None
+
+
+def test_a_span_of_one_line_becomes_a_line_anchor() -> None:
+    # GitHub takes `start_line` as strictly before `line`, so this would be rejected as a span.
+    assert attachable(span(5, 5), ADDED) == line(5)
+
+
+def test_a_backwards_span_is_demoted() -> None:
+    assert attachable(span(9, 4), ADDED) is None
+
+
+def test_a_whole_file_anchor_is_demoted_even_where_its_lines_are_added() -> None:
+    # By construction rather than by failure: a batched review has nowhere to put one.
+    assert attachable(FileAnchor(kind="file", path="a.py"), ADDED) is None
+
+
+def test_a_pull_request_anchor_is_demoted() -> None:
+    assert attachable(PullRequestAnchor(kind="pull_request"), ADDED) is None
 
 
 def repository(workspace: Path) -> Path:
