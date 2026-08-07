@@ -40,11 +40,14 @@ def test_an_issue_comment_reacts_through_the_issues_namespace(
         monkeypatch,
         tmp_path,
         "issue_comment",
-        {"issue": {"number": 7}, "comment": {"id": 42}},
+        {
+            "issue": {"number": 7},
+            "comment": {"id": 42, "body": "/coral", "author_association": "OWNER"},
+        },
     )
     event = runner.event()
     assert event.number == 7
-    assert event.comment == Comment(id=42, namespace="issues")
+    assert event.comment == Comment(id=42, namespace="issues", body="/coral", association="OWNER")
 
 
 def test_a_review_comment_reacts_through_the_pulls_namespace(
@@ -54,11 +57,14 @@ def test_a_review_comment_reacts_through_the_pulls_namespace(
         monkeypatch,
         tmp_path,
         "pull_request_review_comment",
-        {"pull_request": {"number": 7}, "comment": {"id": 42}},
+        {
+            "pull_request": {"number": 7},
+            "comment": {"id": 42, "body": "/coral", "author_association": "MEMBER"},
+        },
     )
     event = runner.event()
     assert event.number == 7
-    assert event.comment == Comment(id=42, namespace="pulls")
+    assert event.comment == Comment(id=42, namespace="pulls", body="/coral", association="MEMBER")
 
 
 def test_an_event_coral_does_not_handle_is_a_broken_workflow_file(

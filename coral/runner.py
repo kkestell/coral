@@ -14,10 +14,16 @@ from typing import Any, Literal
 
 @dataclass(frozen=True)
 class Comment:
-    """The comment that triggered this run, and the namespace its reaction endpoint lives in."""
+    """The comment that triggered this run, and the namespace its reaction endpoint lives in.
+
+    The body and the association come along because this comment is not always in the fetched
+    conversation, and the payload is the only place they can be read without another call.
+    """
 
     id: int
     namespace: Literal["issues", "pulls"]
+    body: str
+    association: str
 
 
 @dataclass(frozen=True)
@@ -29,6 +35,17 @@ class Event:
     repo: str
     number: int
     comment: Comment | None
+
+
+def commented(payload: dict[str, Any], namespace: Literal["issues", "pulls"]) -> Comment:
+    """The comment off a comment delivery. Both comment events carry it under the same key."""
+    comment = payload["comment"]
+    return Comment(
+        id=comment["id"],
+        namespace=namespace,
+        body=comment["body"],
+        association=comment["author_association"],
+    )
 
 
 def event() -> Event:
@@ -45,10 +62,10 @@ def event() -> Event:
             comment = None
         case "issue_comment":
             number = payload["issue"]["number"]
-            comment = Comment(id=payload["comment"]["id"], namespace="issues")
+            comment = commented(payload, "issues")
         case "pull_request_review_comment":
             number = payload["pull_request"]["number"]
-            comment = Comment(id=payload["comment"]["id"], namespace="pulls")
+            comment = commented(payload, "pulls")
         case _:
             raise AssertionError(f"Coral was invoked on a {name} event, which it does not handle.")
 

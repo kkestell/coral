@@ -5,14 +5,19 @@ query in the module under test, and was trimmed by hand to a few nodes of each k
 proves is that the parsing reads the shape GitHub actually sends. Whether GitHub still sends it
 is what a live run finds out, and nothing here asserts anything about GitHub's behavior.
 
-Everything the real response does not contain — a deleted author, an unsubmitted review, bodies
-long enough to make the character bound bind first — is built by the helpers underneath it.
+Everything the real response does not contain — a deleted author, an unsubmitted review, a
+comment Coral has already reacted to, bodies long enough to make the character bound bind first
+— is built by the helpers underneath it.
+
+Every node in the response carried all eight reaction groups with every `viewerHasReacted`
+false, so the eight are held in one helper rather than written out five times.
 """
 
 from pathlib import Path
 from typing import Any
 
 from coral.github.conversation import (
+    EYES,
     MAX_CHARACTERS,
     MAX_COMMENTS,
     MAX_PAGES,
@@ -31,6 +36,18 @@ from coral.github.marker import marker
 COMMIT = "9f3a1c2b4d5e6f708192a3b4c5d6e7f809a1b2c3"
 OTHER_COMMIT = "1a2b3c4d5e6f708192a3b4c5d6e7f809a1b2c3d4"
 
+# The eight contents `reactionGroups` came back with, in the order it returned them.
+REACTIONS = ["THUMBS_UP", "THUMBS_DOWN", "LAUGH", "HOORAY", "CONFUSED", "HEART", "ROCKET", EYES]
+
+
+def groups(reacted: bool = False) -> list[dict[str, Any]]:
+    """The reaction groups on one comment, with Coral's own reaction on it or not."""
+    return [
+        {"content": content, "viewerHasReacted": reacted and content == EYES}
+        for content in REACTIONS
+    ]
+
+
 CAPTURED: dict[str, Any] = {
     "repository": {
         "pullRequest": {
@@ -40,15 +57,18 @@ CAPTURED: dict[str, Any] = {
                 "nodes": [
                     {
                         "id": "PRR_kwDODKw3uc6e4Dil",
+                        "databaseId": 2665494693,
                         "author": {"login": "BagToad"},
                         "authorAssociation": "MEMBER",
                         "state": "COMMENTED",
                         "submittedAt": "2025-03-06T20:02:02Z",
                         "body": "",
                         "commit": {"oid": "dde7e24847970df859ca883ba316b4e09d039a71"},
+                        "reactionGroups": groups(),
                     },
                     {
                         "id": "PRR_kwDODKw3uc6fQFov",
+                        "databaseId": 2671794735,
                         "author": {"login": "jtmcg"},
                         "authorAssociation": "CONTRIBUTOR",
                         "state": "APPROVED",
@@ -59,6 +79,7 @@ CAPTURED: dict[str, Any] = {
                             ":shipit: "
                         ),
                         "commit": {"oid": "f43e1cafdba856830f2592085bde14e6f32d9617"},
+                        "reactionGroups": groups(),
                     },
                 ],
             },
@@ -80,6 +101,7 @@ CAPTURED: dict[str, Any] = {
                             "nodes": [
                                 {
                                     "id": "PRRC_kwDODKw3uc51qgxu",
+                                    "databaseId": 1974078574,
                                     "author": {"login": "copilot-pull-request-reviewer"},
                                     "authorAssociation": "CONTRIBUTOR",
                                     "body": (
@@ -89,42 +111,53 @@ CAPTURED: dict[str, Any] = {
                                     "createdAt": "2025-02-27T17:51:06Z",
                                     "outdated": True,
                                     "originalLine": 679,
+                                    "reactionGroups": groups(),
                                 }
                             ],
                         },
                     },
                     {
-                        "id": "PRRT_kwDODKw3uc5LYbpe",
-                        "isResolved": False,
+                        "id": "PRRT_kwDODKw3uc5LvvEj",
+                        "isResolved": True,
                         "isOutdated": False,
-                        "path": "acceptance/testdata/pr/pr-create-respects-branch-pushremote.txtar",
-                        "line": 32,
-                        "startLine": 21,
+                        "path": (
+                            "acceptance/testdata/pr/pr-create-respects-simple-pushdefault.txtar"
+                        ),
+                        "line": 20,
+                        "startLine": 20,
                         "diffSide": "RIGHT",
                         "subjectType": "LINE",
                         "comments": {
                             "totalCount": 2,
                             "nodes": [
                                 {
-                                    "id": "PRRC_kwDODKw3uc51q_aZ",
-                                    "author": {"login": "jtmcg"},
+                                    "id": "PRRC_kwDODKw3uc52Odl8",
+                                    "databaseId": 1983502716,
+                                    "author": {"login": "andyfeller"},
                                     "authorAssociation": "CONTRIBUTOR",
                                     "body": (
-                                        "My only concern with this is that both `gh repo fork` "
-                                        "and `gh repo clone` set `gh-resolved` in the git config."
+                                        "```suggestion\r\nexec git config set push.default "
+                                        "simple\r\n```"
                                     ),
-                                    "createdAt": "2025-02-27T19:20:15Z",
+                                    "createdAt": "2025-03-06T14:52:51Z",
                                     "outdated": False,
-                                    "originalLine": 32,
+                                    "originalLine": 20,
+                                    "reactionGroups": groups(),
                                 },
                                 {
-                                    "id": "PRRC_kwDODKw3uc51rzwt",
+                                    "id": "PRRC_kwDODKw3uc52QOwV",
+                                    "databaseId": 1983966229,
                                     "author": {"login": "BagToad"},
                                     "authorAssociation": "MEMBER",
-                                    "body": "Let's delete this from the config in these tests.",
-                                    "createdAt": "2025-02-27T22:21:43Z",
+                                    "body": (
+                                        "I'm a bit confused, sorry. Can you clarify if you are "
+                                        "asking a if the current implementation works or if your "
+                                        "suggestion works?"
+                                    ),
+                                    "createdAt": "2025-03-06T19:52:02Z",
                                     "outdated": False,
-                                    "originalLine": 32,
+                                    "originalLine": 20,
+                                    "reactionGroups": groups(),
                                 },
                             ],
                         },
@@ -137,10 +170,12 @@ CAPTURED: dict[str, Any] = {
                 "nodes": [
                     {
                         "id": "IC_kwDODKw3uc6hLDQv",
+                        "databaseId": 2704028719,
                         "author": {"login": "andyfeller"},
                         "authorAssociation": "CONTRIBUTOR",
                         "body": "On it! \U0001fae1 ",
                         "createdAt": "2025-03-06T14:35:12Z",
+                        "reactionGroups": groups(),
                     }
                 ],
             },
@@ -165,13 +200,17 @@ def comment_node(
     written_at: str = "2025-01-01T00:00:00Z",
     author: str | None = "somebody",
     association: str = "NONE",
+    database_id: int = 1,
+    reacted: bool = False,
 ) -> dict[str, Any]:
     return {
         "id": identifier,
+        "databaseId": database_id,
         "author": {"login": author} if author else None,
         "authorAssociation": association,
         "body": body,
         "createdAt": written_at,
+        "reactionGroups": groups(reacted),
     }
 
 
@@ -183,15 +222,18 @@ def review_node(
     association: str = "MEMBER",
     state: str = "COMMENTED",
     commit: str | None = COMMIT,
+    database_id: int = 1,
 ) -> dict[str, Any]:
     return {
         "id": identifier,
+        "databaseId": database_id,
         "author": {"login": author} if author else None,
         "authorAssociation": association,
         "state": state,
         "submittedAt": written_at,
         "body": body,
         "commit": {"oid": commit} if commit else None,
+        "reactionGroups": groups(),
     }
 
 
@@ -243,21 +285,42 @@ def test_parsing_a_captured_response_keeps_the_author_association() -> None:
     assert [(c.author, c.association) for c in comments] == [("andyfeller", "CONTRIBUTOR")]
     assert [(r.author, r.association) for r in reviews] == [("jtmcg", "CONTRIBUTOR")]
     assert [(c.author, c.association) for c in threads[1].comments] == [
-        ("jtmcg", "CONTRIBUTOR"),
+        ("andyfeller", "CONTRIBUTOR"),
         ("BagToad", "MEMBER"),
     ]
 
 
 def test_parsing_a_captured_response_keeps_a_thread_whole() -> None:
     thread = parse_threads(connection("reviewThreads")["nodes"])[1]
-    assert (thread.resolved, thread.outdated) == (False, False)
+    assert (thread.resolved, thread.outdated) == (True, False)
     assert (thread.path, thread.line, thread.start_line) == (
-        "acceptance/testdata/pr/pr-create-respects-branch-pushremote.txtar",
-        32,
-        21,
+        "acceptance/testdata/pr/pr-create-respects-simple-pushdefault.txtar",
+        20,
+        20,
     )
     assert (thread.diff_side, thread.subject_type) == ("RIGHT", "LINE")
     assert thread.total_comments == 2
+
+
+def test_parsing_a_captured_response_keeps_the_rest_id_and_the_reaction_state() -> None:
+    # The REST id is what the reaction endpoints take, and the GraphQL node id beside it is not.
+    # Nobody has reacted to any of these, which is what the account behind the token had done.
+    comment = parse_comments(connection("comments")["nodes"])[0]
+    review = parse_reviews(connection("reviews")["nodes"])[0]
+    thread_comment = parse_threads(connection("reviewThreads")["nodes"])[0].comments[0]
+    assert (comment.database_id, comment.reacted) == (2704028719, False)
+    assert (review.database_id, review.reacted) == (2671794735, False)
+    assert (thread_comment.database_id, thread_comment.reacted) == (1974078574, False)
+
+
+def test_a_comment_coral_has_already_reacted_to_says_so() -> None:
+    # There is no `viewerHasReacted` on a comment. The eight groups are the only route to it, and
+    # the viewer they answer for is the account the job's token belongs to.
+    reacted, plain = parse_comments(
+        [comment_node("IC_1", reacted=True), comment_node("IC_2", reacted=False)]
+    )
+    assert reacted.reacted is True
+    assert plain.reacted is False
 
 
 def test_a_thread_against_a_deleted_line_has_no_line() -> None:

@@ -1,4 +1,4 @@
-"""Creating the review: one API call carrying the summary and every finding.
+"""Creating the review, and the plain comment Coral posts when there is no review to make.
 
 A whole-file finding and a pull-request-level finding go into the body by construction rather
 than by failure. The `comments` array on the create-review endpoint accepts seven fields and
@@ -22,6 +22,18 @@ def signed(commit: str, body: str) -> str:
     the comment can, wherever the comment sits.
     """
     return f"{marker(commit)}\n\n{body}"
+
+
+def post_comment(github: GitHub, owner: str, repo: str, number: int, commit: str, body: str) -> Any:
+    """Post one comment on the pull request as a whole.
+
+    What Coral has to say when there is no review to post: the change is larger than Coral will
+    read, or the run failed. It carries the marker so a later run recognizes it as Coral's, and
+    it does not enter the record of reviewed commits, which is read from review bodies alone.
+    """
+    return github.post(
+        f"/repos/{owner}/{repo}/issues/{number}/comments", {"body": signed(commit, body)}
+    )
 
 
 def post_review(

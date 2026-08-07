@@ -36,21 +36,33 @@ MAX_COMMENTS: Final = 200
 MAX_CHARACTERS: Final = 400_000
 MAX_PAGES: Final = 4
 
+# The reaction Coral acknowledges a request with, spelled as GraphQL spells the enum. The REST
+# endpoint that leaves one takes the same name in lower case, and `coral/github/reactions.py`
+# reads it from here so the two spellings stay one fact.
+EYES: Final = "EYES"
+
 # The field list for each node type, shared by the first query and the query that pages one
 # connection back, so there is one definition of what a review, a thread, and a comment are.
 # Comments are read under `reviewThreads` and never under `reviews`: every inline comment is
 # reachable both ways, the resolution and staleness flags live only on the thread, and asking
 # both ways returns each comment twice.
+#
+# `databaseId` is the REST comment id, which is what the reaction endpoints take and what the
+# GraphQL node id is not. `reactionGroups` is how Coral knows it has already reacted. Both are
+# asked for on reviews as well, because the review dataclass inherits the comment's fields and
+# not because a review is ever a reaction target.
 
 REVIEW_FIELDS: Final = """
 fragment ReviewFields on PullRequestReview {
   id
+  databaseId
   author { login }
   authorAssociation
   state
   submittedAt
   body
   commit { oid }
+  reactionGroups { content viewerHasReacted }
 }
 """
 
@@ -68,12 +80,14 @@ fragment ThreadFields on PullRequestReviewThread {
     totalCount
     nodes {
       id
+      databaseId
       author { login }
       authorAssociation
       body
       createdAt
       outdated
       originalLine
+      reactionGroups { content viewerHasReacted }
     }
   }
 }
@@ -82,10 +96,12 @@ fragment ThreadFields on PullRequestReviewThread {
 COMMENT_FIELDS: Final = """
 fragment CommentFields on IssueComment {
   id
+  databaseId
   author { login }
   authorAssociation
   body
   createdAt
+  reactionGroups { content viewerHasReacted }
 }
 """
 
@@ -211,6 +227,8 @@ class Comment:
     """One piece of prose somebody wrote on the pull request as a whole."""
 
     id: str
+    # The REST id, which is the one the reaction endpoints take.
+    database_id: int
     # `None` when the account that wrote it has been deleted. The association survives that.
     author: str | None
     # A `str` rather than a `Literal`: an association GitHub adds later is not a reason to crash.
@@ -218,6 +236,7 @@ class Comment:
     body: str
     written_at: str
     mine: bool
+    reacted: bool
 
 
 @dataclass(frozen=True)
@@ -314,16 +333,31 @@ def is_mine(body: str) -> bool:
     return reviewed_commit(body) is not None
 
 
+def already_reacted(node: dict[str, Any]) -> bool:
+    """Whether Coral's reaction is already on this comment.
+
+    The viewer `viewerHasReacted` answers for is the account the job's token belongs to. Reading
+    it off the conversation is what saves a REST call per comment before each reaction, and a
+    wrong answer costs one duplicate POST and nothing else: posting a reaction that is already
+    there returns 200 and creates nothing.
+    """
+    return any(
+        group["content"] == EYES and group["viewerHasReacted"] for group in node["reactionGroups"]
+    )
+
+
 def parse_comments(nodes: list[Any]) -> list[Comment]:
     """The issue comments, which are the comments on the pull request as a whole."""
     return [
         Comment(
             id=node["id"],
+            database_id=node["databaseId"],
             author=author_of(node),
             association=node["authorAssociation"],
             body=node["body"],
             written_at=node["createdAt"],
             mine=is_mine(node["body"]),
+            reacted=already_reacted(node),
         )
         for node in nodes
     ]
@@ -341,11 +375,13 @@ def parse_reviews(nodes: list[Any]) -> list[PastReview]:
         reviews.append(
             PastReview(
                 id=node["id"],
+                database_id=node["databaseId"],
                 author=author_of(node),
                 association=node["authorAssociation"],
                 body=node["body"],
                 written_at=node["submittedAt"],
                 mine=is_mine(node["body"]),
+                reacted=already_reacted(node),
                 state=node["state"],
                 commit=node["commit"]["oid"] if node["commit"] else None,
             )
@@ -358,11 +394,13 @@ def parse_thread_comments(nodes: list[Any]) -> list[ThreadComment]:
     return [
         ThreadComment(
             id=node["id"],
+            database_id=node["databaseId"],
             author=author_of(node),
             association=node["authorAssociation"],
             body=node["body"],
             written_at=node["createdAt"],
             mine=is_mine(node["body"]),
+            reacted=already_reacted(node),
             outdated=node["outdated"],
             original_line=node["originalLine"],
         )

@@ -83,3 +83,16 @@ The first of these is the read-only fetch against a public pull request describe
 3. Comment `/coral` on that pull request. The second review says it read the first review's marker, naming the commit, and counts the comment that asked.
 4. Reply to Coral's inline finding, resolve the thread, then comment `/coral` again. The third review reports the thread as resolved, reports the reply as somebody else's, and reports Coral's own finding as Coral's.
 5. Push a commit that changes the line under Coral's finding, then comment `/coral`. The review reports that thread as outdated, which is the flag a finding's standing is decided by.
+
+**The gatekeeper**
+
+The last of these needs a second account, and what to do without one is said underneath.
+
+1. Open a pull request and comment a body carrying `/coral` inside a code fence, mid-sentence, and quoted with a blockquote marker, and no live command anywhere. A run starts, because the job condition is coarse. No reaction appears, no review is posted, and the run is green.
+2. Comment `/coral` alone on its own line, with prose on the lines around it. The comment gets the reaction and a review appears. This is the control for the check above.
+3. Comment `/coral`, and while that run is going, comment `/coral` twice more in quick succession. The second run is queued and then cancelled by the third. All three comments carry the reaction, and two reviews appear. This is the reaction pass reaching a request the triggering payload cannot.
+4. Reply `/coral` on the diff. That comment carries the reaction, which is the pulls namespace, and the reaction pass does not add a second one on a later run. This is the check that says whether `viewerHasReacted` answers for the account the job's token belongs to.
+5. Close the pull request and comment `/coral`. The comment carries the reaction, the run declines because the pull request is closed, no review is posted, and the run is green.
+6. Open a pull request ready for review and let Coral review it. Convert it to a draft and mark it ready again. The run starts, declines because the commit already carries a marker, and posts nothing. Then comment `/coral` on the same unchanged commit and get a review, which is the half of that gate that only applies to the automatic paths.
+7. Open a pull request adding a generated file of more than 30,000 lines. Coral posts one comment saying the change exceeds what it will read, posts no review, and the run is green.
+8. Fork `kkestell/coral-test` into an organization or a second account, open a pull request from that fork, and comment `/coral`. The run declines because the head lives in a fork. The fork gate is the one check here that needs a head branch in another account: where no second account is available, it is covered by its unit test alone and this check is recorded as not run.
