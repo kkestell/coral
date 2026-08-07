@@ -99,17 +99,12 @@ Done when: a real review in the test repository posts everything it posts today,
 
 ## 11. A key per run
 
-Status: not started
+Status: built
 Depends on: 10
 
-Coral accepts either a plain OpenRouter API key, used as it is today, or a management key it uses to mint one API key per run. Minting is safe only once item 10 keeps the management key out of the agent's job, because a management key mints against the whole account balance.
+Coral takes either a plain OpenRouter API key, used as it is, or a management key it mints one capped, expiring API key per run with. `coral/openrouter.py` is the only place Coral speaks to the management API, and the resolve job is the only job the management key reaches.
 
-- Two `workflow_call` secrets, `openrouter_api_key` and `openrouter_management_key`; resolve fails when neither or both are set. Never one input whose kind Coral detects — detection costs a probe request, and the caller knows which one they created.
-- `POST /api/v1/keys` takes `limit` and `expires_at` and returns the key once alongside a `hash`. Set `expires_at` to cover the run, so revocation does not depend on a cleanup job that can be cancelled or skipped.
-- A management key cannot call the completion endpoints, and a per-key `limit` caps that key rather than partitioning the account balance.
-- Pass-through mode needs no channel; the review job reads the caller's secret directly. Minting mode crosses as a job output, because Actions refuses to set an output matching a registered secret.
-- Mask the minted key only where it is received, and never log it where it is minted: the runner drops a job output whose value its masker would alter, so a key masked at creation never crosses.
-- Both modes get live checks. The workflow and the composite actions have no `pytest` coverage, so an unexercised mode is an untested one.
+- A minted key reaches the review job through one cleartext line of that job's log, which no arrangement of masking removes. "The Run" in `.agents/docs/architecture.md` holds the measurement; item 12 is what ends it.
 
 Done when: a real review runs green in each mode, the minted key no longer authenticates once its run is over, and the README says which mode to choose.
 
