@@ -5,8 +5,10 @@ object in `coral/schema.py` and never on DeepAgents, which is what keeps the fra
 seconds of import off `coral resolve` and keeps the rest of the code testable without it.
 """
 
+import functools
 import logging
 import os
+from collections.abc import Callable
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Final
@@ -22,6 +24,7 @@ from deepagents.backends import LocalShellBackend
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models.model_profile import ModelProfile
 from langchain_core.messages import HumanMessage
+from langchain_core.tools import StructuredTool
 from langchain_openrouter import ChatOpenRouter
 from langgraph.runtime import Runtime
 from pydantic import SecretStr
@@ -105,6 +108,38 @@ def verify_prompt() -> str:
     return (files("coral") / "prompts" / "verify.md").read_text(encoding="utf-8")
 
 
+def caught(inner: Callable[..., Any]) -> Callable[..., Any]:
+    """A tool function that answers with its own error instead of raising it."""
+
+    @functools.wraps(inner)
+    def call(*arguments: Any, **keywords: Any) -> Any:
+        try:
+            return inner(*arguments, **keywords)
+        except Exception as error:
+            log.info("A tool call failed; handing the error back to the model: %s", error)
+            return f"{type(error).__name__}: {error}"
+
+    # `functools.wraps` copies `__wrapped__`, which is what keeps `inspect.signature` seeing the
+    # real parameters. LangChain reads them to decide which arguments to inject.
+    return call
+
+
+def forgiving(middleware: FilesystemMiddleware) -> FilesystemMiddleware:
+    """Hand each tool's errors to the model rather than ending the run.
+
+    A path with `..` in it, a file that is not there, a command that will not parse: the model
+    wrote the argument and the model is the one who can fix it on the next step. LangChain turns
+    only a `ToolException` into an observation and the backend raises `ValueError`, so without
+    this one wrong path ends a review with fifteen minutes still on its budget. Observed on a
+    real run, where the first `read_file` call used `..` and took the whole review down with it.
+    """
+    for tool in middleware.tools:
+        assert isinstance(tool, StructuredTool), f"{tool.name} is a {type(tool).__name__}"
+        assert tool.func is not None, f"{tool.name} has no sync implementation to wrap"
+        tool.func = caught(tool.func)
+    return middleware
+
+
 def _run(
     api_key: str,
     workspace: Path,
@@ -152,7 +187,9 @@ def _run(
         # A forwarding wrapper around the backend is not an alternative: it fails the framework's
         # `isinstance` check against `SandboxBackendProtocol`.
         middleware=[
-            FilesystemMiddleware(backend=backend, max_execute_timeout=SHELL_CEILING_SECONDS),
+            forgiving(
+                FilesystemMiddleware(backend=backend, max_execute_timeout=SHELL_CEILING_SECONDS)
+            ),
             DeadlineMiddleware(deadline),
         ],
         backend=backend,
