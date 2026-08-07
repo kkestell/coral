@@ -9,7 +9,8 @@ from coral.deadline import REVIEWER_BUDGET_SECONDS, start
 from coral.diff import added_lines, diff_text, merge_base, reset
 from coral.github.client import GitHub
 from coral.github.conversation import Comment, Conversation, Thread, read_conversation
-from coral.github.post import count, is_open, post_review
+from coral.github.post import count, is_open, post_comment, post_review
+from coral.report import described, failure_comment
 from coral.schema import Review, confirmed, where
 
 log = logging.getLogger(__name__)
@@ -177,48 +178,65 @@ def review() -> None:
     head = pull_request["head"]["sha"]
     base = pull_request["base"]["sha"]
 
-    conversation = read_conversation(runner.conversation_path())
-    workspace = runner.workspace()
-    # The merge base is hoisted out of the diff call so the lines an anchor is checked against
-    # come from the same diff the agent read.
-    common = merge_base(workspace, base, head)
-    diff = diff_text(workspace, common, head)
-    added = set(added_lines(workspace, common, head))
-    request = render_request(pull_request["title"], pull_request["body"], diff, conversation)
-    log.info("Asking the agent to review %s in %d characters.", head, len(request))
+    # Everything from here down is inside the failure path. Above it are the two credentials and
+    # the pull request off disk, and a failure there leaves this step without the client or the
+    # commit it would post with — which is the report step's to cover, and it does.
+    try:
+        conversation = read_conversation(runner.conversation_path())
+        workspace = runner.workspace()
+        # The merge base is hoisted out of the diff call so the lines an anchor is checked against
+        # come from the same diff the agent read.
+        common = merge_base(workspace, base, head)
+        diff = diff_text(workspace, common, head)
+        added = set(added_lines(workspace, common, head))
+        request = render_request(pull_request["title"], pull_request["body"], diff, conversation)
+        log.info("Asking the agent to review %s in %d characters.", head, len(request))
 
-    # Deferred: importing the agent framework costs about two seconds, and `coral/cli.py` imports
-    # this module to reach `review`, so `coral resolve` would pay for it on every delivery.
-    from coral.agent import produce_review, verify_findings
+        # Deferred: importing the agent framework costs about two seconds, and `coral/cli.py`
+        # imports this module to reach `review`, so `coral resolve` would pay for it on every
+        # delivery.
+        from coral.agent import produce_review, verify_findings
 
-    # The reviewer gets a slice of the step rather than the whole of it, so that whatever it
-    # leaves behind is time the verifier is guaranteed.
-    review = produce_review(api_key, workspace, request, start(REVIEWER_BUDGET_SECONDS))
+        # The reviewer gets a slice of the step rather than the whole of it, so that whatever it
+        # leaves behind is time the verifier is guaranteed.
+        review = produce_review(api_key, workspace, request, start(REVIEWER_BUDGET_SECONDS))
 
-    if review.findings:
-        reset(workspace)
-        log.info("Asking a second agent to verify %s.", count(len(review.findings), "finding"))
-        verification = verify_findings(
-            api_key,
-            workspace,
-            render_verification_request(pull_request["title"], pull_request["body"], diff, review),
-            deadline,
+        if review.findings:
+            reset(workspace)
+            log.info("Asking a second agent to verify %s.", count(len(review.findings), "finding"))
+            verification = verify_findings(
+                api_key,
+                workspace,
+                render_verification_request(
+                    pull_request["title"], pull_request["body"], diff, review
+                ),
+                deadline,
+            )
+            # Every verdict is logged with its reason, because the log is the only record of one: a
+            # reason is never posted, and a rejected finding is never posted either.
+            for index in range(len(review.findings)):
+                rulings = [verdict for verdict in verification.verdicts if verdict.finding == index]
+                if not rulings:
+                    log.info("Finding %d dropped: no verdict named it.", index)
+                for ruling in rulings:
+                    outcome = "confirmed" if ruling.confirmed else "dropped"
+                    log.info("Finding %d %s: %s", index, outcome, ruling.reason)
+            review = confirmed(review, verification)
+
+        # Resolve's check was minutes and two agent runs ago, and a review landing after the merge
+        # is advice nobody can act on.
+        if not is_open(github, owner, repo, number):
+            log.info("Pull request %d is no longer open; posting nothing.", number)
+            return
+
+        post_review(github, owner, repo, number, head, review, added)
+    except Exception as error:
+        log.exception("The review failed; reporting it on the pull request.")
+        post_comment(
+            github, owner, repo, number, head, failure_comment(described(error), runner.run_url())
         )
-        # Every verdict is logged with its reason, because the log is the only record of one: a
-        # reason is never posted, and a rejected finding is never posted either.
-        for index in range(len(review.findings)):
-            rulings = [verdict for verdict in verification.verdicts if verdict.finding == index]
-            if not rulings:
-                log.info("Finding %d dropped: no verdict named it.", index)
-            for ruling in rulings:
-                outcome = "confirmed" if ruling.confirmed else "dropped"
-                log.info("Finding %d %s: %s", index, outcome, ruling.reason)
-        review = confirmed(review, verification)
-
-    # Resolve's check was minutes and two agent runs ago, and a review landing after the merge is
-    # advice nobody can act on.
-    if not is_open(github, owner, repo, number):
-        log.info("Pull request %d is no longer open; posting nothing.", number)
-        return
-
-    post_review(github, owner, repo, number, head, review, added)
+        # Written after the post, so a post that fails leaves the comment still owed and the report
+        # step still covering it. The file exists only when a comment landed.
+        runner.reported_path().write_text("")
+        # Re-raised: a run that could not review is red.
+        raise

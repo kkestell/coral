@@ -98,6 +98,11 @@ def test_a_signed_body_opens_with_the_marker() -> None:
     assert signed(COMMIT, "prose").startswith(marker(COMMIT))
 
 
+def test_a_signed_body_naming_no_commit_opens_with_the_bare_sentinel() -> None:
+    # What `post_comment` sends when a run failed before anything pinned a commit.
+    assert signed(None, "prose").startswith(marker(None))
+
+
 def test_a_count_of_one_is_singular() -> None:
     assert count(1, "finding") == "1 finding"
     assert count(2, "finding") == "2 findings"

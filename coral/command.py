@@ -8,7 +8,7 @@ conversation.
 import re
 from typing import Final
 
-from coral.github.marker import reviewed_commit
+from coral.github.marker import is_mine
 
 # Spelled in lower case and matched exactly. The workflow's job-level condition uses `contains`,
 # which is not case sensitive, so `/CORAL` reaches a runner and then stops here with the command
@@ -71,6 +71,6 @@ def is_request(body: str, association: str) -> bool:
     # Coral cannot trigger itself today, because an event created with the job's own token
     # starts no workflow run at all. This is here because that property expires the moment Coral
     # is given an identity of its own.
-    if reviewed_commit(body) is not None:
+    if is_mine(body):
         return False
     return association in WRITE_ACCESS and asks_for_review(body)

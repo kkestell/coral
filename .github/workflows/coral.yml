@@ -62,3 +62,13 @@ jobs:
           coral-bin: ${{ steps.setup.outputs.bin }}
           github-token: ${{ github.token }}
           openrouter-api-key: ${{ secrets.openrouter_api_key }}
+
+      # `failure()` covers a failure in any earlier step, including one the run skipped past. The
+      # guard on setup is that a setup failure leaves no console script to run, so it is a death
+      # visible in the Actions tab and nowhere else; skipping says so in the run's own log rather
+      # than as a missing-file error.
+      - if: failure() && steps.setup.outcome == 'success'
+        uses: $/actions/report
+        with:
+          coral-bin: ${{ steps.setup.outputs.bin }}
+          github-token: ${{ github.token }}

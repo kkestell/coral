@@ -132,3 +132,9 @@ def test_a_comment_carrying_corals_marker_is_never_a_request() -> None:
     # Free today, because an event created with the job's own token starts no run. Here for the
     # day Coral has an identity of its own.
     assert is_request(f"{marker(COMMIT)}\n\n/coral", "OWNER") is False
+
+
+def test_a_comment_carrying_a_marker_naming_no_commit_is_never_a_request() -> None:
+    # The self-exclusion the marker's optional commit could have broken: a failure comment posted
+    # before anything pinned a commit is still Coral's own.
+    assert is_request(f"{marker(None)}\n\n/coral", "OWNER") is False

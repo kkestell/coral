@@ -4,12 +4,9 @@ import argparse
 import logging
 import sys
 
+from coral.report import report
 from coral.resolve import resolve
 from coral.review import review
-
-
-def report() -> None:
-    raise NotImplementedError
 
 
 def main() -> int:

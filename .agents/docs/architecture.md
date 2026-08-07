@@ -40,7 +40,7 @@ One console script, three subcommands — `coral resolve`, `coral review`, `cora
 - `coral/runner.py` — the event, step outputs, the temporary directory, the one reading of `GITHUB_WORKSPACE`.
 - `coral/resolve.py` — the gatekeeper: fetch the pull request and conversation, acknowledge requests, apply the gates.
 - `coral/review.py` — render each request, run both agents, filter, post the result.
-- `coral/report.py` — the failure step. Not built.
+- `coral/report.py` — the failure step.
 - `coral/agent.py` — the only module that imports `deepagents`.
 - `coral/schema.py` — the review object and its anchors, the verifier's verdicts, and the filter between them; the only place structure originates.
 - `coral/command.py` — what counts as a request: the command, who may make one, Coral's own comments.
@@ -57,7 +57,7 @@ One console script, three subcommands — `coral resolve`, `coral review`, `cora
 - `tests/` — one `test_<module>.py` per module under test.
 - `.github/workflows/coral.yml` — the `workflow_call` workflow.
 - `actions/setup/` — installs `uv`, builds Coral's virtual environment.
-- `actions/resolve/`, `actions/review/` — one `run:` step each.
+- `actions/resolve/`, `actions/review/`, `actions/report/` — one `run:` step each.
 - `examples/coral.yml` — the file a repository copies in to install Coral.
 
 Rules:

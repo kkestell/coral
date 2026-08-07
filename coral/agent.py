@@ -91,11 +91,12 @@ class DeadlineMiddleware(AgentMiddleware[Any, Any]):
     def before_model(self, state: Any, runtime: Runtime[Any]) -> dict[str, Any] | None:
         # Raised rather than ended gracefully. A fired deadline is a failure, and a graceful end
         # would arrive as "the agent returned no structured review" with the reason lost. The
-        # exception propagates out of `invoke`; item 8 on the roadmap turns it into a comment.
+        # exception propagates out of `invoke`, where the review step turns it into a comment; the
+        # message is the whole of what that comment says the reason was.
         if self.deadline.expired():
             raise RuntimeError(
                 f"Coral ran out of time after {self.deadline.elapsed():.0f} seconds, against a "
-                f"budget of {self.deadline.budget:.0f}. No review was posted."
+                f"budget of {self.deadline.budget:.0f}."
             )
         return None
 

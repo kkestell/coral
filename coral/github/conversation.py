@@ -24,7 +24,7 @@ from typing import Any, Final
 from pydantic import TypeAdapter
 
 from coral.github.client import GitHub
-from coral.github.marker import reviewed_commit
+from coral.github.marker import is_mine, reviewed_commit
 
 log = logging.getLogger(__name__)
 
@@ -326,11 +326,6 @@ class Candidate:
 def author_of(node: dict[str, Any]) -> str | None:
     """The login that wrote a node, or `None` when the account is gone."""
     return node["author"]["login"] if node["author"] else None
-
-
-def is_mine(body: str) -> bool:
-    """Whether Coral wrote this. Every comment Coral posts carries the marker."""
-    return reviewed_commit(body) is not None
 
 
 def already_reacted(node: dict[str, Any]) -> bool:

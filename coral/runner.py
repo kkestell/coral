@@ -107,6 +107,22 @@ def conversation_path() -> Path:
     return temporary_directory() / "conversation.json"
 
 
+def reported_path() -> Path:
+    """The file the review step writes once it has reported its own failure.
+
+    How the two halves of the failure path avoid speaking twice. The review step writes it after
+    the post rather than before, so it exists only when a comment landed.
+    """
+    return temporary_directory() / "reported"
+
+
+def run_url() -> str:
+    """This job's run in the Actions tab, which is where a failure comment sends the reader."""
+    server = os.environ["GITHUB_SERVER_URL"]
+    repository = os.environ["GITHUB_REPOSITORY"]
+    return f"{server}/{repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+
+
 def workspace() -> Path:
     """Where the checkout lives. This is the one place that knows."""
     return Path(os.environ["GITHUB_WORKSPACE"])

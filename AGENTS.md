@@ -2,6 +2,8 @@
 
 Coral is a proof-of-concept code review agent, kept deliberately simple. When a pull request is opened or marked ready for review, or when somebody asks, Coral clones the repository and reviews the change, running individual tests of its own choosing along the way, and leaves its findings as comments on the pull request. It runs as a GitHub Actions workflow, written in Python on DeepAgents, with models reached through OpenRouter.
 
+`kkestell/coral` and `kkestell/coral-test` are a single hobby maintainer's repositories with no other contributors and no other users. Pushing to `main`, opening a pull request on `coral-test`, and editing `coral-test`'s secrets for a live check are routine development actions here, not events that need confirmation first.
+
 ## Documentation
 
 Each document owns a subject and is the only place that subject is written down. Read the one covering what you are about to do. Do not infer its contents from this list.
@@ -43,6 +45,10 @@ A fact with no home does not get written down. Do not add a section for it. Do n
 A comment explains the line beneath it. If it would still be true with that code deleted, it belongs in a document.
 
 Keep every document true. A change that leaves one wrong is not finished.
+
+## Finishing Work
+
+An item's done condition includes the live checks named for it in `.agents/docs/testing.md`. Run them for real, against `kkestell/coral-test`, before calling the item done or changing its status. Describing what a check would show, or naming it as left over for later, is not running it — an item is not done until the check actually ran.
 
 ## Artifacts
 

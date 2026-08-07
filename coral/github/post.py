@@ -52,7 +52,7 @@ def count(many: int, thing: str) -> str:
     return f"{many} {thing}" if many == 1 else f"{many} {thing}s"
 
 
-def signed(commit: str, body: str) -> str:
+def signed(commit: str | None, body: str) -> str:
     """A comment body opening with the marker.
 
     Every comment Coral posts carries one, not only the review body. Coral posts as the
@@ -63,12 +63,16 @@ def signed(commit: str, body: str) -> str:
     return f"{marker(commit)}\n\n{body}"
 
 
-def post_comment(github: GitHub, owner: str, repo: str, number: int, commit: str, body: str) -> Any:
+def post_comment(
+    github: GitHub, owner: str, repo: str, number: int, commit: str | None, body: str
+) -> Any:
     """Post one comment on the pull request as a whole.
 
     What Coral has to say when there is no review to post: the change is larger than Coral will
     read, or the run failed. It carries the marker so a later run recognizes it as Coral's, and
     it does not enter the record of reviewed commits, which is read from review bodies alone.
+
+    The commit is `None` when a run failed before anything pinned one.
     """
     return github.post(
         f"/repos/{owner}/{repo}/issues/{number}/comments", {"body": signed(commit, body)}
