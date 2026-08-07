@@ -8,6 +8,7 @@ seconds of import off `coral resolve` and keeps the rest of the code testable wi
 import functools
 import logging
 import os
+import time
 from collections.abc import Callable
 from importlib.resources import files
 from pathlib import Path
@@ -116,11 +117,14 @@ def caught(inner: Callable[..., Any]) -> Callable[..., Any]:
 
     @functools.wraps(inner)
     def call(*arguments: Any, **keywords: Any) -> Any:
+        start = time.monotonic()
         try:
             return inner(*arguments, **keywords)
         except Exception as error:
             log.info("A tool call failed; handing the error back to the model: %s", error)
             return f"{type(error).__name__}: {error}"
+        finally:
+            log.info("%s took %.1f seconds.", inner.__name__, time.monotonic() - start)
 
     # `functools.wraps` copies `__wrapped__`, which is what keeps `inspect.signature` seeing the
     # real parameters. LangChain reads them to decide which arguments to inject.
@@ -204,7 +208,11 @@ def _run(
 
     log.info("Running the agent over %s with %.0f seconds of budget.", workspace, deadline.budget)
     result: dict[str, Any] = bounded.invoke({"messages": [HumanMessage(request)]})
-    log.info("The agent finished after %.0f seconds.", deadline.elapsed())
+    log.info(
+        "The agent finished after %.0f seconds and %d messages.",
+        deadline.elapsed(),
+        len(result["messages"]),
+    )
     return result
 
 
