@@ -147,7 +147,7 @@ Done when: a review in the test repository runs green on a model, an effort, and
 
 ## 15. A spend ceiling
 
-Status: not started
+Status: built
 Depends on: 14
 
 Coral stops a review that has spent more than the caller's cap, in both key modes. Every OpenRouter response carries its own cost, which `ChatOpenRouter` puts in the message's `response_metadata`; the running total is checked between steps, where the deadline is checked.
