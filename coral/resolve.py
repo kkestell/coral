@@ -178,6 +178,11 @@ def resolve() -> None:
     # Beside the key-mode check for the same reason, and here rather than in the review job because
     # this is where the number the review job's `timeout-minutes` reads is derived from it.
     timeout = reported(lambda: job_timeout_minutes(os.environ["CORAL_TIME_BUDGET_MINUTES"]))
+    log.info(
+        "A budget of %s minutes, so the review job gets a timeout of %d.",
+        os.environ["CORAL_TIME_BUDGET_MINUTES"],
+        timeout,
+    )
 
     event = runner.event()
     github = GitHub(token=os.environ["GITHUB_TOKEN"])
