@@ -163,7 +163,7 @@ Done when: a review with a deliberately bad anchor still delivers every finding,
 
 ## 8. Failure
 
-Status: built
+Status: verified
 Depends on: 7
 
 Write `coral/report.py` and the failure path inside `coral review`. Every way a review can fail ends in one comment on the pull request — a reaction followed by silence is worse than no reaction. The two halves meet at a file in the runner's temporary directory.
