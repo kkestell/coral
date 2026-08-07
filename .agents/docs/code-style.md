@@ -1,7 +1,5 @@
 # Code Style
 
-THIS FILE MUST BE KEPT UP TO DATE AT ALL TIMES
-
 ## "Just Enough" Python
 
 This is an experimentation project. Optimize for **cheap to change**, not robust to operate. The value of this code is how fast it can be rewritten tomorrow, so minimize committed surface area. When in doubt, do **less**.

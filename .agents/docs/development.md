@@ -1,13 +1,11 @@
 # Development
 
-THIS FILE MUST BE KEPT UP TO DATE AT ALL TIMES
-
 Everything needed to build, run, and check this project on a working machine. Every command here is a real command from this repository — never a plausible guess.
 
 ## Prerequisites
 
 - `uv` — installs the interpreter, resolves the dependencies, and runs every command below.
-- Python — the version is pinned in `.python-version`, which is what `uv` reads when it builds the environment, and again as `requires-python` in `pyproject.toml`. `uv` installs a matching interpreter itself, so nothing has to be installed by hand.
+- Python — the version is pinned in the repository, and `uv` installs a matching interpreter itself, so nothing has to be installed by hand.
 
 Nothing else has to exist outside the repository to run the checks. Running Coral against a real pull request needs the two credentials under "Environment", and in normal operation both are supplied by the workflow rather than by a person.
 
@@ -25,11 +23,21 @@ There is no build step. Coral is a console script over one package, and `uv sync
 - Format: `uv run ruff format`
 - Type-check: `uv run mypy`
 
-## Installing Coral Into A Repository
+### Reading A Conversation By Hand
 
-Copy `examples/coral.yml` into the repository as `.github/workflows/coral.yml`, on its default branch, and add an `OPENROUTER_API_KEY` secret. That one file is the whole installation. It carries the triggers, the permissions block, the concurrency group, the version pin, and the secret, because a reusable workflow cannot declare any of those for its caller.
+The conversation fetch is the one piece that pages, and no pull request in the test repository is busy enough to make it. Point it at a public pull request that is, with a token of your own. It reads and writes nothing.
 
-The default branch matters. On the comment paths GitHub always reads the workflow file from there, so a copy that lives only on a branch never runs.
+```
+GITHUB_TOKEN=$(gh auth token) uv run python -c "
+from coral.github.client import GitHub
+from coral.github.conversation import bound, fetch_conversation
+import os
+c = bound(fetch_conversation(GitHub(token=os.environ['GITHUB_TOKEN']), 'cli', 'cli', 10513))
+print(c.bound, len(c.threads))
+"
+```
+
+The log line the fetch writes to stderr says how many queries it took and what they cost, which is the measurement the conversation bound will eventually be settled against.
 
 ## Environment
 
@@ -42,5 +50,5 @@ Both are read once at start-up and are deliberately kept out of the agent's envi
 
 - `uv sync --frozen` fails rather than re-resolving when `pyproject.toml` and `uv.lock` disagree. The fix is `uv lock`, and the lockfile is committed.
 - Add and upgrade dependencies with `uv add`, so the resolver writes the version. A version typed into `pyproject.toml` by hand is a version nothing resolved.
-- The composite actions run the console script by absolute path, out of a virtual environment under `RUNNER_TEMP`. Nothing activates it and nothing puts it on `PATH`, so a step's own `PATH`, `VIRTUAL_ENV`, and `UV_*` are exactly what the runner set and reveal nothing about Coral. A step that ran `coral` bare rather than as `"$CORAL_BIN/coral"` would have to change that, and would break the property TR-42 rests on.
+- The composite actions run the console script by absolute path, out of a virtual environment under `RUNNER_TEMP`, and nothing activates it or puts it on `PATH`. A step that ran `coral` bare rather than as `"$CORAL_BIN/coral"` would have to change that, and "The Run" in `.agents/docs/architecture.md` says what it would cost.
 - `ruff format` reformats Python inside Markdown fences, which would rewrite the example code in the documents under `.agents/docs/`. `extend-exclude` in `pyproject.toml` keeps it away from Markdown; leave that setting in place.

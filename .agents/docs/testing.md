@@ -1,7 +1,5 @@
 # Testing
 
-THIS FILE MUST BE KEPT UP TO DATE AT ALL TIMES
-
 How this project tests itself: where the tests live, how to run them, and what a new test is expected to look like. The full-suite commands live in `.agents/docs/development.md`; this document covers everything narrower than that.
 
 Coral runs the tests of the repository under review. Those are not this project's tests, and nothing about them belongs in this document.
@@ -28,6 +26,8 @@ Coral runs the tests of the repository under review. Those are not this project'
 
 ## The Test Repository
 
+One kind of live check does not run there. Reading the conversation on a busy pull request needs a busy pull request, and nothing in `kkestell/coral-test` will ever carry 117 reviews, so that one check reads a public pull request in somebody else's repository. It is allowed because it writes nothing: it is a fetch, run by hand from a developer machine with a token from `gh auth token`, and it leaves no trace on the pull request it read.
+
 `kkestell/coral-test` is a public repository that exists for this and nothing else. Everything in it is disposable. Its branches, commits, and pull requests are worth nothing, so set one up to suit the check you are making and delete it afterward or leave it, whichever is less work.
 
 Use it. Do not point Coral at a repository whose pull requests somebody cares about, and do not describe what a run would do in place of making one.
@@ -43,7 +43,9 @@ The two credentials under "Environment" in `.agents/docs/development.md` are wha
 
 ## Fixtures and Test Data
 
-No fixtures yet. A test writes its input inline, as the JSON-shaped dictionaries the model would produce, and validates them through `pydantic.TypeAdapter`, which is the validator the agent framework itself uses on the review object. A test of the schema builds its payloads with the helpers already in `tests/test_schema.py` rather than adding its own.
+No fixture directory. A test writes its input inline, as the JSON-shaped dictionaries the model or the API would produce, and validates them through `pydantic.TypeAdapter`, which is the validator the agent framework itself uses on the review object. A test of the schema builds its payloads with the helpers already in `tests/test_schema.py` rather than adding its own.
+
+Where the input is a real API response, it is captured from a real pull request, trimmed by hand to a few nodes of each kind, and held inline with a comment saying where it came from and when. `tests/test_conversation.py` holds one such capture. One response in one test file is not a corpus and does not want a directory of its own.
 
 ## Writing a New Test
 
@@ -62,10 +64,22 @@ Each of the following is checked live against `kkestell/coral-test`, and a unit 
 
 ### The Live Checks
 
-Run these in `kkestell/coral-test`, in order, after pushing a change to the branch the example file pins. Each one's evidence is on the pull request rather than in the run log.
+Run these in `kkestell/coral-test`, in order within their group, after pushing a change to the branch the example file pins. Each one's evidence is on the pull request rather than in the run log. The groups accumulate: an item adds its checks when it is built, and the earlier groups stay, because a later change can break something an earlier one settled.
+
+**The walking skeleton**
 
 1. Open a pull request that changes one file. A review from Coral appears, carrying one inline comment on a changed line and a summary naming the commit.
 2. Comment `/coral` on that pull request. The comment gets the `eyes` reaction and a second review appears. This is the issues-namespace reaction, and the `issues: write` half of the permissions block.
 3. Reply `/coral` on the diff. That comment gets the `eyes` reaction and a third review appears. This is the pulls-namespace reaction.
 4. Close a pull request and comment `/coral` on it. The run starts, resolve declines, the checkout and review steps are skipped, no review is posted, and the run is green.
 5. Open a pull request as a draft. GitHub records a run and the job inside it is skipped, so no runner is allocated and nothing is posted. Marking the same pull request ready for review then produces a full run, which is the control that tells a rejected delivery apart from a dropped one.
+
+**Reading the conversation**
+
+The first of these is the read-only fetch against a public pull request described above, and runs from a developer machine. The rest are in `kkestell/coral-test` and are read off the pull request.
+
+1. Fetch the conversation for `cli/cli` 10513 by hand, with the command in `.agents/docs/development.md`. That pull request carries 117 reviews and 84 threads, so it forces a second page on the reviews connection and exercises the bound against real prose rather than against a capture. What comes back: 84 threads with most of them resolved and outdated, a bound reporting the comments it left out, and no already-reviewed commits, because Coral has never reviewed it.
+2. Open a pull request. Coral's review says it read a conversation of nothing. This is the question of whether the job's token reaches `reviewThreads` over GraphQL with the permissions block and nothing more: if it does not, this is where the run goes red.
+3. Comment `/coral` on that pull request. The second review says it read the first review's marker, naming the commit, and counts the comment that asked.
+4. Reply to Coral's inline finding, resolve the thread, then comment `/coral` again. The third review reports the thread as resolved, reports the reply as somebody else's, and reports Coral's own finding as Coral's.
+5. Push a commit that changes the line under Coral's finding, then comment `/coral`. The review reports that thread as outdated, which is the flag a finding's standing is decided by.
