@@ -185,9 +185,9 @@ def resolve() -> None:
         timeout,
     )
 
-    # Also before the fetch, and here rather than in the review job alone because this is where the
-    # minted key's own limit comes from. The review job validates the same value again to build the
-    # ledger its accounting runs against.
+    # Also before the fetch, and for the same reason the budget is. The same number is the limit
+    # the minted key is created with; the review job validates it again to build the ledger its own
+    # accounting runs against.
     cap = reported(lambda: cap_dollars(os.environ["CORAL_SPEND_CAP_DOLLARS"]))
 
     event = runner.event()
