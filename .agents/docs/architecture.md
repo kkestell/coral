@@ -7,7 +7,7 @@ How the code is organized and how it runs on GitHub Actions. The mechanics of ea
 - A GitHub Actions workflow. No cloud account, no standing service; GitHub supplies the trigger, compute, checkout, and credential.
 - Python, built with `uv`. Dependencies install with `uv sync --frozen` against the committed lockfile; nothing resolves at run time.
 - The agent is DeepAgents. Models are reached only through OpenRouter, via `langchain-openrouter`'s `ChatOpenRouter`.
-- The model is `openai/gpt-5.6-luna`: 1,050,000-token context, tool calling, structured outputs, reasoning output, and no `temperature` parameter. Named exactly rather than through a `~` alias, so the concrete model cannot change under a review.
+- The model is `openai/gpt-5.6-luna`: 1,050,000-token context, tool calling, structured outputs, reasoning output, and no `temperature` parameter. Named exactly rather than through a `~` alias, so the concrete model cannot change under a review. OpenRouter itself is the reported provider on every response; reading a real request on OpenRouter's own activity dashboard shows the upstream provider is OpenAI.
 - No datastore. Everything Coral remembers about a pull request is written on the pull request and read back each run. The rest of the design hangs off this.
 - `ruff`, `pytest`, and `mypy` are configured in `.python-version` and `pyproject.toml` and nowhere else.
 
@@ -81,9 +81,3 @@ Rules:
 - Hosted Ubuntu: 4 vCPU / 16 GB public, 2 vCPU / 8 GB private, 14 GB SSD. Larger runners need Team or Enterprise Cloud. Submodules and LFS are checkout inputs left at defaults.
 - Coral runs directly on the runner, never in a container: reviewing a repository means running its tests with its toolchain, and the hosted image's preinstalled toolchain is the only reason that works in a repository Coral has never seen.
 - On the comment paths the workflow file is read from the default branch, so a pull request cannot change how it is reviewed by asking. On the `pull_request` path it comes from the head, so a pull request can alter its own review — the same trust as every other job, since that population has write access and already runs code beside the secrets.
-
-## Undecided
-
-Decisions arrive here before they are made, not after.
-
-- Which provider serves the alias. `require_parameters` survives any answer.

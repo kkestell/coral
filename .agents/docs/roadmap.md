@@ -137,12 +137,10 @@ Done when: each failure mode listed here produces exactly one comment, and the r
 
 ## 9. Settle the numbers
 
-Status: built
+Status: verified
 Depends on: 8
 
-Every number under items 3 through 6 now carries a measured reason beside it, found where the number lives. GitHub's 422 body was read on a real rejection and names no anchor, settled in `coral/github/post.py` and no longer under "Undecided" in `.agents/docs/architecture.md`. Which provider serves the alias is still under "Undecided", pending a look at OpenRouter's own activity dashboard for a real review's request.
-
-Done when: nothing is left under "Undecided" in `.agents/docs/architecture.md`.
+Every number under items 3 through 6 now carries a measured reason beside it, found where the number lives. Both decisions once under "Undecided" in `.agents/docs/architecture.md` are answered there: GitHub's 422 body names no anchor, and the alias's upstream provider is OpenAI.
 
 ## Not On This Roadmap
 
