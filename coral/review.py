@@ -233,25 +233,9 @@ def review() -> None:
 
         # The reviewer gets a slice of the step rather than the whole of it, so that whatever it
         # leaves behind is time the verifier is guaranteed.
-        reviewer_checkout = provision(REVIEWER, workspace)
-
-        # LIVE CHECK 4, the escape probe. Remove after reading the log.
-        from coral.agent import SHELL_CEILING_SECONDS, ContainerBackend
-
-        probe = ContainerBackend(reviewer_checkout, REVIEWER, SHELL_CEILING_SECONDS)
-        for probed in [
-            "ps -e",
-            "ls /home/runner",
-            "cat /proc/1/comm",
-            "touch /opt/hostedtoolcache/probe",
-            "docker ps",
-            "ls /home/runner/work/_temp/coral",
-        ]:
-            log.info("PROBE %s ---> %s", probed, probe.execute(probed).output)
-
         review = produce_review(
             api_key,
-            reviewer_checkout,
+            provision(REVIEWER, workspace),
             REVIEWER,
             request,
             start(REVIEWER_BUDGET_SECONDS),
