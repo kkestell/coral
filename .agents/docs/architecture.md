@@ -7,7 +7,7 @@ How the code is organized and how it runs on GitHub Actions. The mechanics of ea
 - A GitHub Actions workflow. No cloud account, no standing service; GitHub supplies the trigger, compute, checkout, and credential.
 - Python, built with `uv`. Dependencies install with `uv sync --frozen` against the committed lockfile; nothing resolves at run time.
 - The agent is DeepAgents. Models are reached only through OpenRouter, via `langchain-openrouter`'s `ChatOpenRouter`.
-- The model is `~deepseek/deepseek-v4-flash-latest`: 1,048,576-token context, tool calling, structured outputs, reasoning effort. The tilde is an OpenRouter alias for the newest V4 Flash release, so the concrete model changes without notice.
+- The model is `openai/gpt-5.6-luna`: 1,050,000-token context, tool calling, structured outputs, reasoning output, and no `temperature` parameter. Named exactly rather than through a `~` alias, so the concrete model cannot change under a review.
 - No datastore. Everything Coral remembers about a pull request is written on the pull request and read back each run. The rest of the design hangs off this.
 - `ruff`, `pytest`, and `mypy` are configured in `.python-version` and `pyproject.toml` and nowhere else.
 

@@ -45,24 +45,26 @@ register_harness_profile(
     HarnessProfile(general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)),
 )
 
-MODEL: Final = "~deepseek/deepseek-v4-flash-latest"
+MODEL: Final = "openai/gpt-5.6-luna"
 
-# Copied by hand from `langchain-openrouter`'s bundled table entry for the concrete release
-# `deepseek/deepseek-v4-flash`. The table is looked up by exact name, so the alias above misses it,
-# and a model with no profile gets summarization triggers scaled to 170,000 tokens rather than the
-# real million.
+# Copied by hand from the profile the exact name above resolves to, minus one key. Supplying it
+# rather than letting the lookup run keeps the profile a decision this file makes: a model with no
+# profile gets summarization triggers scaled to 170,000 tokens rather than the real million.
 #
-# `structured_output` is deliberately absent, though the real entry carries it. LangChain reads
-# that key to pick a native structured-output request over a synthetic tool, and the native request
-# makes the endpoint answer in the schema on its first response — so the model returns a review
-# written from the diff alone, having called no tool, and sometimes a summary of "...". Omitting the
-# key buys the synthetic tool instead, and with it the agent loop: observed five model calls and a
-# finding anchored to the right line where the native request managed one call and no anchor.
+# `structured_output` is deliberately absent, though the resolved profile carries it. LangChain
+# reads that key to pick a native structured-output request over a synthetic tool, and the native
+# request makes the endpoint answer in the schema on its first response — so the model returns a
+# review written from the diff alone, having called no tool, and sometimes a summary of "...".
+# Omitting the key buys the synthetic tool instead, and with it the agent loop.
+#
+# `temperature` is false because this model rejects the parameter outright, which the profile is
+# what tells LangChain.
 MODEL_PROFILE: Final[ModelProfile] = {
     "tool_calling": True,
     "reasoning_output": True,
-    "max_input_tokens": 1_048_576,
-    "max_output_tokens": 65_536,
+    "max_input_tokens": 1_050_000,
+    "max_output_tokens": 128_000,
+    "temperature": False,
 }
 
 # All chosen rather than measured; item 9 on the roadmap settles them. `ChatOpenRouter` takes its
