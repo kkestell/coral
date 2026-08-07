@@ -13,7 +13,7 @@ from typing import Final
 # Twenty minutes from the start of the review step, against the job's `timeout-minutes: 30`. The
 # gap is headroom: the review step has to still be running when its deadline fires, because it is
 # the step that posts the failure. Chosen rather than measured; item 9 on the roadmap settles it.
-REVIEW_BUDGET_SECONDS: Final = 20 * 60
+REVIEW_BUDGET_SECONDS: Final = 20
 
 
 @dataclass(frozen=True)
