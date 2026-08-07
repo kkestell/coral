@@ -13,7 +13,13 @@ from typing import Final
 # Twenty minutes from the start of the review step, against the job's `timeout-minutes: 30`. The
 # gap is headroom: the review step has to still be running when its deadline fires, because it is
 # the step that posts the failure. Chosen rather than measured; item 9 on the roadmap settles it.
-REVIEW_BUDGET_SECONDS: Final = 20 * 60
+STEP_BUDGET_SECONDS: Final = 20 * 60
+
+# The reviewer's slice of the step. The verifier runs under the step's own budget, so whatever the
+# reviewer leaves is what the verifier gets, and this number is what guarantees there is any. A
+# reviewer that would have used minute fourteen fails here instead — a review whose findings cannot
+# be verified posts nothing anyway. Chosen rather than measured; item 9 settles it.
+REVIEWER_BUDGET_SECONDS: Final = 13 * 60
 
 
 @dataclass(frozen=True)
@@ -33,6 +39,6 @@ class Deadline:
         return self.elapsed() >= self.budget
 
 
-def start() -> Deadline:
-    """Begin the budget. Called at the top of the review step, before any other work."""
-    return Deadline(started=time.monotonic(), budget=REVIEW_BUDGET_SECONDS)
+def start(budget: float = STEP_BUDGET_SECONDS) -> Deadline:
+    """Begin a budget, now. The default is the step's own, begun before any other work."""
+    return Deadline(started=time.monotonic(), budget=budget)

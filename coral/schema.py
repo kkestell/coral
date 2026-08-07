@@ -1,4 +1,4 @@
-"""The review object the agent returns, and the rule that its absence is a failure.
+"""The objects the two agent runs return, and the filter that turns them into what gets posted.
 
 This module is the contract between the agent and everything else. It imports nothing from
 Coral and nothing from the agent framework: the dataclasses below are handed to the framework
@@ -7,7 +7,7 @@ model fills is the type the posting code reads.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Annotated, Literal
 
 from pydantic import Field
@@ -51,11 +51,38 @@ Anchor = SpanAnchor | LineAnchor | FileAnchor | PullRequestAnchor
 
 
 @dataclass(frozen=True)
+class RegressionTest:
+    """A test that demonstrates a finding: fails at the head commit, passes once it is fixed."""
+
+    path: Annotated[str, Field(description="Where to write it in the checkout, relative.")]
+    content: Annotated[str, Field(description="The whole file, as it should be written.")]
+    command: Annotated[
+        str,
+        Field(description="Runs exactly this test, and is expected to fail at the head commit."),
+    ]
+
+
+@dataclass(frozen=True)
 class Finding:
     """One thing worth saying about the change, and the place it concerns."""
 
     body: Annotated[str, Field(description="The finding, written for the author of the change.")]
     anchor: Anchor
+    severity: Annotated[
+        Literal["low", "medium", "high"],
+        Field(description="How much damage this does if the change merges as it stands."),
+    ]
+    # No default, so an absent key is a validation failure rather than a silent `None`: a
+    # speculative finding is a null the model wrote, never a field it forgot.
+    regression_test: Annotated[
+        RegressionTest | None,
+        Field(
+            description=(
+                "The test you wrote and ran that fails because of this finding, or null when no "
+                "test can show it. A finding with null here is speculative."
+            )
+        ),
+    ]
 
 
 @dataclass(frozen=True)
@@ -76,8 +103,44 @@ class Review:
     ]
 
 
+@dataclass(frozen=True)
+class Verdict:
+    """What the second agent run decided about one of the first run's findings."""
+
+    finding: Annotated[
+        int, Field(description="The number of the finding this rules on, as the request gave it.")
+    ]
+    confirmed: Annotated[
+        bool, Field(description="True only if you established the finding yourself.")
+    ]
+    reason: Annotated[
+        str, Field(description="A sentence or two on what you did and what it showed.")
+    ]
+
+
+@dataclass(frozen=True)
+class Verification:
+    """A ruling on every finding in a review."""
+
+    verdicts: list[Verdict]
+
+
+def confirmed(review: Review, verification: Verification) -> Review:
+    """The review that survives: findings some verdict confirms and no verdict rejects.
+
+    A finding no verdict names is dropped. The verifier is told to rule on every finding, so
+    silence about one is a run that went wrong rather than an endorsement.
+    """
+    kept = []
+    for index, finding in enumerate(review.findings):
+        verdicts = [verdict for verdict in verification.verdicts if verdict.finding == index]
+        if verdicts and all(verdict.confirmed for verdict in verdicts):
+            kept.append(finding)
+    return replace(review, findings=kept)
+
+
 # LangChain sets `structured_response` to None when the model answers with prose, and the key is
-# optional, so an absent key and a None both mean the same thing: no review came back.
+# optional, so an absent key and a None both mean the same thing: nothing came back.
 def review_from_result(result: Mapping[str, object]) -> Review:
     """Read the review out of the agent's result state, or fail."""
     review = result.get("structured_response")
@@ -87,3 +150,17 @@ def review_from_result(result: Mapping[str, object]) -> Review:
         )
     assert isinstance(review, Review), f"structured_response held a {type(review).__name__}"
     return review
+
+
+def verification_from_result(result: Mapping[str, object]) -> Verification:
+    """Read the verdicts out of the agent's result state, or fail."""
+    verification = result.get("structured_response")
+    if verification is None:
+        raise RuntimeError(
+            "The agent returned no structured verification. Coral does not recover verdicts "
+            "from prose."
+        )
+    assert isinstance(verification, Verification), (
+        f"structured_response held a {type(verification).__name__}"
+    )
+    return verification

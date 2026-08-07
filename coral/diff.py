@@ -91,6 +91,18 @@ def diff_text(workspace: Path, first: str, second: str) -> str:
     )
 
 
+def reset(workspace: Path) -> None:
+    """Put the checkout back at the head commit, between the two agent runs.
+
+    The verifier reproduces each regression test from the finding's own content, and a scratch
+    file the reviewer left behind could make that test pass or fail for a reason the finding never
+    states. `-fd` rather than `-fdx`: ignored files survive, so dependencies the reviewer installed
+    to run tests are still installed for the verifier.
+    """
+    git(workspace, "checkout", "--", ".")
+    git(workspace, "clean", "-fd")
+
+
 def merge_base(workspace: Path, base: str, head: str) -> str:
     """The commit the two branches last had in common."""
     return git(workspace, "merge-base", base, head).strip()

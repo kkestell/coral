@@ -93,4 +93,13 @@ Run in `kkestell/coral-test`, in order within their group, after pushing to the 
 **The agent**
 
 1. Open a pull request with a small real change. A model-written review appears whose summary and findings are about that change — which is also the evidence that the review object validated.
-2. Watch the deadline fire: set `REVIEW_BUDGET_SECONDS` in `coral/deadline.py` to about 60, push, ask for a review of a change big enough to outlast it, and read the review step's log in the Actions tab for the `RuntimeError` naming the elapsed seconds and the budget. Restore the constant afterwards. A red run is the correct outcome until item 8 on the roadmap exists.
+2. Watch the deadline fire: set `STEP_BUDGET_SECONDS` in `coral/deadline.py` to about 60, push, ask for a review of a change big enough to outlast it, and read the review step's log in the Actions tab for the `RuntimeError` naming the elapsed seconds and the budget. Restore the constant afterwards. A red run is the correct outcome until item 8 on the roadmap exists.
+
+**What Coral looks for**
+
+Two of these read the review step's log in the Actions tab rather than the pull request, because a rejected finding is posted nowhere.
+
+1. Open a pull request with a planted real defect. The review carries a finding at a sensible severity, its regression test in a collapsed block that renders as one on GitHub, and the log shows the verifier's confirming verdict.
+2. Watch a rejection drop a finding: edit `coral/prompts/verify.md` to reject every finding, push, ask for a review of the same pull request, and expect a review whose summary stands alone with no inline findings while the log names each drop and its reason. Revert the edit afterwards.
+3. Comment `/coral` on that pull request with no new commits. The second review repeats nothing from the first.
+4. Open a pull request with a trivially clean change. No findings, and the review says there was nothing to find.

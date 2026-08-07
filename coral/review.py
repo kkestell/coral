@@ -1,15 +1,24 @@
-"""The review step: render what the agent is asked, run it, post what it returns."""
+"""The review step: render what each agent run is asked, run both, post what survives."""
 
 import json
 import logging
 import os
 
 from coral import runner
-from coral.deadline import start
-from coral.diff import diff_text, merge_base
+from coral.deadline import REVIEWER_BUDGET_SECONDS, start
+from coral.diff import diff_text, merge_base, reset
 from coral.github.client import GitHub
 from coral.github.conversation import Comment, Conversation, Thread, read_conversation
 from coral.github.post import count, post_review
+from coral.schema import (
+    Anchor,
+    FileAnchor,
+    LineAnchor,
+    PullRequestAnchor,
+    Review,
+    SpanAnchor,
+    confirmed,
+)
 
 log = logging.getLogger(__name__)
 
@@ -116,8 +125,64 @@ def render_request(title: str, body: str | None, diff: str, conversation: Conver
     )
 
 
+def where(anchor: Anchor) -> str:
+    """The place a finding concerns, as a phrase the verifier reads."""
+    match anchor:
+        case SpanAnchor(path=path, start_line=start_line, end_line=end_line):
+            return f"`{path}`, lines {start_line} to {end_line}"
+        case LineAnchor(path=path, line=line):
+            return f"`{path}`, line {line}"
+        case FileAnchor(path=path):
+            return f"`{path}`, the whole file"
+        case PullRequestAnchor():
+            return "the pull request as a whole"
+
+
+def render_verification_request(title: str, body: str | None, diff: str, review: Review) -> str:
+    """Everything the verifier is given: the pull request, the change, and the findings to rule on.
+
+    The conversation is deliberately absent. The verifier judges each claim against the code, and
+    a finding a comment talked into existence should face somebody who never read that comment.
+    """
+    findings = []
+    for index, finding in enumerate(review.findings):
+        test = finding.regression_test
+        if test is None:
+            evidence = "The reviewer could not reproduce this with a test; it is speculative."
+        else:
+            evidence = "\n\n".join(
+                [
+                    f"The reviewer's test is `{test.path}`, run with `{test.command}`:",
+                    f"```\n{test.content}\n```",
+                ]
+            )
+        findings.append(
+            "\n\n".join(
+                [
+                    f"## Finding {index}",
+                    f"Severity: {finding.severity}. Concerns {where(finding.anchor)}.",
+                    finding.body,
+                    evidence,
+                ]
+            )
+        )
+
+    return "\n\n".join(
+        [
+            f"# {title}",
+            body.strip() if body and body.strip() else "The author left no description.",
+            "# The change under review",
+            "The diff between the merge base and the head commit follows, whole. The checkout "
+            "holds every file at the head commit, with nothing the reviewer wrote still in it.",
+            diff,
+            "# The findings to rule on",
+            *(findings or ["None."]),
+        ]
+    )
+
+
 def review() -> None:
-    """Review the checked-out change and post the result."""
+    """Review the checked-out change, verify what it found, and post what survives."""
     # The budget runs from the top of the step, so everything below is spent out of it.
     deadline = start()
 
@@ -141,8 +206,30 @@ def review() -> None:
 
     # Deferred: importing the agent framework costs about two seconds, and `coral/cli.py` imports
     # this module to reach `review`, so `coral resolve` would pay for it on every delivery.
-    from coral.agent import produce_review
+    from coral.agent import produce_review, verify_findings
 
-    post_review(
-        github, owner, repo, number, head, produce_review(api_key, workspace, request, deadline)
-    )
+    # The reviewer gets a slice of the step rather than the whole of it, so that whatever it
+    # leaves behind is time the verifier is guaranteed.
+    review = produce_review(api_key, workspace, request, start(REVIEWER_BUDGET_SECONDS))
+
+    if review.findings:
+        reset(workspace)
+        log.info("Asking a second agent to verify %s.", count(len(review.findings), "finding"))
+        verification = verify_findings(
+            api_key,
+            workspace,
+            render_verification_request(pull_request["title"], pull_request["body"], diff, review),
+            deadline,
+        )
+        # Every drop is logged with what caused it, because it is the only record: a rejected
+        # finding is posted nowhere.
+        for index in range(len(review.findings)):
+            rulings = [verdict for verdict in verification.verdicts if verdict.finding == index]
+            if not rulings:
+                log.info("Dropped finding %d: no verdict named it.", index)
+            for ruling in rulings:
+                if not ruling.confirmed:
+                    log.info("Dropped finding %d: %s", index, ruling.reason)
+        review = confirmed(review, verification)
+
+    post_review(github, owner, repo, number, head, review)

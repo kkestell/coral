@@ -26,7 +26,7 @@ What Coral does, as behavior someone could watch happen. Coral is a proof of con
 
 ## What Coral Can Do While Reviewing
 
-Coral is an agent, not a static analyzer. It decides which of these to use, in what order, how many times.
+Coral decides which of these to use, in what order, how many times.
 
 - Run shell commands inside the checkout.
 - Run individual tests it chooses, never the full suite — CI already does that, and a pull request is assumed to arrive passing. Coral runs a test to answer a question it formed.
@@ -36,9 +36,13 @@ Coral is an agent, not a static analyzer. It decides which of these to use, in w
 ## Output
 
 - A review is a summary plus findings; each finding carries its text and the place it concerns.
+- A finding is a correctness, security, or performance problem, and nothing else. Style, naming, structure, documentation, and test coverage are not findings.
+- Every finding carries a severity: low, medium, or high.
+- A finding Coral reproduced carries the failing test that shows it; one it could not reproduce is marked speculative.
+- A second agent run checks every finding against the code, and only the ones it confirms are posted. A rejected finding appears in the run's log, never on the pull request. A reviewer talks itself into findings; a reader cannot tell which ones.
 - A finding concerns a span of lines, a single line, a whole file, or the pull request as a whole. Coral chooses per finding.
 - Line and span findings anchor to their code. Whole-file and pull-request findings appear in the summary, the file named — "this file has no tests" and "this change has no tests" must read differently.
-- A finding that cannot anchor still appears, in the summary, naming its intended file and line. No finding is silently discarded.
+- A confirmed finding that cannot anchor still appears, in the summary, naming its intended file and line. Nothing survives verification and is then silently discarded.
 - One review per run, not a comment per finding. A pull request reviewed several times carries several reviews.
 - Every review names the commit it reviewed — readers need to know which state of the branch each review is about, and it is how Coral recognizes its own past work.
 - Every review says it is Coral's; the posting account belongs to the repository's automation, not to Coral.
@@ -48,7 +52,7 @@ Coral is an agent, not a static analyzer. It decides which of these to use, in w
 
 ## Failure
 
-- Every failed review says so on the pull request, in enough detail to know whether to retry or investigate — including failures before the agent starts. A quiet death is worse than no review, and worse still after Coral has reacted.
+- Every failed review says so on the pull request, in enough detail to know whether to retry or investigate — including failures before the agent starts.
 - Each automatic review happens once; a request is honored once. Asking again gets another review even when nothing changed — a person who asks again means it.
 - Two reviews of one pull request never run at once. A request arriving mid-review is neither dropped nor run immediately; it is honored after the running review posts. Several such requests cost one further review between them, each still acknowledged.
 - A closed or merged pull request is not reviewed, checked at the start and again before posting. A merge landing in the last seconds still wins the race; accepted.
@@ -64,7 +68,7 @@ Named so nobody has to guess whether the omission was deliberate.
 - Pull requests from forks.
 - Repositories that have not installed Coral.
 - Anything happening to a pull request other than opening, marking ready, or asking. Pushes, reopens, and title or description edits start nothing.
-- Asking by any other means. `/coral` in a submitted review body or edited into an existing comment does nothing — unacknowledgeable or invisible.
+- Asking by any other means. `/coral` edited into an existing comment does nothing — invisible.
 - Replying to comments or carrying on a conversation. Coral reads, reacts, and reviews.
 - Steering a review from the command. Text alongside `/coral` is conversation, not direction.
 - Any command other than asking: no stop, no configure, no dismiss.

@@ -1,4 +1,4 @@
-"""The agent: the model client, the backend, the middleware, and the one run.
+"""The agent: the model client, the backend, the middleware, and the two runs.
 
 The only module that imports the agent framework. Everything else in Coral depends on the review
 object in `coral/schema.py` and never on DeepAgents, which is what keeps the framework's two
@@ -28,7 +28,7 @@ from pydantic import SecretStr
 
 from coral.deadline import Deadline
 from coral.environment import shell_environment
-from coral.schema import Review, review_from_result
+from coral.schema import Review, Verification, review_from_result, verification_from_result
 
 log = logging.getLogger(__name__)
 
@@ -100,10 +100,23 @@ def review_prompt() -> str:
     return (files("coral") / "prompts" / "review.md").read_text(encoding="utf-8")
 
 
-def produce_review(api_key: str, workspace: Path, request: str, deadline: Deadline) -> Review:
-    """Run the agent over the checkout and return the review it produced, or fail.
+def verify_prompt() -> str:
+    """How Coral checks a finding, read out of the installed package."""
+    return (files("coral") / "prompts" / "verify.md").read_text(encoding="utf-8")
 
-    The one place the model client, the backend, and the middleware are constructed.
+
+def _run(
+    api_key: str,
+    workspace: Path,
+    request: str,
+    deadline: Deadline,
+    system_prompt: str,
+    response_format: type,
+) -> dict[str, Any]:
+    """Build an agent over the checkout, run it, and return its result state.
+
+    The one place the model client, the backend, and the middleware are constructed. Both runs
+    share every bound here; what differs between them is the prompt and the type they return.
     """
     model = ChatOpenRouter(
         model=MODEL,
@@ -124,7 +137,7 @@ def produce_review(api_key: str, workspace: Path, request: str, deadline: Deadli
     )
     agent = create_deep_agent(
         model,
-        system_prompt=review_prompt(),
+        system_prompt=system_prompt,
         # This instance replaces the framework's own rather than joining it, because middleware
         # merges by `AgentMiddleware.name` and that defaults to the class name. An upstream rename
         # would turn replacement into addition, leaving two middlewares each registering
@@ -135,18 +148,35 @@ def produce_review(api_key: str, workspace: Path, request: str, deadline: Deadli
         # OpenRouter model the harness profile is the empty null object, so both of those are the
         # parameter defaults and mirroring the backend is mirroring everything. A DeepAgents
         # upgrade that ships an `openrouter` harness profile makes that false.
+        #
+        # A forwarding wrapper around the backend is not an alternative: it fails the framework's
+        # `isinstance` check against `SandboxBackendProtocol`.
         middleware=[
             FilesystemMiddleware(backend=backend, max_execute_timeout=SHELL_CEILING_SECONDS),
             DeadlineMiddleware(deadline),
         ],
         backend=backend,
-        response_format=Review,
+        response_format=response_format,
     )
     # DeepAgents binds a recursion limit of 9,999 through `with_config`; a second `with_config`
     # on the compiled graph overrides it. There is no constructor parameter for it.
     bounded = agent.with_config({"recursion_limit": STEP_CAP})
 
     log.info("Running the agent over %s with %.0f seconds of budget.", workspace, deadline.budget)
-    result = bounded.invoke({"messages": [HumanMessage(request)]})
+    result: dict[str, Any] = bounded.invoke({"messages": [HumanMessage(request)]})
     log.info("The agent finished after %.0f seconds.", deadline.elapsed())
-    return review_from_result(result)
+    return result
+
+
+def produce_review(api_key: str, workspace: Path, request: str, deadline: Deadline) -> Review:
+    """Run the reviewer over the checkout and return the review it produced, or fail."""
+    return review_from_result(_run(api_key, workspace, request, deadline, review_prompt(), Review))
+
+
+def verify_findings(
+    api_key: str, workspace: Path, request: str, deadline: Deadline
+) -> Verification:
+    """Run the verifier over the reset checkout and return its verdicts, or fail."""
+    return verification_from_result(
+        _run(api_key, workspace, request, deadline, verify_prompt(), Verification)
+    )

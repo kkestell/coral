@@ -16,7 +16,15 @@ from coral.github.conversation import (
     parse_threads,
 )
 from coral.github.marker import marker
-from coral.review import render_conversation, render_request
+from coral.review import render_conversation, render_request, render_verification_request
+from coral.schema import (
+    Finding,
+    LineAnchor,
+    PullRequestAnchor,
+    RegressionTest,
+    Review,
+    SpanAnchor,
+)
 
 COMMIT = "a" * 40
 
@@ -193,3 +201,97 @@ def test_a_pull_request_with_no_description_says_so() -> None:
     assert "The author left no description." in render_request(
         "A title", "  ", "", conversation_of()
     )
+
+
+DIFF = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-one\n+two\n"
+
+REGRESSION = RegressionTest(
+    path="tests/test_parser.py",
+    content="def test_it() -> None:\n    assert parse('') == []\n",
+    command="pytest tests/test_parser.py::test_it",
+)
+
+
+def review_of(*findings: Finding) -> Review:
+    return Review(summary="A summary.", findings=list(findings), everything_already_said=False)
+
+
+def test_the_findings_are_numbered_from_zero_in_order() -> None:
+    # The numbers are the indices a verdict names, so they are the filter's contract as much as
+    # the prompt's.
+    review = review_of(
+        Finding(
+            body="First.",
+            anchor=LineAnchor(kind="line", path="a.py", line=7),
+            severity="high",
+            regression_test=None,
+        ),
+        Finding(
+            body="Second.",
+            anchor=PullRequestAnchor(kind="pull_request"),
+            severity="low",
+            regression_test=None,
+        ),
+    )
+    rendered = render_verification_request("A title", None, DIFF, review)
+    assert rendered.index("## Finding 0") < rendered.index("## Finding 1")
+    assert rendered.index("First.") < rendered.index("Second.")
+    assert "## Finding 2" not in rendered
+
+
+def test_a_finding_carries_its_severity_and_where_it_points() -> None:
+    review = review_of(
+        Finding(
+            body="A span of trouble.",
+            anchor=SpanAnchor(kind="span", path="a.py", start_line=3, end_line=9),
+            severity="medium",
+            regression_test=None,
+        )
+    )
+    rendered = render_verification_request("A title", None, DIFF, review)
+    assert "Severity: medium. Concerns `a.py`, lines 3 to 9." in rendered
+
+
+def test_a_reproduced_finding_carries_its_test_whole() -> None:
+    review = review_of(
+        Finding(
+            body="The parser drops the last token.",
+            anchor=LineAnchor(kind="line", path="a.py", line=7),
+            severity="high",
+            regression_test=REGRESSION,
+        )
+    )
+    rendered = render_verification_request("A title", None, DIFF, review)
+    assert REGRESSION.content in rendered
+    assert "`tests/test_parser.py`" in rendered
+    assert "`pytest tests/test_parser.py::test_it`" in rendered
+
+
+def test_a_speculative_finding_says_so() -> None:
+    review = review_of(
+        Finding(
+            body="Something might race.",
+            anchor=PullRequestAnchor(kind="pull_request"),
+            severity="low",
+            regression_test=None,
+        )
+    )
+    rendered = render_verification_request("A title", None, DIFF, review)
+    assert "could not reproduce this with a test; it is speculative" in rendered
+
+
+def test_the_verifier_never_sees_the_conversation() -> None:
+    # Deliberate: a finding a comment talked into existence faces somebody who never read it.
+    review = review_of(
+        Finding(
+            body="A finding.",
+            anchor=PullRequestAnchor(kind="pull_request"),
+            severity="low",
+            regression_test=None,
+        )
+    )
+    rendered = render_verification_request("A title", "The description.", DIFF, review)
+    assert "conversation" not in rendered.lower()
+    assert "# A title" in rendered
+    assert "The description." in rendered
+    assert DIFF in rendered

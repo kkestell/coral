@@ -8,24 +8,26 @@ import time
 
 import pytest
 
-from coral.agent import DeadlineMiddleware, review_prompt
-from coral.deadline import REVIEW_BUDGET_SECONDS, Deadline
+from coral.agent import DeadlineMiddleware, review_prompt, verify_prompt
+from coral.deadline import STEP_BUDGET_SECONDS, Deadline
 
 
 def test_the_prompt_comes_out_of_the_installed_package() -> None:
     assert "Coral" in review_prompt()
 
 
+def test_the_verifier_prompt_comes_out_of_the_installed_package() -> None:
+    assert "Coral" in verify_prompt()
+
+
 def test_a_live_deadline_lets_the_model_be_called() -> None:
-    middleware = DeadlineMiddleware(
-        Deadline(started=time.monotonic(), budget=REVIEW_BUDGET_SECONDS)
-    )
+    middleware = DeadlineMiddleware(Deadline(started=time.monotonic(), budget=STEP_BUDGET_SECONDS))
     assert middleware.before_model(state={}, runtime=None) is None  # type: ignore[arg-type]
 
 
 def test_an_expired_deadline_stops_the_run_and_says_what_it_spent() -> None:
-    started = time.monotonic() - (REVIEW_BUDGET_SECONDS + 1)
-    middleware = DeadlineMiddleware(Deadline(started=started, budget=REVIEW_BUDGET_SECONDS))
+    started = time.monotonic() - (STEP_BUDGET_SECONDS + 1)
+    middleware = DeadlineMiddleware(Deadline(started=started, budget=STEP_BUDGET_SECONDS))
     with pytest.raises(RuntimeError, match="ran out of time"):
         middleware.before_model(state={}, runtime=None)  # type: ignore[arg-type]
 

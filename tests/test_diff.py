@@ -3,9 +3,14 @@
 The diff text here is captured `git diff --unified=0` output rather than something written to
 suit the parser. Whether git still produces this format is what a live run finds out; what these
 tests pin is what Coral does with it.
+
+`reset` is the exception: it is what git does rather than what Coral parses, so it runs against a
+real repository built in a temporary directory.
 """
 
-from coral.diff import AddedLine, parse_added_lines
+from pathlib import Path
+
+from coral.diff import AddedLine, git, parse_added_lines, reset
 
 TWO_FILES = """\
 diff --git a/coral/cli.py b/coral/cli.py
@@ -115,3 +120,41 @@ diff --git a/a.txt b/a.txt
 +++ still a line of content
 """
     assert parse_added_lines(diff) == [AddedLine(path="a.txt", line=2)]
+
+
+def repository(workspace: Path) -> Path:
+    """A committed repository holding one tracked file and ignoring `*.log`."""
+    git(workspace, "init", "--quiet")
+    git(workspace, "config", "user.email", "coral@example.com")
+    git(workspace, "config", "user.name", "Coral")
+    (workspace / "tracked.txt").write_text("committed\n")
+    (workspace / ".gitignore").write_text("*.log\n")
+    git(workspace, "add", ".")
+    git(workspace, "commit", "--quiet", "-m", "first")
+    return workspace
+
+
+def test_reset_reverts_a_tracked_file_the_agent_edited(tmp_path: Path) -> None:
+    workspace = repository(tmp_path)
+    (workspace / "tracked.txt").write_text("the reviewer's edit\n")
+    reset(workspace)
+    assert (workspace / "tracked.txt").read_text() == "committed\n"
+
+
+def test_reset_removes_a_scratch_file_the_agent_wrote(tmp_path: Path) -> None:
+    workspace = repository(tmp_path)
+    (workspace / "test_scratch.py").write_text("assert False\n")
+    (workspace / "scratch").mkdir()
+    (workspace / "scratch" / "notes.txt").write_text("thinking\n")
+    reset(workspace)
+    assert not (workspace / "test_scratch.py").exists()
+    assert not (workspace / "scratch").exists()
+
+
+def test_reset_leaves_ignored_files_alone(tmp_path: Path) -> None:
+    # `-fd` rather than `-fdx`, so dependencies the reviewer installed to run a test are still
+    # installed when the verifier runs one.
+    workspace = repository(tmp_path)
+    (workspace / "installed.log").write_text("a dependency's leavings\n")
+    reset(workspace)
+    assert (workspace / "installed.log").exists()

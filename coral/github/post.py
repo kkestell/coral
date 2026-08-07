@@ -10,7 +10,37 @@ from typing import Any
 
 from coral.github.client import GitHub
 from coral.github.marker import marker
-from coral.schema import FileAnchor, LineAnchor, PullRequestAnchor, Review, SpanAnchor
+from coral.schema import FileAnchor, Finding, LineAnchor, PullRequestAnchor, Review, SpanAnchor
+
+
+def rendered_finding(finding: Finding) -> str:
+    """A finding as Coral posts it, wherever it lands: the severity, the prose, and the evidence.
+
+    Composed here rather than by the model, which returns the three pieces separately. Everything
+    below is the same for an anchored comment and for one demoted into the summary.
+    """
+    parts = [f"**{finding.severity.capitalize()} severity.**"]
+    if finding.regression_test is None:
+        parts.append("*Speculative — not reproduced by a test.*")
+    parts.append(finding.body)
+    if finding.regression_test is not None:
+        test = finding.regression_test
+        parts.append(
+            "<details>\n"
+            f"<summary>Regression test — <code>{test.path}</code></summary>\n\n"
+            f"Run with `{test.command}`:\n\n"
+            f"```\n{test.content}\n```\n"
+            "</details>"
+        )
+    return "\n\n".join(parts)
+
+
+def bullet(entry: str) -> str:
+    """One demoted finding as a list item, its later lines indented to stay inside it."""
+    lines = entry.splitlines()
+    return "\n".join(
+        [f"- {lines[0]}"] + [f"  {line}" if line else "" for line in lines[1:]],
+    )
 
 
 def count(many: int, thing: str) -> str:
@@ -49,6 +79,7 @@ def post_review(
     demoted: list[str] = []
 
     for finding in review.findings:
+        rendered = rendered_finding(finding)
         match finding.anchor:
             case SpanAnchor(path=path, start_line=start_line, end_line=end_line):
                 comments.append(
@@ -57,7 +88,7 @@ def post_review(
                         "start_line": start_line,
                         "line": end_line,
                         "side": "RIGHT",
-                        "body": signed(commit, finding.body),
+                        "body": signed(commit, rendered),
                     }
                 )
             case LineAnchor(path=path, line=line):
@@ -66,13 +97,13 @@ def post_review(
                         "path": path,
                         "line": line,
                         "side": "RIGHT",
-                        "body": signed(commit, finding.body),
+                        "body": signed(commit, rendered),
                     }
                 )
             case FileAnchor(path=path):
-                demoted.append(f"**`{path}`** — {finding.body}")
+                demoted.append(f"**`{path}`** — {rendered}")
             case PullRequestAnchor():
-                demoted.append(finding.body)
+                demoted.append(rendered)
 
     lines = [
         marker(commit),
@@ -82,7 +113,7 @@ def post_review(
         review.summary,
     ]
     if demoted:
-        lines += ["", *(f"- {entry}" for entry in demoted)]
+        lines += ["", *(bullet(entry) for entry in demoted)]
 
     return github.post(
         f"/repos/{owner}/{repo}/pulls/{number}/reviews",
