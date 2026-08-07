@@ -45,11 +45,17 @@ register_harness_profile(
 MODEL: Final = "~deepseek/deepseek-v4-flash-latest"
 
 # Copied by hand from `langchain-openrouter`'s bundled table entry for the concrete release
-# `deepseek/deepseek-v4-flash`. The table is looked up by exact name, so the alias above misses it
-# and the model would arrive with no profile — which silently costs both the native
-# structured-output request and summarization triggers scaled to the real context window.
+# `deepseek/deepseek-v4-flash`. The table is looked up by exact name, so the alias above misses it,
+# and a model with no profile gets summarization triggers scaled to 170,000 tokens rather than the
+# real million.
+#
+# `structured_output` is deliberately absent, though the real entry carries it. LangChain reads
+# that key to pick a native structured-output request over a synthetic tool, and the native request
+# makes the endpoint answer in the schema on its first response — so the model returns a review
+# written from the diff alone, having called no tool, and sometimes a summary of "...". Omitting the
+# key buys the synthetic tool instead, and with it the agent loop: observed five model calls and a
+# finding anchored to the right line where the native request managed one call and no anchor.
 MODEL_PROFILE: Final[ModelProfile] = {
-    "structured_output": True,
     "tool_calling": True,
     "reasoning_output": True,
     "max_input_tokens": 1_048_576,
@@ -106,7 +112,7 @@ def produce_review(api_key: str, workspace: Path, request: str, deadline: Deadli
         max_retries=MODEL_RETRIES,
         # Supplied whole. DeepAgents injects `ignore` only when it resolves a string model, and
         # Coral passes an instance. `require_parameters` is what keeps the request off an endpoint
-        # that cannot serve structured output, which the model profile alone does not decide.
+        # that cannot serve tool calling, which the model profile alone does not decide.
         openrouter_provider={"require_parameters": True, "ignore": ["azure"]},
         profile=MODEL_PROFILE,
     )

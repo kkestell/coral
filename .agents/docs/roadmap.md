@@ -106,7 +106,8 @@ The agent:
 - Neither secret reaches the agent's shell, twice over: the shell environment is built rather than inherited and names neither; and the review step reads both from `os.environ` at start-up, holds them in memory, deletes them from `os.environ`, and only then constructs the model client and backend. Without this, `pull-requests: write` in the environment is an approving review one `curl` away.
 - The shell environment is an allowlist copied out of the review step's own: `inherit_env` defaults to false and an empty environment runs nothing, so Coral constructs it. In, when present: `CI`, `HOME`, `LANG`, `LC_ALL`, `PATH`, `TERM`, `TMPDIR`. A missing `PATH` fails an assertion, since a shell without one runs nothing. Out by construction: both secrets, `VIRTUAL_ENV`, every `UV_*` — without those exclusions the reviewed repository's `pytest` runs against Coral's interpreter.
 - The request sets `require_parameters` on the `openrouter_provider` kwarg. A provider allowlist is impossible — the alias's endpoint list comes back empty — and LangChain picks its structured-output strategy from the model profile rather than the serving endpoint, so an unconstrained request can be routed to an endpoint that cannot serve it. The same kwarg carries `ignore: ["azure"]`, which Coral must supply itself: DeepAgents injects it only when resolving a string model, and Coral passes an instance. OpenRouter's `/responses` beta is stateless, so a replayed reasoning item fails outright.
-- The model profile is supplied by hand through `profile=`, five keys copied from the bundled table's entry for the concrete release. The table is looked up by exact name, so the alias misses it, and a profile-less model silently gets the synthetic tool-calling structured-output strategy instead of the native request and summarization triggers scaled to 170,000 tokens instead of the real million.
+- The model profile is supplied by hand through `profile=`, four keys copied from the bundled table's entry for the concrete release. The table is looked up by exact name, so the alias misses it, and a profile-less model gets summarization triggers scaled to 170,000 tokens instead of the real million.
+- `structured_output` is left out of that profile even though the real entry carries it, so the review comes back through a synthetic tool rather than a native structured-output request. Observed: the native request makes the endpoint answer in the schema on its first response, so the model reviews from the diff alone having called no tool, and sometimes returns a summary of "...". Without the key the same change drew five model calls and a finding anchored to the right line.
 
 The time budget — one agent run per automatic review and one per request, and a failed run costs the same minutes as a productive one:
 
@@ -168,7 +169,7 @@ Depends on: 8
 
 Every number below was chosen rather than measured, stated so the design is complete and testable. Run Coral against real pull requests and replace each with a number that has a reason, where the number lives: the conversation bound (200 comments / 400,000 characters, item 3), the size backstop (300 files / 30,000 lines, item 4), and the deadline (20 minutes), job timeout (30 minutes), step cap (200), model timeout (180 seconds), model retries (1), shell ceiling (300 seconds), and the shell environment's allowlist, all item 5.
 
-The two decisions under "Undecided" in `.agents/docs/architecture.md` settle here too — both need a real run.
+The decisions under "Undecided" in `.agents/docs/architecture.md` settle here too — each needs a real run.
 
 Done when: every number here carries a measured reason, and nothing is left under "Undecided" in `.agents/docs/architecture.md`.
 
