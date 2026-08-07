@@ -21,6 +21,11 @@ def whose(comment: Comment) -> str:
     return f"{comment.author or 'a deleted account'} ({comment.association})"
 
 
+def count(many: int, thing: str) -> str:
+    """A count and the thing it counts, pluralized."""
+    return f"{many} {thing}" if many == 1 else f"{many} {thing}s"
+
+
 def what_was_read(conversation: Conversation) -> str:
     """What the conversation held, reported so a live run leaves its evidence on the pull request.
 
@@ -29,9 +34,10 @@ def what_was_read(conversation: Conversation) -> str:
     nothing would look the same from the pull request.
     """
     lines = [
-        f"Coral read {conversation.bound.read} comments and left "
-        f"{conversation.bound.unread} unread: {len(conversation.comments)} on the pull request, "
-        f"{len(conversation.reviews)} reviews, and {len(conversation.threads)} threads.",
+        f"Coral read {count(conversation.bound.read, 'comment')} and left "
+        f"{conversation.bound.unread} unread: {count(len(conversation.comments), 'comment')} on "
+        f"the pull request, {count(len(conversation.reviews), 'review')}, and "
+        f"{count(len(conversation.threads), 'thread')}.",
         "",
         (
             "Commits Coral has already reviewed: "
@@ -41,14 +47,14 @@ def what_was_read(conversation: Conversation) -> str:
         ),
     ]
     for comment in [*conversation.comments, *conversation.reviews]:
-        lines.append(f"- {whose(comment)} wrote {len(comment.body)} characters.")
+        lines.append(f"- {whose(comment)} wrote {count(len(comment.body), 'character')}.")
     for thread in conversation.threads:
         state = "resolved" if thread.resolved else "unresolved"
         staleness = "outdated" if thread.outdated else "current"
         authors = ", ".join(whose(comment) for comment in thread.comments)
         lines.append(
-            f"- A {state}, {staleness} thread on `{thread.path}` line {thread.line}, "
-            f"holding {thread.total_comments} comments from {authors}."
+            f"- Thread on `{thread.path}` line {thread.line}, {state} and {staleness}, holding "
+            f"{count(thread.total_comments, 'comment')} from {authors}."
         )
     return "\n".join(lines)
 
