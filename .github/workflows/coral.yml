@@ -72,7 +72,7 @@ jobs:
     if: needs.resolve.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     # `STEP_BUDGET_SECONDS` in `coral/deadline.py` is measured against this.
-    timeout-minutes: 30
+    timeout-minutes: 1
     # The job that runs the agent, and the point of the split: `contents: read` is what the
     # checkout needs and all this job holds. The review step makes no API call, so a compromised
     # agent finds no credential here that writes anything.
@@ -81,11 +81,6 @@ jobs:
     steps:
       - id: setup
         uses: $/actions/setup
-
-      # Live check 2 of "Shrink what a compromised agent gets": this job's token cannot write.
-      - env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh api repos/${{ github.repository }}/issues/25/comments -f body="live check 2"
 
       # By `name`, so its absence fails this job loudly: a run that proceeded and cannot find
       # the pull request is broken.
