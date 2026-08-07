@@ -1,9 +1,9 @@
 """The environment the agent's shell runs in, built name by name rather than inherited.
 
-An allowlist is what makes the omissions checkable. Both secrets, `VIRTUAL_ENV`, and every `UV_*`
-are absent by construction rather than by a rule somebody has to remember to add: `VIRTUAL_ENV`
-and the `UV_*` variables point at Coral's own interpreter, and the reviewed repository's `pytest`
-must run against its own.
+An allowlist is what makes the omissions checkable. The OpenRouter key, `VIRTUAL_ENV`, and every
+`UV_*` are absent by construction rather than by a rule somebody has to remember to add:
+`VIRTUAL_ENV` and the `UV_*` variables point at Coral's own interpreter, and the reviewed
+repository's `pytest` must run against its own.
 """
 
 from collections.abc import Mapping
@@ -18,9 +18,10 @@ KEEP: Final = ("CI", "HOME", "LANG", "LC_ALL", "PATH", "TERM", "TMPDIR")
 def shell_environment(source: Mapping[str, str]) -> dict[str, str]:
     """The subprocess environment for the agent's shell, taken from `source` by name.
 
-    Takes a mapping rather than reading `os.environ` itself, so the caller pops both secrets
-    first and the omission is checked in two places. Hygiene, not a boundary: the runner holds
-    both secrets in memory for the whole job and the agent's shell has `sudo`.
+    Takes a mapping rather than reading `os.environ` itself, so the caller pops the OpenRouter
+    key first and the omission is checked in two places. Hygiene, not a boundary: the runner
+    holds everything the job references in memory for the whole job and the agent's shell has
+    `sudo`.
     """
     # A shell with no `PATH` runs nothing, which is a broken invocation rather than an empty
     # environment to work in.

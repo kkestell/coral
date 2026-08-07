@@ -14,7 +14,7 @@ Where the tests live, how to run them, and the live checks. Full-suite commands 
 ## Kinds of Test
 
 - Unit — one module, real input, no network, no credentials. Everything under `tests/`, the only tier `pytest` runs.
-- Live — one real run against a real pull request in `kkestell/coral-test`, started by hand. Mandatory: a live check that is described or deferred instead of run has verified nothing, and an item is not done until it actually ran.
+- Live — one real run against a real pull request in `kkestell/coral-test`, started by hand.
 
 ## Running Tests
 
@@ -24,16 +24,14 @@ Where the tests live, how to run them, and the live checks. Full-suite commands 
 
 ## The Test Repository
 
-`kkestell/coral-test` is public and exists for this and nothing else. Everything in it is disposable. Never point Coral at a repository whose pull requests somebody cares about.
+`kkestell/coral-test` is public, disposable, and exists for this and nothing else. Never point Coral at a repository whose pull requests somebody cares about.
 
-One check runs elsewhere: the conversation bound needs a busy pull request, which `kkestell/coral-test` will never have, so it reads a public one in somebody else's repository — a read-only fetch from a developer machine with a `gh auth token` token.
-
-A live run needs the two credentials under "Environment" in `.agents/docs/development.md`; the `gh` commands that set a check up and follow it are under "Commands" there. Its evidence is on the pull request, read there rather than in what the run printed.
+A live run needs the two credentials under "Environment" in `.agents/docs/development.md`; the `gh` commands that set a check up and follow it are under "Commands" there. Evidence is on the pull request, not in what the run printed.
 
 ## Fixtures and Test Data
 
-- No fixture directory. A test writes its input inline as JSON-shaped dictionaries, validated through `pydantic.TypeAdapter` — the validator the agent framework itself uses. Schema payloads use the helpers in `tests/test_schema.py`.
-- A real API response is captured from a real pull request, trimmed to a few nodes of each kind, and held inline with a comment saying where it came from and when. `tests/test_conversation.py` holds one.
+- No fixture directory. A test writes its input inline as JSON-shaped dictionaries, validated through `pydantic.TypeAdapter`. Schema payloads use the helpers in `tests/test_schema.py`.
+- A real API response is trimmed to a few nodes of each kind and held inline with a comment saying where it came from and when; `tests/test_conversation.py` holds one.
 
 ## Writing a New Test
 
@@ -57,10 +55,10 @@ Run in `kkestell/coral-test`, in order within their group, after pushing to the 
 **The walking skeleton**
 
 1. Open a pull request changing one file. A review appears: one inline comment on a changed line, a summary naming the commit.
-2. Comment `/coral`. The comment gets the `eyes` reaction and a second review appears — the issues-namespace reaction.
-3. Reply `/coral` on the diff. Reaction and a third review — the pulls-namespace reaction.
-4. Close a pull request and comment `/coral`. Resolve declines, later steps skip, no review, green run.
-5. Open a pull request as a draft: a run is recorded with its job skipped, nothing posted. Mark it ready: a full run.
+2. Comment `/coral`. The `eyes` reaction and a second review — the issues namespace.
+3. Reply `/coral` on the diff. Reaction and a third review — the pulls namespace.
+4. Close a pull request and comment `/coral`. Resolve declines, later jobs skip, no review, green run.
+5. Open a pull request as a draft: a run is recorded with its jobs skipped, nothing posted. Mark it ready: a full run.
 
 **Reading the conversation**
 
@@ -83,8 +81,8 @@ Run in `kkestell/coral-test`, in order within their group, after pushing to the 
 
 **The agent**
 
-1. Open a pull request with a small real change. A model-written review appears whose summary and findings are about that change — also the evidence that the review object validated.
-2. Watch the deadline fire: set `STEP_BUDGET_SECONDS` in `coral/deadline.py` to about 60, push, ask for a review of a change big enough to outlast it, and read the step log for the `RuntimeError` naming the elapsed seconds and the budget. Restore the constant afterwards. See the "Failure" group for what lands on the pull request.
+1. Open a pull request with a small real change. A model-written review appears whose summary and findings are about that change — the evidence the review object validated.
+2. Watch the deadline fire: set `STEP_BUDGET_SECONDS` in `coral/deadline.py` to about 60, push, ask for a review of a change big enough to outlast it, and read the step log for the `RuntimeError` naming the elapsed seconds and the budget. Restore the constant afterwards.
 
 **What Coral looks for**
 
@@ -98,13 +96,19 @@ Two of these read the review step's log rather than the pull request: a rejected
 **Posting**
 
 1. Open a pull request that gives Coral something to find. Inline comments land on the lines the findings name; whatever could not attach is in the summary with its file and line.
-2. Force a rejection: edit `attachable` in `coral/diff.py`, shifting every line anchor past the end of its file, push, and review a change with a line finding. Expect one review carrying every finding in its summary, no inline comments, and a step-log warning holding GitHub's 422 body. Revert afterwards.
-3. Comment `/coral`, wait for the review step to start, then close the pull request before it finishes. Green run, nothing posted, a log line saying it is no longer open.
-4. Ask again on the clean pull request above, no new commits. The second review says everything is already said rather than that there was nothing to find — otherwise it reads as a retraction.
+2. Comment `/coral`, wait for the review job to start, then close the pull request before it finishes. Green run, nothing posted, a log line saying it is no longer open.
+3. Ask again on the clean pull request above, no new commits. The second review says everything is already said rather than that there was nothing to find — otherwise it reads as a retraction.
 
 **Failure**
 
-1. Set `STEP_BUDGET_SECONDS` in `coral/deadline.py` to about 60, push, and ask for a review of a change big enough to outlast it. Expect exactly one comment naming the elapsed seconds and the budget inside a fence, a red run, and a report-step log line saying the review step already reported. Restore the constant.
+1. Set `STEP_BUDGET_SECONDS` in `coral/deadline.py` to about 60, push, and ask for a review of a change big enough to outlast it. Expect exactly one comment naming the elapsed seconds and the budget inside a fence, and a red run. Restore the constant.
 2. Put a `raise RuntimeError("live check")` at the top of `resolve()`, push, and comment `/coral`. Expect one comment saying the run failed with no reason and a link to the run, and a red run. In the same state, comment a mid-sentence mention of `/coral`: a red run and no comment. Revert.
 3. Set the test repository's `OPENROUTER_API_KEY` secret to a broken value and ask for a review. Expect one comment carrying the provider's own error inside the fence.
-4. A run that succeeds posts its review and nothing else, the report step skipped. The control for the three above.
+4. A run that succeeds posts its review and nothing else. The control for the three above.
+
+**Shrink what a compromised agent gets**
+
+1. Open a pull request that gives Coral something to find. Three jobs run, the review appears exactly as before, and the review job's "GITHUB_TOKEN Permissions" log block lists `Contents: read` and nothing else.
+2. Add a step to the review job that posts a comment with `${{ github.token }}`, push, and ask for a review. Expect 403 and a red run; remove the step. The one check showing the boundary is real rather than declared.
+3. Set the review job's `timeout-minutes` to 1, push, and ask for a review. GitHub kills the job mid-agent, no reason file crosses, and the publishing job posts the comment saying the run failed with no reason. Restore it.
+4. Force the 422: edit `attachable` in `coral/diff.py` to shift every line anchor past its file's end, push, and review a change with a line finding. One review carries every finding in its summary, no inline comments, and the publishing job's log holds the 422 warning. Revert.

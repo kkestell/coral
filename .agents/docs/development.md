@@ -17,7 +17,7 @@ Nothing else has to exist outside the repository to run the checks. Running Cora
 
 There is no build step. Coral is a console script over one package, and `uv sync` is what makes it runnable.
 
-- Run: `uv run coral <subcommand>`, where the subcommand is `resolve`, `review`, or `report`
+- Run: `uv run coral <subcommand>`, where the subcommand is `resolve`, `review`, or `publish`
 - Test: `uv run pytest`
 - Lint: `uv run ruff check`
 - Format: `uv run ruff format`
@@ -50,10 +50,10 @@ The log line the fetch writes to stderr says how many queries it took and what t
 
 ## Environment
 
-- `OPENROUTER_API_KEY` — the credential for the model provider. Required. In a run it comes from the secret the calling repository passes to the reusable workflow; locally, from `.env`, which is gitignored and is not read by any code. Source it: `set -a; . ./.env; set +a`.
-- `GITHUB_TOKEN` — authorizes the API calls that read the pull request and post the review. Required. The job supplies it, scoped by the `permissions` block in the calling workflow, and it expires when the job ends. Locally, `gh auth token` supplies one.
+- `OPENROUTER_API_KEY` — the credential for the model provider. Required by `coral review`. In a run it comes from the secret the calling repository passes to the reusable workflow; locally, from `.env`, which is gitignored and is not read by any code. Source it: `set -a; . ./.env; set +a`.
+- `GITHUB_TOKEN` — authorizes the API calls that read the pull request and post the review. Required by `coral resolve` and `coral publish`; it never reaches the review step, whose job holds a `contents: read` token that only the checkout uses. Each job's token is scoped by that job's `permissions` block in the reusable workflow and expires when the job ends. Locally, `gh auth token` supplies one.
 
-Both are read once at start-up and are deliberately kept out of the agent's environment. `coral review` deletes both from its own process environment before it does anything else, so a later reader finds neither. No tracked file in the repository records either value.
+Both are deliberately kept out of the agent's environment. `coral review` deletes `OPENROUTER_API_KEY` — the one credential its own process has — before it does anything else, so a later reader finds nothing. No tracked file in the repository records either value.
 
 ## Gotchas
 

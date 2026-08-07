@@ -113,5 +113,6 @@ def test_the_temporary_directory_is_made_under_the_runners_own(
     assert runner.temporary_directory() == tmp_path / "coral"
     assert runner.pull_request_path() == tmp_path / "coral" / "pull-request.json"
     assert runner.conversation_path() == tmp_path / "coral" / "conversation.json"
-    assert runner.reported_path() == tmp_path / "coral" / "reported"
+    assert runner.payloads_path() == tmp_path / "coral" / "review-payloads.json"
+    assert runner.reason_path() == tmp_path / "coral" / "reason.txt"
     assert (tmp_path / "coral").is_dir()

@@ -1,10 +1,10 @@
-"""The console script: `coral resolve`, `coral review`, and `coral report`."""
+"""The console script: `coral resolve`, `coral review`, and `coral publish`."""
 
 import argparse
 import logging
 import sys
 
-from coral.report import report
+from coral.publish import publish
 from coral.resolve import resolve
 from coral.review import review
 
@@ -18,11 +18,11 @@ def main() -> int:
     resolve_command = subcommands.add_parser("resolve", help="Decide whether to review.")
     resolve_command.set_defaults(handler=resolve)
 
-    review_command = subcommands.add_parser("review", help="Review the change and post the result.")
+    review_command = subcommands.add_parser("review", help="Review the change and verify findings.")
     review_command.set_defaults(handler=review)
 
-    report_command = subcommands.add_parser("report", help="Report a failure on the way here.")
-    report_command.set_defaults(handler=report)
+    publish_command = subcommands.add_parser("publish", help="Post what this run produced.")
+    publish_command.set_defaults(handler=publish)
 
     arguments = parser.parse_args()
     # An attribute off a Namespace is typed Any, so call the handler and return 0 separately.

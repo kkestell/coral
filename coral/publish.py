@@ -1,12 +1,13 @@
-"""The report step, and the prose both halves of the failure path post.
+"""The publishing job's step, which is the one place a review or a failure reaches the pull request.
 
-Two steps can report a failure and only one of them ever does. The review step catches its own,
-because it is the step holding the reason. This step runs on job failure and covers everything
-before it, where the reason never reached Coral at all. They meet at `runner.reported_path()`.
+The review job composes and posts nothing; it hands over the finished create-review bodies, or a
+reason file when it failed, and this step posts whichever the run earned. The failure comment
+covers a review job that died whole — GitHub's own timeout, a vanished runner — as well: no reason
+crossed, so the comment goes out without one.
 
-Neither covers a death that takes the job down with it: the runner vanishing, GitHub's own
-timeout, or a setup failure leaving no console script to run. Those are visible in the Actions tab
-and nowhere else, and the recovery is asking again.
+What it does not cover is a death that leaves no publishing job to run: a cancelled run starts
+none, and a setup failure leaves no console script. Those are visible in the Actions tab and
+nowhere else, and the recovery is asking again.
 """
 
 import json
@@ -17,7 +18,7 @@ from typing import Any, Final
 from coral import runner
 from coral.command import is_request
 from coral.github.client import GitHub
-from coral.github.post import post_comment
+from coral.github.post import is_open, post_comment, post_review, read_payloads
 from coral.runner import Event
 
 log = logging.getLogger(__name__)
@@ -57,13 +58,9 @@ def failure_comment(reason: str | None, run_url: str) -> str:
 def owed(event: Event) -> bool:
     """Whether this run owes the pull request a comment about failing.
 
-    Neither question costs an API call, which matters: the failure being reported is often the API
+    The question costs no API call, which matters: the failure being reported is often the API
     refusing to answer.
     """
-    if runner.reported_path().exists():
-        log.info("The review step already reported this failure.")
-        return False
-
     # The job-level condition is coarse, so a comment merely mentioning `/coral` mid-sentence
     # allocates a runner, and a run that fails there was asked for nothing. A `pull_request`
     # delivery always asks, the condition having already excluded drafts and bots.
@@ -87,16 +84,38 @@ def pinned_commit() -> str | None:
     return str(pull_request["head"]["sha"])
 
 
-def report() -> None:
-    """The report step: say that the run failed, unless the review step already did.
+def publish() -> None:
+    """Post the review this run produced, or say why there is none.
 
-    The comment carries no reason. This step never saw the exception, and the step that did is the
-    step that posts it. Which step failed is not named either: the run link is one click from that.
+    Which job failed is not named: the run link is one click from that. The commit comes off
+    resolve's pull request and never off the review job's artifact, because it is one of the two
+    fields the publishing job does not take on trust.
     """
     event = runner.event()
+
+    if runner.payloads_path().exists():
+        github = GitHub(token=os.environ["GITHUB_TOKEN"])
+        # Resolve's check was minutes and two agent runs ago, and a review landing after the
+        # merge is advice nobody can act on.
+        if not is_open(github, event.owner, event.repo, event.number):
+            log.info("Pull request %d is no longer open; posting nothing.", event.number)
+            return
+        commit = pinned_commit()
+        assert commit is not None, "The review crossed without resolve's pull request."
+        post_review(
+            github,
+            event.owner,
+            event.repo,
+            event.number,
+            commit,
+            read_payloads(runner.payloads_path()),
+        )
+        return
+
     if not owed(event):
         return
 
+    reason = runner.reason_path().read_text() if runner.reason_path().exists() else None
     github = GitHub(token=os.environ["GITHUB_TOKEN"])
     log.info("Reporting on pull request %d that the run failed.", event.number)
     post_comment(
@@ -105,5 +124,5 @@ def report() -> None:
         event.repo,
         event.number,
         pinned_commit(),
-        failure_comment(None, runner.run_url()),
+        failure_comment(reason, runner.run_url()),
     )

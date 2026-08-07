@@ -1,5 +1,5 @@
-name: Coral report
-description: Say on the pull request that the run failed, unless the review step already did.
+name: Coral publish
+description: Post the review this run produced, or say on the pull request why there is none.
 
 inputs:
   coral-bin:
@@ -20,4 +20,4 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         set -euo pipefail
-        "$CORAL_BIN/coral" report
+        "$CORAL_BIN/coral" publish

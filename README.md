@@ -2,7 +2,7 @@
 
 A code review agent that runs as a GitHub Actions workflow. When a pull request is opened or marked ready for review, or when somebody comments `/coral` on one, Coral clones the repository, reads the change, and leaves its findings as comments on the pull request.
 
-Coral is a proof of concept and is early. Today a run does everything except think: it resolves the pull request, computes the diff, and posts a review whose contents are hardcoded. The model is not wired up yet.
+Coral is a proof of concept and is early. A run reads the pull request and its conversation, checks out the change, has a model review it — running tests of its own choosing along the way — verifies each finding with a second model pass, and posts what survives as one review.
 
 ## Adding Coral To Your Repository
 
@@ -36,7 +36,7 @@ jobs:
       openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-**2. Add the secret.** Set `OPENROUTER_API_KEY` under Settings → Secrets and variables → Actions. Coral reaches its model through [OpenRouter](https://openrouter.ai), so that key is the only credential you supply. The GitHub token comes from the job itself and expires when the job ends.
+**2. Add the secret.** Set `OPENROUTER_API_KEY` under Settings → Secrets and variables → Actions. Coral reaches its model through [OpenRouter](https://openrouter.ai), so that key is the only credential you supply. Set a credit limit on it: the agent reviewing your code runs shell commands of its own choosing, and that limit is the only bound on what the key can spend if it leaks. The GitHub token comes from the job itself and expires when the job ends.
 
 That is the whole installation. Nothing to host, nothing to provision, and nothing to rotate.
 
@@ -54,7 +54,7 @@ Every line in the file above has to be there. A reusable workflow cannot declare
 
 - `on:` — the three events Coral answers. The comment events are separate because GitHub sends one for a comment on the pull request and a different one for a reply on the diff.
 - `concurrency:` — one run per pull request. A run already going finishes; a newly queued run replaces whichever run was still waiting.
-- `permissions:` — the scopes the job's token gets. Both write scopes are needed, because the reaction on a pull request comment and the reaction on a diff reply go through different endpoints and neither permission grants the other.
+- `permissions:` — the scopes the called workflow may use. It narrows them per job: the job that runs the agent gets `contents: read` alone, and the write scopes go only to the jobs that post. Both write scopes are needed because the reaction on a pull request comment and the reaction on a diff reply go through different endpoints, and neither permission grants the other.
 - `uses:` — the version pin. `@main` tracks the latest; pin a tag once there is one.
 
 ## Development

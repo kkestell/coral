@@ -7,7 +7,11 @@ batched review, and posting one would mean a second call per finding.
 """
 
 import logging
-from typing import Any
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Final
+
+from pydantic import TypeAdapter
 
 from coral.diff import AddedLine, attachable
 from coral.github.client import ApiError, GitHub
@@ -143,14 +147,61 @@ def review_payload(commit: str, review: Review, added: set[AddedLine]) -> dict[s
     if not review.findings:
         lines += ["", nothing_to_report(review)]
 
+    # Neither `commit_id` nor `event` is here: both are stamped by `submitted` in the job that
+    # posts, so neither is a field the job that composed this body gets a say in.
     return {
-        "commit_id": commit,
         "body": "\n".join(lines),
         "comments": comments,
-        # Named explicitly: omitting it creates a review in the pending state that nobody
-        # but its author can read.
-        "event": "COMMENT",
     }
+
+
+@dataclass(frozen=True)
+class Payloads:
+    """The two create-review bodies, one of which the publishing job posts."""
+
+    anchored: dict[str, Any]
+    demoted: dict[str, Any]
+
+
+def payloads(commit: str, review: Review, added: set[AddedLine]) -> Payloads:
+    """Both bodies: the one whose findings attach, and the one where every finding is demoted.
+
+    Both are built here, where the diff is: each needs the added-line set the anchors were checked
+    against, and that set exists only in the job holding the checkout. GitHub accepts or rejects a
+    review whole, using its own patch generation, so the local check cannot be sufficient and the
+    fallback travels with the body it replaces. Nothing attaches to an empty set, so the demoted
+    body is the same composition rather than a second path through it.
+    """
+    return Payloads(
+        anchored=review_payload(commit, review, added),
+        demoted=review_payload(commit, review, set()),
+    )
+
+
+# The same validator the agent framework runs over the review object, so the project has one
+# answer to "JSON back into a frozen dataclass" rather than two.
+PAYLOADS: Final = TypeAdapter(Payloads)
+
+
+def write_payloads(path: Path, payloads: Payloads) -> None:
+    """Leave the two bodies where the publishing job will read them."""
+    path.write_bytes(PAYLOADS.dump_json(payloads))
+
+
+def read_payloads(path: Path) -> Payloads:
+    """Read the two bodies back into the pair they were written from."""
+    return PAYLOADS.validate_json(path.read_bytes())
+
+
+def submitted(commit: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """A body as the publishing job posts it, carrying the two fields it does not take on trust.
+
+    The body crossed a job boundary from the job the agent ran in. `event` is `COMMENT` because
+    the review is advisory — anything else approves the change or blocks the merge, and omitting
+    it creates a review in the pending state that nobody but its author can read. `commit_id` is
+    the commit resolve pinned. Both override whatever the body brought.
+    """
+    return payload | {"commit_id": commit, "event": "COMMENT"}
 
 
 def post_review(
@@ -159,27 +210,23 @@ def post_review(
     repo: str,
     number: int,
     commit: str,
-    review: Review,
-    added: set[AddedLine],
+    payloads: Payloads,
 ) -> Any:
     """Post the whole review as one comment-event review, demoting every finding if that is refused.
 
-    GitHub accepts or rejects a review whole, using its own patch generation, so the local anchor
-    check cannot be sufficient. The retry is unconditional in what it demotes: it does not read
-    the 422 for which entry was bad, because a retry that depends on the body naming one fails
-    silently on a body that does not. Confirmed on a real rejection: the body carries only
+    The retry is unconditional in what it demotes: it does not read the 422 for which entry was
+    bad, because a retry that depends on the body naming one fails silently on a body that does
+    not. Confirmed on a real rejection: the body carries only
     `"errors":["Line could not be resolved"]`, naming no anchor.
     """
     path = f"/repos/{owner}/{repo}/pulls/{number}/reviews"
     try:
-        return github.post(path, review_payload(commit, review, added))
+        return github.post(path, submitted(commit, payloads.anchored))
     except ApiError as rejection:
         if rejection.status != 422:
             raise
         log.warning("GitHub rejected the anchored review: %s", rejection.body)
-        # Nothing attaches to an empty set, so every finding lands in the summary. The retry is
-        # the same composition rather than a second path through it.
-        return github.post(path, review_payload(commit, review, set()))
+        return github.post(path, submitted(commit, payloads.demoted))
 
 
 def is_open(github: GitHub, owner: str, repo: str, number: int) -> bool:

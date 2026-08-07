@@ -97,6 +97,37 @@ Splits the run across jobs so the job that runs the agent holds a token with `co
 
 Done when: a real review in the test repository posts everything it posts today, with the agent's job holding a read-only token and the run green.
 
+## 11. A key per run
+
+Status: not started
+Depends on: 10
+
+Coral accepts either a plain OpenRouter API key, used as it is today, or a management key it uses to mint one API key per run. Minting is safe only once item 10 keeps the management key out of the agent's job, because a management key mints against the whole account balance.
+
+- Two `workflow_call` secrets, `openrouter_api_key` and `openrouter_management_key`; resolve fails when neither or both are set. Never one input whose kind Coral detects — detection costs a probe request, and the caller knows which one they created.
+- `POST /api/v1/keys` takes `limit` and `expires_at` and returns the key once alongside a `hash`. Set `expires_at` to cover the run, so revocation does not depend on a cleanup job that can be cancelled or skipped.
+- A management key cannot call the completion endpoints, and a per-key `limit` caps that key rather than partitioning the account balance.
+- Pass-through mode needs no channel; the review job reads the caller's secret directly. Minting mode crosses as a job output, because Actions refuses to set an output matching a registered secret.
+- Mask the minted key where it is created and again where it is received. A mask does not cross a job boundary.
+- Both modes get live checks. The workflow and the composite actions have no `pytest` coverage, so an unexercised mode is an untested one.
+
+Done when: a real review runs green in each mode, the minted key no longer authenticates once its run is over, and the README says which mode to choose.
+
+## 12. Take the agent out of the runner user
+
+Status: not started
+Depends on: 11
+
+Runs the agent's shell inside a container on the runner, out of reach of `Runner.Worker`'s memory, the runner's filesystem, and every secret the job holds. Items 10 and 11 bound what a compromised agent gets; this is the item that stops it getting anything.
+
+- Coral's own process stays on the runner and only the shell tool executes in the container, so no credential enters the container at all.
+- A container rather than a second user. Root in a container is not root on the host, so `sudo` and `apt-get` keep working, which is what a second user gives up.
+- No Docker reachable from the container, and never `--privileged`. Both are host root, so a daemon the agent can reach is not a sandbox. `.agents/docs/functional-requirements.md` gains this under "Out Of Scope" when this is built.
+- `.agents/docs/architecture.md` records that the hosted image's preinstalled toolchain is the only reason a repository Coral has never seen builds at all. The container answers that with `/opt/hostedtoolcache` mounted read-only plus `apt-get` for the rest, and that answer is what this item has to prove.
+- The agent gets a copy of the checkout that it owns.
+
+Done when: reviews in the test repository run a Python, a Node, and a Go project's own tests from inside the container, and a shell command the agent runs there can reach neither the runner's filesystem nor its process table.
+
 ## Not On This Roadmap
 
 Named so nobody has to guess. Everything under "Out Of Scope" in `.agents/docs/functional-requirements.md` also applies.

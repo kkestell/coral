@@ -156,7 +156,7 @@ def recording(refuses: dict[str, int], attempted: list[str]) -> GitHub:
 def test_a_reaction_github_refuses_costs_neither_the_run_nor_the_requests_after_it() -> None:
     # A comment deleted between the fetch and the reaction answers 404 and a locked conversation
     # answers 403. Raising here would fail a run whose review had nothing wrong with it, and the
-    # report step would then say on the pull request that Coral did not review the change.
+    # publishing job would then say on the pull request that Coral did not review the change.
     attempted: list[str] = []
     github = recording({"/repos/o/r/issues/comments/1/reactions": 404}, attempted)
     react(github, "o", "r", [Request(id=1, namespace="issues"), Request(id=2, namespace="pulls")])

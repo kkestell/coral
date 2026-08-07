@@ -10,10 +10,11 @@ import time
 from dataclasses import dataclass
 from typing import Final
 
-# Twenty minutes from the start of the review step, against the job's `timeout-minutes: 30`. The
-# gap is headroom: the review step has to still be running when its deadline fires, because it is
-# the step that posts the failure. Real reviews in `kkestell/coral-test`, including pull requests
-# sized near the change-size backstop, finished in 21 to 60 seconds — both budgets hold as chosen.
+# Twenty minutes from the start of the review step, against the review job's `timeout-minutes:
+# 30`. The gap is headroom: the review step has to still be running when its deadline fires,
+# because it is the step that writes the reason the failure comment carries. Real reviews in
+# `kkestell/coral-test`, including pull requests sized near the change-size backstop, finished in
+# 21 to 60 seconds — both budgets hold as chosen.
 STEP_BUDGET_SECONDS: Final = 20 * 60
 
 # The reviewer's slice of the step. The verifier runs under the step's own budget, so whatever the

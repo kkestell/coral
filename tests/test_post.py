@@ -3,10 +3,11 @@
 Nothing here posts. What the module decides on its own is how a finding reads once Coral has
 composed it out of the pieces the model returned separately, and where each finding lands, and
 that is what these cover. The retry's control flow is not among them: recovering from a 422 needs
-a `GitHub` that fails, and what makes the retry correct is that its payload is `review_payload`
-against an empty set, which is tested below.
+a `GitHub` that fails, and what makes the retry correct is that it sends the demoted body —
+`review_payload` against an empty set — which is tested below.
 """
 
+from pathlib import Path
 from typing import Any
 
 from coral.diff import AddedLine
@@ -16,9 +17,13 @@ from coral.github.post import (
     count,
     demotion,
     nothing_to_report,
+    payloads,
+    read_payloads,
     rendered_finding,
     review_payload,
     signed,
+    submitted,
+    write_payloads,
 )
 from coral.schema import (
     Anchor,
@@ -153,11 +158,40 @@ def test_a_span_finding_carries_both_of_its_ends() -> None:
     assert comment["side"] == "RIGHT"
 
 
-def test_the_review_names_the_commit_it_reviewed() -> None:
+def test_the_composed_body_carries_neither_commit_nor_event() -> None:
+    # Both are `submitted`'s to stamp in the job that posts, so nothing may depend on the
+    # composing job supplying either.
     payload = payload_of()
-    assert payload["commit_id"] == COMMIT
+    assert "commit_id" not in payload
+    assert "event" not in payload
+
+
+def test_submitted_stamps_the_commit_and_the_comment_event() -> None:
+    # The guarantee the publishing job keeps rather than trusts: a body that crossed the job
+    # boundary claiming an approval of some other commit is posted as a comment on the pinned one.
+    body = {"body": "prose", "comments": [], "commit_id": "b" * 40, "event": "APPROVE"}
+    posted = submitted(COMMIT, body)
+    assert posted["commit_id"] == COMMIT
     # Anything but COMMENT approves the change or blocks the merge.
-    assert payload["event"] == "COMMENT"
+    assert posted["event"] == "COMMENT"
+    assert posted["body"] == "prose"
+
+
+def test_the_pair_holds_the_anchored_body_and_the_demoted_one() -> None:
+    anchored_finding = finding_at(line(7))
+    pair = payloads(COMMIT, review_of(anchored_finding), ADDED)
+    assert len(pair.anchored["comments"]) == 1
+    assert pair.demoted["comments"] == []
+    assert "a.py" in pair.demoted["body"]
+    assert "line 7" in pair.demoted["body"]
+    assert "What the change does." in pair.anchored["body"]
+    assert "What the change does." in pair.demoted["body"]
+
+
+def test_the_pair_round_trips_through_a_file(tmp_path: Path) -> None:
+    pair = payloads(COMMIT, mixed(), ADDED)
+    write_payloads(tmp_path / "review-payloads.json", pair)
+    assert read_payloads(tmp_path / "review-payloads.json") == pair
 
 
 def test_the_body_carries_the_marker_the_commit_and_the_summary() -> None:

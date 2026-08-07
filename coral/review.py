@@ -1,4 +1,8 @@
-"""The review step: render what each agent run is asked, run both, post what survives."""
+"""The review step: render what each agent run is asked, run both, leave what survives on disk.
+
+This step posts nothing and holds no GitHub client. The finished create-review bodies cross to
+the publishing job as an artifact, and so does the reason when the step fails.
+"""
 
 import json
 import logging
@@ -7,10 +11,9 @@ import os
 from coral import runner
 from coral.deadline import REVIEWER_BUDGET_SECONDS, start
 from coral.diff import added_lines, diff_text, merge_base, reset
-from coral.github.client import GitHub
 from coral.github.conversation import Comment, Conversation, Thread, read_conversation
-from coral.github.post import count, is_open, post_comment, post_review
-from coral.report import described, failure_comment
+from coral.github.post import count, payloads, write_payloads
+from coral.publish import described
 from coral.schema import Review, confirmed, where
 
 log = logging.getLogger(__name__)
@@ -162,26 +165,22 @@ def render_verification_request(title: str, body: str | None, diff: str, review:
 
 
 def review() -> None:
-    """Review the checked-out change, verify what it found, and post what survives."""
+    """Review the checked-out change, verify what it found, and leave the result for publishing."""
     # The budget runs from the top of the step, so everything below is spent out of it.
     deadline = start()
 
-    # Popped rather than read, and both before any other work, so no later code that assembles a
-    # child environment out of `os.environ` can pick either up by accident.
-    github = GitHub(token=os.environ.pop("GITHUB_TOKEN"))
-    api_key = os.environ.pop("OPENROUTER_API_KEY")
-
-    pull_request = json.loads(runner.pull_request_path().read_text())
-    owner = pull_request["base"]["repo"]["owner"]["login"]
-    repo = pull_request["base"]["repo"]["name"]
-    number = pull_request["number"]
-    head = pull_request["head"]["sha"]
-    base = pull_request["base"]["sha"]
-
-    # Everything from here down is inside the failure path. Above it are the two credentials and
-    # the pull request off disk, and a failure there leaves this step without the client or the
-    # commit it would post with — which is the report step's to cover, and it does.
+    # The whole step is inside the failure path: it posts nothing, so the reason file is the only
+    # way a failure here reaches the pull request, and there is no failure the file cannot carry.
     try:
+        # Popped rather than read, before any other work, so no later code that assembles a child
+        # environment out of `os.environ` can pick it up by accident. The one credential this
+        # step sees: the job's token is not in its environment at all.
+        api_key = os.environ.pop("OPENROUTER_API_KEY")
+
+        pull_request = json.loads(runner.pull_request_path().read_text())
+        head = pull_request["head"]["sha"]
+        base = pull_request["base"]["sha"]
+
         conversation = read_conversation(runner.conversation_path())
         workspace = runner.workspace()
         # The merge base is hoisted out of the diff call so the lines an anchor is checked against
@@ -223,20 +222,9 @@ def review() -> None:
                     log.info("Finding %d %s: %s", index, outcome, ruling.reason)
             review = confirmed(review, verification)
 
-        # Resolve's check was minutes and two agent runs ago, and a review landing after the merge
-        # is advice nobody can act on.
-        if not is_open(github, owner, repo, number):
-            log.info("Pull request %d is no longer open; posting nothing.", number)
-            return
-
-        post_review(github, owner, repo, number, head, review, added)
+        write_payloads(runner.payloads_path(), payloads(head, review, added))
     except Exception as error:
-        log.exception("The review failed; reporting it on the pull request.")
-        post_comment(
-            github, owner, repo, number, head, failure_comment(described(error), runner.run_url())
-        )
-        # Written after the post, so a post that fails leaves the comment still owed and the report
-        # step still covering it. The file exists only when a comment landed.
-        runner.reported_path().write_text("")
+        log.exception("The review failed; the publishing job will report it.")
+        runner.reason_path().write_text(described(error))
         # Re-raised: a run that could not review is red.
         raise

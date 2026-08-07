@@ -1,8 +1,10 @@
-"""Tests of `coral.report`.
+"""Tests of `coral.publish`.
 
-Nothing here posts. What the module decides on its own is whether a comment is owed and what that
-comment reads like. Each case writes an event payload into `tmp_path` and points `RUNNER_TEMP` at
-it, which is the runner's own protocol rather than a fake of Coral's code.
+Nothing here posts, and `publish()` itself has no unit test: its judgment is `owed` and an
+`exists()` call, and its prose is `failure_comment` and `submitted`. What the module decides on
+its own is whether a comment is owed and what that comment reads like. Each case writes an event
+payload into `tmp_path` and points `RUNNER_TEMP` at it, which is the runner's own protocol rather
+than a fake of Coral's code.
 """
 
 import json
@@ -12,7 +14,7 @@ from typing import Any
 import pytest
 
 from coral import runner
-from coral.report import REASON_LIMIT, described, failure_comment, owed
+from coral.publish import REASON_LIMIT, described, failure_comment, owed
 
 RUN_URL = "https://github.com/kkestell/coral-test/actions/runs/17"
 
@@ -68,14 +70,6 @@ def test_a_comment_with_no_reason_carries_no_fence() -> None:
     comment = failure_comment(None, RUN_URL)
     assert "```" not in comment
     assert RUN_URL in comment
-
-
-def test_nothing_is_owed_once_the_review_step_has_reported(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    commented(monkeypatch, tmp_path, "/coral")
-    runner.reported_path().write_text("")
-    assert owed(runner.event()) is False
 
 
 def test_nothing_is_owed_for_a_comment_that_only_mentions_the_command(

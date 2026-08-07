@@ -89,31 +89,42 @@ def temporary_directory() -> Path:
 
 
 def pull_request_path() -> Path:
-    """Where resolve leaves the pull request for review to read.
+    """Where resolve leaves the pull request for the later jobs to read.
 
-    The pull request is too big for a step output and the temporary directory is outside the
-    workspace, so the checkout between the two steps cannot disturb it. This is what keeps the
-    pull request fetched once rather than twice.
+    The file crosses a job boundary as an artifact, so the temporary directory it is written in
+    is not the one it is read in. It sits outside the workspace, where the checkout cannot
+    disturb it, and it is what keeps the pull request fetched once rather than three times.
     """
     return temporary_directory() / "pull-request.json"
 
 
 def conversation_path() -> Path:
-    """Where resolve leaves the conversation for review to read.
+    """Where resolve leaves the conversation for the review job to read.
 
-    Same reasoning as the pull request, and the same directory. The conversation is the larger of
-    the two and is the reason the temporary directory carries files at all.
+    The file crosses a job boundary as an artifact, so the temporary directory it is written in
+    is not the one it is read in. The conversation is the largest thing that crosses.
     """
     return temporary_directory() / "conversation.json"
 
 
-def reported_path() -> Path:
-    """The file the review step writes once it has reported its own failure.
+def payloads_path() -> Path:
+    """Where the review job leaves the two create-review bodies for the publishing job to post.
 
-    How the two halves of the failure path avoid speaking twice. The review step writes it after
-    the post rather than before, so it exists only when a comment landed.
+    The file crosses a job boundary as an artifact, so the temporary directory it is written in
+    is not the one it is read in. Its absence is how the publishing job knows no review was
+    produced.
     """
-    return temporary_directory() / "reported"
+    return temporary_directory() / "review-payloads.json"
+
+
+def reason_path() -> Path:
+    """Where the review job leaves why it failed for the publishing job's comment to carry.
+
+    The file crosses a job boundary as an artifact, so the temporary directory it is written in
+    is not the one it is read in. A review job that died whole leaves none, and the failure
+    comment goes out without a reason.
+    """
+    return temporary_directory() / "reason.txt"
 
 
 def run_url() -> str:
