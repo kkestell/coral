@@ -98,6 +98,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Live check 3 of "Shrink what a compromised agent gets": outlast the one-minute timeout
+      # so GitHub kills this job before anything is written.
+      - run: sleep 180
+
       - uses: $/actions/review
         with:
           coral-bin: ${{ steps.setup.outputs.bin }}
