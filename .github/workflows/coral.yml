@@ -13,7 +13,7 @@ on:
         required: false
 
 # Three jobs so the agent runs in a job whose token writes nothing. Each job boundary is crossed
-# by job outputs for the two values YAML reads and by artifacts for everything else, and each job
+# by job outputs for the values YAML reads and by artifacts for everything else, and each job
 # builds Coral's virtual environment again: a cache the review job could write would let a
 # compromised agent put its own code in the jobs holding the write scopes.
 jobs:
