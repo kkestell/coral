@@ -221,15 +221,15 @@ def review() -> None:
             render_verification_request(pull_request["title"], pull_request["body"], diff, review),
             deadline,
         )
-        # Every drop is logged with what caused it, because it is the only record: a rejected
-        # finding is posted nowhere.
+        # Every verdict is logged with its reason, because the log is the only record of one: a
+        # reason is never posted, and a rejected finding is never posted either.
         for index in range(len(review.findings)):
             rulings = [verdict for verdict in verification.verdicts if verdict.finding == index]
             if not rulings:
-                log.info("Dropped finding %d: no verdict named it.", index)
+                log.info("Finding %d dropped: no verdict named it.", index)
             for ruling in rulings:
-                if not ruling.confirmed:
-                    log.info("Dropped finding %d: %s", index, ruling.reason)
+                outcome = "confirmed" if ruling.confirmed else "dropped"
+                log.info("Finding %d %s: %s", index, outcome, ruling.reason)
         review = confirmed(review, verification)
 
     post_review(github, owner, repo, number, head, review)
