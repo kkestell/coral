@@ -90,8 +90,6 @@ Depends on: 9
 
 Split the run into three jobs — resolve, review, publish — so the job that runs the agent holds `contents: read` and nothing more. Reactions, the review, and the failure comment happen in the two jobs holding the write scopes.
 
-The `Posting` and `Failure` groups have not been re-run against the split; `VALIDATION_TODO.md` at the repository root is what is owed.
-
 - The OpenRouter key is referenced by the review job alone, which is what makes item 11 safe to build.
 - README tells whoever installs Coral to set a credit limit on the OpenRouter key they pass, which is the only bound on what an exfiltrated key can spend.
 
@@ -135,7 +133,7 @@ Done when: the reviewer returns a valid `Review` from each model tested with too
 
 ## 14. Configuration knobs
 
-Status: not started
+Status: built
 Depends on: 13
 
 The caller file sets the model, the reasoning effort, and the review's time budget, as `workflow_call` inputs whose defaults leave an existing install reviewing exactly as it does today. The model's context window is fetched from OpenRouter at run time, retiring the profile `coral/agent.py` copies by hand.
