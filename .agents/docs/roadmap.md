@@ -119,15 +119,14 @@ Done when: reviews in the test repository run a Python, a Node, and a Go project
 
 ## 13. Structured output on any model
 
-Status: not started
+Status: built
 Depends on: 12
 
-The agent returns its structured object through an arrangement that is not written for one model's behavior. `coral/agent.py` drops `structured_output` from the profile to force a synthetic tool, which is what buys the agent loop from `openai/gpt-5.6-luna` alone; item 14 cannot let a caller name a model until that arrangement holds for models generally.
-
-Settled by running the reviewer from a developer machine against DeepSeek on several of its providers, an OpenAI model, and Anthropic's Haiku. Local rather than through a review: the question is what an endpoint answers, which costs a checkout and a handful of requests.
+The agent returns its structured object through an arrangement that is not written for one model's behavior. `_run` names the synthetic tool, so no profile key and no table of model names kept upstream decides the strategy.
 
 - A model that answers in the schema on its first response has reviewed the diff alone, having read no file and run no test. Whatever lands keeps the tool calls ahead of the answer.
 - One arrangement for every model. A branch per model is a lookup table that goes stale without saying so.
+- The synthetic tool binds every call with `tool_choice: required`, which an endpoint may refuse — DeepSeek's own serves v4 Pro but not that — and `require_parameters` routes past the endpoints that do not offer it. A model Coral cannot serve is one with no endpoint left, which reaches the caller as the provider's own words.
 
 Done when: the reviewer returns a valid `Review` from each model tested with tools called before the answer, and a real review in the test repository still posts confirmed findings.
 
