@@ -72,9 +72,9 @@ Done when: a review with a deliberately bad anchor still delivers every finding,
 Status: verified
 Depends on: 7
 
-Wrote `coral/report.py` and the failure path inside `coral review`.
+Wrote the failure comment and the reason it carries, which live in `coral/publish.py`.
 
-Done when: every way a review can fail produces exactly one comment, and the review step and report step together never produce two.
+Done when: every way a review can fail produces exactly one comment.
 
 ## 9. Settle the numbers
 
@@ -85,14 +85,14 @@ Every number items 3 through 7 chose carries a measured reason where the number 
 
 ## 10. Shrink what a compromised agent gets
 
-Status: not started
+Status: built
 Depends on: 9
 
-Splits the run across jobs so the job that runs the agent holds a token with `contents: read` and `pull-requests: read` and nothing more. Reactions, the review, and the failure comment move to jobs that hold the write scopes. `.agents/docs/architecture.md` records that every secret the agent's job references is reachable; this item does not change that, it makes what is reachable worth less.
+Split the run into three jobs — resolve, review, publish — so the job that runs the agent holds `contents: read` and nothing more. Reactions, the review, and the failure comment happen in the two jobs holding the write scopes.
 
-- A job boundary is not a step boundary. The runner's temporary directory does not survive a job, so everything crossing one crosses as an artifact.
-- The review job hands the posting job the finished payload `review_payload` builds, not the review object. The diff the anchors were checked against stays in the job that has the checkout.
-- Each job pays setup again. Three virtual environments per run is the price of the split.
+The `Posting` and `Failure` groups have not been re-run against the split; `VALIDATION_TODO.md` at the repository root is what is owed.
+
+- The OpenRouter key is referenced by the review job alone, which is what makes item 11 safe to build.
 - README tells whoever installs Coral to set a credit limit on the OpenRouter key they pass, which is the only bound on what an exfiltrated key can spend.
 
 Done when: a real review in the test repository posts everything it posts today, with the agent's job holding a read-only token and the run green.
