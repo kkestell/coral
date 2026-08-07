@@ -117,7 +117,7 @@ Done when: the agent reviews a real pull request and returns a valid review obje
 
 ## 6. What Coral looks for
 
-Status: not started
+Status: built
 Depends on: 5
 
 Write both prompts, extend the contract in `coral/schema.py`, and run the second agent. No document describes what makes a finding worth making; this item decides it, and it is the product.

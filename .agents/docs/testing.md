@@ -100,6 +100,6 @@ Run in `kkestell/coral-test`, in order within their group, after pushing to the 
 Two of these read the review step's log in the Actions tab rather than the pull request, because a rejected finding is posted nowhere.
 
 1. Open a pull request with a planted real defect. The review carries a finding at a sensible severity, its regression test in a collapsed block that renders as one on GitHub, and the log shows the verifier's confirming verdict.
-2. Watch a rejection drop a finding: edit `coral/prompts/verify.md` to reject every finding, push, ask for a review of the same pull request, and expect a review whose summary stands alone with no inline findings while the log names each drop and its reason. Revert the edit afterwards.
+2. Watch a rejection drop a finding: edit `coral/prompts/verify.md` to reject every finding, push, then open a pull request with a fresh defect — one Coral has already found something on produces no findings to reject. Expect a review whose summary stands alone with no inline findings while the log names each drop and its reason. Revert the edit afterwards.
 3. Comment `/coral` on that pull request with no new commits. The second review repeats nothing from the first.
 4. Open a pull request with a trivially clean change. No findings, and the review says there was nothing to find.
