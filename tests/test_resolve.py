@@ -224,6 +224,16 @@ def test_one_line_past_the_backstop_stops_the_run() -> None:
     assert stop.comment is not None
 
 
+def test_one_enormous_file_is_reported_as_one_file() -> None:
+    # A vendored dependency or a pile of generated output is what this gate is for, and it can
+    # arrive as a single file.
+    stop = declined(opened(), subject(changed_files=1, changed_lines=31_000), reviewed())
+    assert stop is not None
+    assert stop.reason == "the change is 1 file and 31000 lines"
+    assert stop.comment is not None
+    assert stop.comment.startswith("This change is 1 file and 31000 lines,")
+
+
 def test_a_closed_pull_request_is_not_reported_as_being_too_large() -> None:
     # The order is what decides which reason a person is given when more than one applies.
     stop = declined(asked(), subject(state="closed", changed_files=10_000), reviewed())

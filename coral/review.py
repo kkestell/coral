@@ -8,7 +8,7 @@ from coral import runner
 from coral.diff import AddedLine, added_lines, merge_base
 from coral.github.client import GitHub
 from coral.github.conversation import Comment, Conversation, read_conversation
-from coral.github.post import post_review
+from coral.github.post import count, post_review
 from coral.schema import Anchor, Finding, LineAnchor, PullRequestAnchor, Review
 
 log = logging.getLogger(__name__)
@@ -19,11 +19,6 @@ def whose(comment: Comment) -> str:
     if comment.mine:
         return "Coral"
     return f"{comment.author or 'a deleted account'} ({comment.association})"
-
-
-def count(many: int, thing: str) -> str:
-    """A count and the thing it counts, pluralized."""
-    return f"{many} {thing}" if many == 1 else f"{many} {thing}s"
 
 
 def what_was_read(conversation: Conversation) -> str:

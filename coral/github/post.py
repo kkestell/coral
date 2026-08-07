@@ -13,6 +13,11 @@ from coral.github.marker import marker
 from coral.schema import FileAnchor, LineAnchor, PullRequestAnchor, Review, SpanAnchor
 
 
+def count(many: int, thing: str) -> str:
+    """A count and the thing it counts, pluralized. Every prose Coral posts reads through this."""
+    return f"{many} {thing}" if many == 1 else f"{many} {thing}s"
+
+
 def signed(commit: str, body: str) -> str:
     """A comment body opening with the marker.
 

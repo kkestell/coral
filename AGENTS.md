@@ -7,12 +7,24 @@ Coral is a proof-of-concept code review agent, kept deliberately simple. When a 
 Each document owns a subject and is the only place that subject is written down. Read the one covering what you are about to do. Do not infer its contents from this list.
 
 - `.agents/docs/functional-requirements.md` — what Coral does, why that behavior, and what is out of scope.
-- `.agents/docs/architecture.md` — how Coral is built: the stack, where every part lives, how the parts fit together, the platform limits, the rules that hold across the codebase, the decisions still open, and every reason a thing is built the way it is.
+- `.agents/docs/architecture.md` — how Coral is built: the stack, where every part lives, how the parts fit together, the platform limits, the rules that hold across the codebase, and the decisions still open.
 - `.agents/docs/roadmap.md` — what each item builds, what it depends on, its status, and its done condition.
 - `.agents/docs/development.md` — prerequisites, setup, commands, environment variables, and gotchas.
 - `.agents/docs/testing.md` — where the tests live, how to run a subset, what a new test looks like, and the live checks.
 - `.agents/docs/code-style.md` — the conventions this code follows, including the ones no linter checks.
 - `README.md` — how somebody outside the project installs and uses Coral. Nothing under `.agents/docs/` describes installation or use.
+
+## How These Documents Are Written
+
+These documents are context for agents. They are loaded into a context window before the work starts, and every word they spend is budget the work does not get. They are reference material, not writing to be read for pleasure: an agent looks a fact up, acts on it, and moves on.
+
+State the fact. One bullet is one fact, one or two sentences, and the first sentence is the fact itself.
+
+A reason earns one clause — "X, because Y" — only when it protects the fact from a wrong future change: a rule that looks arbitrary and is not, a number that must not be tuned, an approach that was tried and fails for a non-obvious reason. A reason that is obvious from the fact gets nothing.
+
+No rhetoric. Never restate a fact from a second angle, never write a sentence whose only job is emphasis or transition, and never narrate — no "this is what makes X possible", no walking the reader through rejected alternatives, no building up to a conclusion. If deleting a sentence loses no fact, delete it.
+
+Ceilings, checked with `wc -w`: `architecture.md` holds at most 3,500 words; every other document under `.agents/docs/`, `plans/` excepted, holds at most 1,500. An edit that would cross a ceiling deletes something old before it adds. Ceilings never rise.
 
 ## Where Things Go
 

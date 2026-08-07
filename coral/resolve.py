@@ -15,7 +15,7 @@ from coral import runner
 from coral.command import is_request
 from coral.github.client import GitHub
 from coral.github.conversation import Conversation, bound, fetch_conversation, write_conversation
-from coral.github.post import post_comment
+from coral.github.post import count, post_comment
 from coral.github.reactions import Request, react, requests_in
 from coral.runner import Event
 
@@ -114,13 +114,12 @@ def declined(event: Event, subject: Subject, conversation: Conversation) -> Decl
     # only one that leaves somebody waiting for a review that is not coming with nothing on the
     # pull request to explain it, and the only one that can stop an automatic review.
     if subject.changed_files > MAX_CHANGED_FILES or subject.changed_lines > MAX_CHANGED_LINES:
+        size = f"{count(subject.changed_files, 'file')} and {count(subject.changed_lines, 'line')}"
         return Decline(
-            reason=(
-                f"the change is {subject.changed_files} files and {subject.changed_lines} lines"
-            ),
+            reason=f"the change is {size}",
             comment=(
-                f"This change is {subject.changed_files} files and {subject.changed_lines} "
-                "lines, which exceeds what Coral will read. Coral has not reviewed it."
+                f"This change is {size}, which exceeds what Coral will read. Coral has not "
+                "reviewed it."
             ),
         )
 
