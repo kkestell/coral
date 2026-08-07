@@ -44,6 +44,22 @@ Add one of these under Settings → Secrets and variables → Actions:
 
 Prefer the management key if your account balance would hurt to lose. The workflow above passes the plain key; comment that line out and uncomment the other to switch.
 
+## Configuring Coral
+
+Coral is configured in that workflow file and nowhere else, so a pull request cannot change how it is reviewed. Add a `with:` block to the job to change any of these; leave it out and you get the defaults.
+
+```yaml
+    uses: kkestell/coral/.github/workflows/coral.yml@main
+    with:
+      model: openai/gpt-5.6-luna
+      reasoning_effort: ""
+      time_budget_minutes: 20
+```
+
+- `model` — any model on [OpenRouter](https://openrouter.ai/models), named exactly as it appears there. A `~` alias is refused, so the model a review ran on is always knowable from this file. Coral fetches the model's context window from OpenRouter at run time; a model it does not list stops the run and says so.
+- `reasoning_effort` — passed to the provider as given. Empty asks for no reasoning block, leaving the provider its own default. What values a model accepts is the provider's rule, and its refusal is what you will read on the pull request.
+- `time_budget_minutes` — how long Coral gets to review. The job's own timeout is ten minutes more than this, so the largest budget is 350.
+
 ## Asking for a review
 
 Comment `/coral` on a pull request, or as a reply on the diff, to ask for a review at any time. Coral reacts with 👀, then posts its review.

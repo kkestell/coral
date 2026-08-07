@@ -8,6 +8,15 @@ inputs:
   openrouter-api-key:
     description: The credential for the model provider.
     required: true
+  model:
+    description: The OpenRouter model id, named exactly.
+    required: true
+  reasoning-effort:
+    description: The effort for OpenRouter's reasoning block, or empty to send no block.
+    required: false
+  time-budget-minutes:
+    description: How long the review step gets, out of which the reviewer takes its own slice.
+    required: true
 
 runs:
   using: composite
@@ -19,6 +28,9 @@ runs:
       env:
         CORAL_BIN: ${{ inputs.coral-bin }}
         OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        CORAL_MODEL: ${{ inputs.model }}
+        CORAL_REASONING_EFFORT: ${{ inputs.reasoning-effort }}
+        CORAL_TIME_BUDGET_MINUTES: ${{ inputs.time-budget-minutes }}
       run: |
         set -euo pipefail
         "$CORAL_BIN/coral" review

@@ -15,11 +15,12 @@ from typing import Any, Final
 
 from coral import runner
 from coral.command import is_request
+from coral.deadline import job_timeout_minutes
 from coral.github.client import GitHub
 from coral.github.conversation import Conversation, bound, fetch_conversation, write_conversation
 from coral.github.post import count, post_comment
 from coral.github.reactions import Request, react, requests_in
-from coral.openrouter import mint
+from coral.openrouter import key_ttl_seconds, mint
 from coral.publish import described
 from coral.runner import Event
 
@@ -174,6 +175,10 @@ def resolve() -> None:
         )
     )
 
+    # Beside the key-mode check for the same reason, and here rather than in the review job because
+    # this is where the number the review job's `timeout-minutes` reads is derived from it.
+    timeout = reported(lambda: job_timeout_minutes(os.environ["CORAL_TIME_BUDGET_MINUTES"]))
+
     event = runner.event()
     github = GitHub(token=os.environ["GITHUB_TOKEN"])
     pull_request = github.get(f"/repos/{event.owner}/{event.repo}/pulls/{event.number}")
@@ -223,7 +228,9 @@ def resolve() -> None:
     # fails leaves no `proceed=true` behind it. The key is named for the run, which is what ties
     # a key in the OpenRouter dashboard to the review that asked for it.
     if management is not None:
-        runner.write_output("minted-key", reported(partial(mint, management, runner.run_url())))
+        minted = partial(mint, management, runner.run_url(), key_ttl_seconds(timeout))
+        runner.write_output("minted-key", reported(minted))
 
     runner.write_output("head-sha", subject.head_sha)
+    runner.write_output("timeout-minutes", str(timeout))
     runner.write_output("proceed", "true")

@@ -2,6 +2,32 @@ name: Coral
 
 on:
   workflow_call:
+    # Every default lives here and nowhere else, so an install naming none of them reviews as it
+    # always has. Nothing validates the model or the effort ahead of the review job: a value the
+    # provider refuses arrives as the provider's own words in the failure comment.
+    inputs:
+      model:
+        description: >
+          The OpenRouter model id, named exactly as https://openrouter.ai/models has it. A `~`
+          alias is refused, because it would resolve to whichever model is current.
+        type: string
+        required: false
+        default: openai/gpt-5.6-luna
+      reasoning_effort:
+        description: >
+          The effort passed to the provider in OpenRouter's reasoning block. Empty sends no block
+          at all, which leaves the provider applying its own default.
+        type: string
+        required: false
+        default: ""
+      time_budget_minutes:
+        description: >
+          How long the review step gets. The review job's own `timeout-minutes` is this plus the
+          headroom `coral/deadline.py` explains, and that sum is bounded by GitHub's ceiling on a
+          job.
+        type: number
+        required: false
+        default: 20
     # Exactly one of the two, which `coral resolve` is what enforces: Actions cannot express
     # "one of these", and a run passed neither or both fails there with a comment saying so.
     secrets:
@@ -51,6 +77,7 @@ jobs:
       proceed: ${{ steps.resolve.outputs.proceed }}
       head-sha: ${{ steps.resolve.outputs.head-sha }}
       minted-key: ${{ steps.resolve.outputs.minted-key }}
+      timeout-minutes: ${{ steps.resolve.outputs.timeout-minutes }}
     steps:
       - id: setup
         uses: $/actions/setup
@@ -60,6 +87,9 @@ jobs:
         with:
           coral-bin: ${{ steps.setup.outputs.bin }}
           github-token: ${{ github.token }}
+          # Validated here, before the fetch, so a budget the caller got wrong is loud on every
+          # triggered run rather than only on the ones that reach a review.
+          time-budget-minutes: ${{ inputs.time_budget_minutes }}
           openrouter-management-key: ${{ secrets.openrouter_management_key }}
           # Whether, never what. Resolve decides which mode this run is in and has no other use
           # for the plain key, so its value stays out of this job.
@@ -82,8 +112,10 @@ jobs:
     needs: resolve
     if: needs.resolve.outputs.proceed == 'true'
     runs-on: ubuntu-latest
-    # `STEP_BUDGET_SECONDS` in `coral/deadline.py` is measured against this.
-    timeout-minutes: 30
+    # The budget plus the headroom `coral/deadline.py` explains, computed there because Actions
+    # expressions have no arithmetic. `fromJSON` because this key takes a number and a job output
+    # is a string.
+    timeout-minutes: ${{ fromJSON(needs.resolve.outputs.timeout-minutes) }}
     # The job that runs the agent, and the point of the split: `contents: read` is what the
     # checkout needs and all this job holds. The review step makes no API call, so a compromised
     # agent finds no credential here that writes anything.
@@ -122,6 +154,9 @@ jobs:
       - uses: $/actions/review
         with:
           coral-bin: ${{ steps.setup.outputs.bin }}
+          model: ${{ inputs.model }}
+          reasoning-effort: ${{ inputs.reasoning_effort }}
+          time-budget-minutes: ${{ inputs.time_budget_minutes }}
           # Whichever mode the caller chose. Resolve has already refused a run that supplied both
           # or neither, so exactly one side of this is ever set.
           openrouter-api-key: ${{ secrets.openrouter_api_key || needs.resolve.outputs.minted-key }}

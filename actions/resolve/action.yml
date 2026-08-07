@@ -14,6 +14,9 @@ inputs:
   openrouter-api-key-present:
     description: Whether the caller passed a plain API key, as the string `true` or `false`.
     required: true
+  time-budget-minutes:
+    description: How long the review step gets, validated here and derived into the job's timeout.
+    required: true
 
 outputs:
   proceed:
@@ -22,6 +25,9 @@ outputs:
   head-sha:
     description: The commit the review is of, and the commit the checkout takes.
     value: ${{ steps.resolve.outputs.head-sha }}
+  timeout-minutes:
+    description: The review job's `timeout-minutes` for the budget this run was given.
+    value: ${{ steps.resolve.outputs.timeout-minutes }}
   minted-key:
     description: >
       This run's own OpenRouter API key, when the caller passed a management key. Unmasked, and it
@@ -41,6 +47,7 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         OPENROUTER_MANAGEMENT_KEY: ${{ inputs.openrouter-management-key }}
         OPENROUTER_API_KEY_PRESENT: ${{ inputs.openrouter-api-key-present }}
+        CORAL_TIME_BUDGET_MINUTES: ${{ inputs.time-budget-minutes }}
       run: |
         set -euo pipefail
         "$CORAL_BIN/coral" resolve

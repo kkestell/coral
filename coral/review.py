@@ -12,10 +12,11 @@ from pathlib import Path
 from typing import Final
 
 from coral import container, runner
-from coral.deadline import REVIEWER_BUDGET_SECONDS, start
+from coral.deadline import budget_seconds, reviewer_budget, start
 from coral.diff import added_lines, diff_text, merge_base
 from coral.github.conversation import Comment, Conversation, Thread, read_conversation
 from coral.github.post import count, payloads, write_payloads
+from coral.openrouter import model_facts
 from coral.publish import described
 from coral.schema import Review, confirmed, where
 
@@ -201,9 +202,6 @@ def provision(name: str, workspace: Path) -> Path:
 
 def review() -> None:
     """Review the checked-out change, verify what it found, and leave the result for publishing."""
-    # The budget runs from the top of the step, so everything below is spent out of it.
-    deadline = start()
-
     # The whole step is inside the failure path: it posts nothing, so the reason file is the only
     # way a failure here reaches the pull request, and there is no failure the file cannot carry.
     try:
@@ -211,6 +209,13 @@ def review() -> None:
         # environment out of `os.environ` can pick it up by accident. The one credential this
         # step sees: the job's token is not in its environment at all.
         api_key = os.environ.pop("OPENROUTER_API_KEY")
+
+        # The three the caller configured, each already defaulted by the reusable workflow. The
+        # budget runs from the top of the step, so everything below is spent out of it; the resolve
+        # step validated the same value and derived this job's own timeout from it.
+        name = os.environ["CORAL_MODEL"]
+        effort = os.environ["CORAL_REASONING_EFFORT"]
+        deadline = start(budget_seconds(os.environ["CORAL_TIME_BUDGET_MINUTES"]))
 
         pull_request = json.loads(runner.pull_request_path().read_text())
         head = pull_request["head"]["sha"]
@@ -226,6 +231,10 @@ def review() -> None:
         request = render_request(pull_request["title"], pull_request["body"], diff, conversation)
         log.info("Asking the agent to review %s in %d characters.", head, len(request))
 
+        # One fetch, shared by both runs: they are the same model with the same profile, and the
+        # listing is 650 KB.
+        facts = model_facts(name)
+
         # Deferred: importing the agent framework costs about two seconds, and `coral/cli.py`
         # imports this module to reach `review`, so `coral resolve` would pay for it on every
         # delivery.
@@ -235,16 +244,22 @@ def review() -> None:
         # leaves behind is time the verifier is guaranteed.
         review = produce_review(
             api_key,
+            name,
+            effort,
+            facts,
             provision(REVIEWER, workspace),
             REVIEWER,
             request,
-            start(REVIEWER_BUDGET_SECONDS),
+            start(reviewer_budget(deadline.budget)),
         )
 
         if review.findings:
             log.info("Asking a second agent to verify %s.", count(len(review.findings), "finding"))
             verification = verify_findings(
                 api_key,
+                name,
+                effort,
+                facts,
                 provision(VERIFIER, workspace),
                 VERIFIER,
                 render_verification_request(

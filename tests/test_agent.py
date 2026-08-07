@@ -22,11 +22,36 @@ from coral.agent import (
     _run,
     caught,
     forgiving,
+    profile_of,
     review_prompt,
     verify_prompt,
 )
-from coral.deadline import STEP_BUDGET_SECONDS, Deadline
+from coral.deadline import Deadline, budget_seconds
+from coral.openrouter import ModelFacts
 from coral.schema import Review
+
+BUDGET = budget_seconds("20")
+
+# What `coral/openrouter.py` reduces the default model's entry in a real `GET /api/v1/models`
+# answer to, 2026-08-07.
+LUNA = ModelFacts(
+    context_length=1_050_000,
+    max_completion_tokens=128_000,
+    parameters=frozenset(
+        {
+            "include_reasoning",
+            "max_completion_tokens",
+            "max_tokens",
+            "reasoning",
+            "reasoning_effort",
+            "response_format",
+            "seed",
+            "structured_outputs",
+            "tool_choice",
+            "tools",
+        }
+    ),
+)
 
 
 def backend(tmp_path: Path) -> ContainerBackend:
@@ -43,13 +68,13 @@ def test_the_verifier_prompt_comes_out_of_the_installed_package() -> None:
 
 
 def test_a_live_deadline_lets_the_model_be_called() -> None:
-    middleware = DeadlineMiddleware(Deadline(started=time.monotonic(), budget=STEP_BUDGET_SECONDS))
+    middleware = DeadlineMiddleware(Deadline(started=time.monotonic(), budget=BUDGET))
     assert middleware.before_model(state={}, runtime=None) is None  # type: ignore[arg-type]
 
 
 def test_an_expired_deadline_stops_the_run_and_says_what_it_spent() -> None:
-    started = time.monotonic() - (STEP_BUDGET_SECONDS + 1)
-    middleware = DeadlineMiddleware(Deadline(started=started, budget=STEP_BUDGET_SECONDS))
+    started = time.monotonic() - (BUDGET + 1)
+    middleware = DeadlineMiddleware(Deadline(started=started, budget=BUDGET))
     with pytest.raises(RuntimeError, match="ran out of time"):
         middleware.before_model(state={}, runtime=None)  # type: ignore[arg-type]
 
@@ -101,6 +126,46 @@ def test_the_container_backend_is_still_offered_a_shell(tmp_path: Path) -> None:
     assert "execute" in {tool.name for tool in middleware.tools}
 
 
+class Built:
+    """Stands in for the agent: the run reaches `invoke` and gets an empty message list."""
+
+    def with_config(self, config: dict[str, Any]) -> Built:
+        return self
+
+    def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
+        return {"messages": []}
+
+
+def run_against(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, effort: str = "", facts: ModelFacts = LUNA
+) -> tuple[Any, dict[str, Any]]:
+    """Run the reviewer with the agent's construction intercepted, and return what it was built of.
+
+    The model client is real and the framework's factory is not, so everything `_run` decides is
+    observable without a request being made.
+    """
+    built: list[tuple[Any, dict[str, Any]]] = []
+
+    def build(model: Any, **keywords: Any) -> Built:
+        built.append((model, keywords))
+        return Built()
+
+    monkeypatch.setattr(coral.agent, "create_deep_agent", build)
+    _run(
+        "not-a-key",
+        "openai/gpt-5.6-luna",
+        effort,
+        facts,
+        tmp_path,
+        "coral-reviewer",
+        "review this",
+        Deadline(started=time.monotonic(), budget=BUDGET),
+        review_prompt(),
+        Review,
+    )
+    return built[0]
+
+
 def test_the_structured_output_strategy_is_named_rather_than_detected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -108,35 +173,52 @@ def test_the_structured_output_strategy_is_named_rather_than_detected(
     # model names kept upstream, and a model either of those catches answers in the schema on its
     # first response — a review written from the diff alone. Naming the synthetic tool is what
     # holds the agent loop on every model, so a change back to detection fails here.
-    built: list[dict[str, Any]] = []
-
-    class Built:
-        """Stands in for the agent: the run reaches `invoke` and gets an empty message list."""
-
-        def with_config(self, config: dict[str, Any]) -> Built:
-            return self
-
-        def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
-            return {"messages": []}
-
-    def build(model: Any, **keywords: Any) -> Built:
-        built.append(keywords)
-        return Built()
-
-    monkeypatch.setattr(coral.agent, "create_deep_agent", build)
-    _run(
-        "not-a-key",
-        tmp_path,
-        "coral-reviewer",
-        "review this",
-        Deadline(started=time.monotonic(), budget=STEP_BUDGET_SECONDS),
-        review_prompt(),
-        Review,
-    )
-
-    strategy = built[0]["response_format"]
+    strategy = run_against(tmp_path, monkeypatch)[1]["response_format"]
     assert isinstance(strategy, ToolStrategy)
     assert strategy.schema is Review
+
+
+def test_the_default_models_profile_is_the_one_coral_used_to_carry_by_hand() -> None:
+    # The mapping's own check: fetching the listing rather than hardcoding these five numbers is
+    # only safe if it reproduces them. This is the unchanged-install half of the configuration
+    # inputs, in a unit test.
+    assert profile_of(LUNA) == {
+        "tool_calling": True,
+        "reasoning_output": True,
+        "max_input_tokens": 1_050_000,
+        "max_output_tokens": 128_000,
+        "temperature": False,
+    }
+
+
+def test_a_model_that_takes_a_temperature_says_so() -> None:
+    takes_it = ModelFacts(
+        context_length=256_000, max_completion_tokens=16_384, parameters=frozenset({"temperature"})
+    )
+    assert profile_of(takes_it)["temperature"] is True
+
+
+def test_a_model_with_no_reported_output_ceiling_is_given_none() -> None:
+    # Rather than a guess. The key's absence is what LangChain's own lookup miss looks like.
+    unreported = ModelFacts(
+        context_length=1_048_576, max_completion_tokens=None, parameters=frozenset({"tools"})
+    )
+    assert "max_output_tokens" not in profile_of(unreported)
+
+
+def test_no_effort_sends_no_reasoning_block(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The default input, and today's request: the provider applies its own effort.
+    assert run_against(tmp_path, monkeypatch)[0].reasoning is None
+
+
+def test_an_effort_reaches_openrouters_reasoning_block(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Passed through unvalidated. What an effort may be is the provider's rule, and its refusal is
+    # what a caller who got it wrong reads.
+    assert run_against(tmp_path, monkeypatch, effort="high")[0].reasoning == {"effort": "high"}
 
 
 def test_the_container_backends_execute_still_takes_the_ceiling(tmp_path: Path) -> None:

@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from coral import runner
+from coral.deadline import job_timeout_minutes
 from coral.github.conversation import Bound, Comment, Conversation, Thread, ThreadComment
 from coral.github.reactions import Request
 from coral.resolve import (
@@ -324,3 +325,14 @@ def test_work_that_succeeds_writes_no_reason(
     monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
     assert reported(lambda: "minted") == "minted"
     assert not runner.reason_path().exists()
+
+
+def test_a_budget_the_caller_got_wrong_leaves_its_reason_on_the_pull_request(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Validated through `reported` and not by the review job, so a caller who set the input wrong
+    # is told so on every triggered run rather than watching the review job die of a bad timeout.
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    with pytest.raises(RuntimeError):
+        reported(lambda: job_timeout_minutes("400"))
+    assert "between 1 and 350" in runner.reason_path().read_text()

@@ -1,7 +1,9 @@
 # Copy this file into a repository as `.github/workflows/coral.yml` to install Coral.
 #
 # It carries the five things a reusable workflow cannot declare for its caller: the triggers,
-# the token permissions, the concurrency group, the version pin, and the OpenRouter key.
+# the token permissions, the concurrency group, the version pin, and the OpenRouter key. It is
+# also where Coral is configured, and the only place: a file in the repository under review would
+# let a pull request pick the model that reviews it.
 
 name: Coral
 
@@ -27,6 +29,16 @@ jobs:
       issues: write
       pull-requests: write
     uses: kkestell/coral/.github/workflows/coral.yml@main
+    # Coral's defaults, spelled out. Uncomment a line to change one; the whole block can go.
+    # with:
+    #   # Any OpenRouter model, named exactly as https://openrouter.ai/models has it. A `~` alias
+    #   # is refused, so the model a review ran on is always knowable from this file.
+    #   model: openai/gpt-5.6-luna
+    #   # Passed to the provider in OpenRouter's reasoning block. Empty sends no block, leaving the
+    #   # provider its own default; what a value may be is the provider's rule, not Coral's.
+    #   reasoning_effort: ""
+    #   # How long the review gets. The job's own timeout is ten minutes more than this.
+    #   time_budget_minutes: 20
     # Pass the one you created, and only that one. A management key gets each run its own key,
     # capped and expiring; a plain API key is used as it is.
     secrets:

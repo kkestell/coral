@@ -1,10 +1,13 @@
-"""OpenRouter's management API: minting the one API key this run gets.
+"""OpenRouter's HTTP API: minting the one API key this run gets, and what it says about a model.
 
-The only place Coral speaks to OpenRouter about keys. Completions go through `ChatOpenRouter` in
-`coral/agent.py` and never through here, and a management key cannot make one anyway.
+The only place Coral speaks to OpenRouter over HTTP, completions excepted. Those go through
+`ChatOpenRouter` in `coral/agent.py` and never through here, and a management key cannot make one
+anyway. Nothing here returns a LangChain type; `coral/agent.py` is where the facts below become a
+model profile.
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
@@ -19,22 +22,42 @@ TIMEOUT: Final = 30.0
 # before raising it.
 KEY_LIMIT_DOLLARS: Final = 2.00
 
-# How long a minted key lives. Twice the review job's `timeout-minutes: 30`, which is the only
-# long pole after minting; the slack covers the runner queue time between the two jobs, which
-# GitHub does not bound. A review job that starts later than that finds the provider answering
-# 401, and the failure comment carries it.
-KEY_TTL_SECONDS: Final = 3600
+# The prefix OpenRouter's alias ids carry. An alias resolves to whichever model is current, so a
+# review's model would not be knowable from the caller's file, and the request would succeed
+# rather than fail: aliases are in the listing and the per-model route answers 200 for them, so
+# refusing one has to be Coral's own check.
+ALIAS_PREFIX: Final = "~"
 
 log = logging.getLogger(__name__)
 
 
-def key_request(name: str, now: datetime) -> dict[str, Any]:
+@dataclass(frozen=True)
+class ModelFacts:
+    """What OpenRouter's listing says about one model, reduced to what its profile is built from."""
+
+    context_length: int
+    # Null in the listing for the models whose output ceiling OpenRouter does not report.
+    max_completion_tokens: int | None
+    parameters: frozenset[str]
+
+
+def key_ttl_seconds(job_timeout_minutes: int) -> int:
+    """How long a minted key lives: twice the review job's own timeout.
+
+    That job is the only long pole after minting, and the slack covers the runner queue time
+    between the two jobs, which GitHub does not bound. A review job that starts later than that
+    finds the provider answering 401, and the failure comment carries it.
+    """
+    return 2 * job_timeout_minutes * 60
+
+
+def key_request(name: str, now: datetime, ttl_seconds: int) -> dict[str, Any]:
     """The create-key body: the name, the spend cap, and the expiry that revokes the key.
 
     The expiry is what makes revocation independent of anything the rest of the run does. No
     cleanup call can be skipped by a cancelled run, because there is no cleanup call.
     """
-    expiry = now + timedelta(seconds=KEY_TTL_SECONDS)
+    expiry = now + timedelta(seconds=ttl_seconds)
     return {
         "name": name,
         "limit": KEY_LIMIT_DOLLARS,
@@ -59,7 +82,7 @@ def minted_key(answer: dict[str, Any]) -> str:
     return str(answer["key"])
 
 
-def mint(management_key: str, name: str) -> str:
+def mint(management_key: str, name: str, ttl_seconds: int) -> str:
     """Create this run's own API key, capped and expiring, and return it.
 
     No retry: one mint per run, and a management key that cannot mint now will not mint on a
@@ -69,10 +92,44 @@ def mint(management_key: str, name: str) -> str:
     log.info("Minting an OpenRouter key named %s, capped at $%.2f.", name, KEY_LIMIT_DOLLARS)
     response = httpx.post(
         f"{BASE_URL}/keys",
-        json=key_request(name, datetime.now(UTC)),
+        json=key_request(name, datetime.now(UTC), ttl_seconds),
         timeout=TIMEOUT,
         headers={"Authorization": f"Bearer {management_key}"},
     )
     if not response.is_success:
         raise RuntimeError(f"POST /api/v1/keys returned {response.status_code}: {response.text}")
     return minted_key(response.json())
+
+
+def facts_of(models: list[dict[str, Any]], name: str) -> ModelFacts:
+    """Find the named model in the listing and reduce it to the facts its profile is built from."""
+    for model in models:
+        if model["id"] == name:
+            return ModelFacts(
+                context_length=model["context_length"],
+                max_completion_tokens=model["top_provider"]["max_completion_tokens"],
+                parameters=frozenset(model["supported_parameters"]),
+            )
+    raise RuntimeError(
+        f"OpenRouter does not list a model named {name!r}. Name a model from "
+        "https://openrouter.ai/models exactly as it appears there."
+    )
+
+
+def model_facts(name: str) -> ModelFacts:
+    """Fetch the listing and reduce the named model to the facts its profile is built from.
+
+    Unauthenticated, about 650 KB, once per run. The whole listing rather than the per-model route
+    because a name Coral will not review has to be refused before anything is asked of it.
+    """
+    if ALIAS_PREFIX in name:
+        raise RuntimeError(
+            f"Coral will not review with {name!r}. OpenRouter resolves a `{ALIAS_PREFIX}` alias to "
+            "whichever model is current, so the model a review ran on would not be knowable from "
+            "the workflow file. Name the model exactly."
+        )
+    log.info("Fetching OpenRouter's model listing to build the profile for %s.", name)
+    response = httpx.get(f"{BASE_URL}/models", timeout=TIMEOUT)
+    if not response.is_success:
+        raise RuntimeError(f"GET /api/v1/models returned {response.status_code}: {response.text}")
+    return facts_of(response.json()["data"], name)

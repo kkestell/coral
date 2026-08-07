@@ -33,6 +33,7 @@ from pydantic import SecretStr
 
 from coral import container
 from coral.deadline import Deadline
+from coral.openrouter import ModelFacts
 from coral.schema import Review, Verification, review_from_result, verification_from_result
 
 log = logging.getLogger(__name__)
@@ -46,24 +47,6 @@ register_harness_profile(
     "openrouter",
     HarnessProfile(general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)),
 )
-
-MODEL: Final = "openai/gpt-5.6-luna"
-
-# Copied by hand from the profile the exact name above resolves to. Supplying it rather than
-# letting the lookup run keeps the profile a decision this file makes: a model with no profile gets
-# summarization triggers scaled to 170,000 tokens rather than the real million.
-#
-# No key here decides the structured-output strategy; `_run` names it.
-#
-# `temperature` is false because this model rejects the parameter outright, which the profile is
-# what tells LangChain.
-MODEL_PROFILE: Final[ModelProfile] = {
-    "tool_calling": True,
-    "reasoning_output": True,
-    "max_input_tokens": 1_050_000,
-    "max_output_tokens": 128_000,
-    "temperature": False,
-}
 
 # `ChatOpenRouter` takes its timeout in milliseconds. No real run has come near it: real reviews
 # in `kkestell/coral-test` used 14 to 51 messages against the 200-message `STEP_CAP` and a
@@ -125,6 +108,27 @@ class DeadlineMiddleware(AgentMiddleware[Any, Any]):
         return None
 
 
+def profile_of(facts: ModelFacts) -> ModelProfile:
+    """The model profile, built from what OpenRouter's listing says about the model.
+
+    Supplied rather than left to LangChain's own lookup, which has no entry for most OpenRouter ids
+    and falls back to summarization triggers scaled to 170,000 tokens rather than the real window.
+    `temperature` is false for a model that rejects the parameter outright, which the profile is
+    what tells LangChain. No key here decides the structured-output strategy; `_run` names it.
+    """
+    profile: ModelProfile = {
+        "tool_calling": "tools" in facts.parameters,
+        "reasoning_output": "reasoning" in facts.parameters,
+        "temperature": "temperature" in facts.parameters,
+        "max_input_tokens": facts.context_length,
+    }
+    # Left out rather than guessed for a model whose ceiling the listing does not report. An
+    # absent key is what the lookup's own miss looks like, and LangChain reads it the same way.
+    if facts.max_completion_tokens is not None:
+        profile["max_output_tokens"] = facts.max_completion_tokens
+    return profile
+
+
 def review_prompt() -> str:
     """What Coral looks for, read out of the installed package."""
     return (files("coral") / "prompts" / "review.md").read_text(encoding="utf-8")
@@ -172,6 +176,9 @@ def forgiving(middleware: FilesystemMiddleware) -> FilesystemMiddleware:
 
 def _run(
     api_key: str,
+    name: str,
+    effort: str,
+    facts: ModelFacts,
     checkout: Path,
     container_name: str,
     request: str,
@@ -184,8 +191,10 @@ def _run(
     The one place the model client, the backend, and the middleware are constructed. Both runs
     share every bound here; what differs between them is the prompt and the type they return.
     """
+    profile = profile_of(facts)
+    log.info("Reviewing on %s with effort %r and the profile %s.", name, effort, profile)
     model = ChatOpenRouter(
-        model=MODEL,
+        model=name,
         api_key=SecretStr(api_key),
         timeout=MODEL_TIMEOUT_MILLISECONDS,
         max_retries=MODEL_RETRIES,
@@ -193,7 +202,11 @@ def _run(
         # Coral passes an instance. `require_parameters` is what keeps the request off an endpoint
         # that cannot serve tool calling, which the model profile alone does not decide.
         openrouter_provider={"require_parameters": True, "ignore": ["azure"]},
-        profile=MODEL_PROFILE,
+        profile=profile,
+        # OpenRouter's own reasoning block, and the whole of what an effort does. Left out when the
+        # caller named none, which leaves the provider applying its own default; a value the
+        # provider refuses comes back as the provider's own words.
+        reasoning={"effort": effort} if effort else None,
     )
     # The ceiling needs both halves. The middleware rejects a command whose own `timeout` argument
     # overshoots, telling the model the ceiling rather than clamping; the backend bounds the case
@@ -247,18 +260,54 @@ def _run(
 
 
 def produce_review(
-    api_key: str, checkout: Path, container_name: str, request: str, deadline: Deadline
+    api_key: str,
+    name: str,
+    effort: str,
+    facts: ModelFacts,
+    checkout: Path,
+    container_name: str,
+    request: str,
+    deadline: Deadline,
 ) -> Review:
     """Run the reviewer over its copy of the checkout and return the review it produced, or fail."""
     return review_from_result(
-        _run(api_key, checkout, container_name, request, deadline, review_prompt(), Review)
+        _run(
+            api_key,
+            name,
+            effort,
+            facts,
+            checkout,
+            container_name,
+            request,
+            deadline,
+            review_prompt(),
+            Review,
+        )
     )
 
 
 def verify_findings(
-    api_key: str, checkout: Path, container_name: str, request: str, deadline: Deadline
+    api_key: str,
+    name: str,
+    effort: str,
+    facts: ModelFacts,
+    checkout: Path,
+    container_name: str,
+    request: str,
+    deadline: Deadline,
 ) -> Verification:
     """Run the verifier over its own fresh copy of the checkout and return its verdicts, or fail."""
     return verification_from_result(
-        _run(api_key, checkout, container_name, request, deadline, verify_prompt(), Verification)
+        _run(
+            api_key,
+            name,
+            effort,
+            facts,
+            checkout,
+            container_name,
+            request,
+            deadline,
+            verify_prompt(),
+            Verification,
+        )
     )

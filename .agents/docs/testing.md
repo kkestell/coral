@@ -5,9 +5,9 @@ Where the tests live, how to run them, and the live checks.
 ## Layout
 
 - `tests/` at the repository root, one `test_<module>.py` per module under test.
-- A unit test is one module, real input, no network, no credentials. A failure that is the point of the test uses `pytest.raises`.
-- No fixture directory. A test writes its input inline as JSON-shaped dictionaries validated through `pydantic.TypeAdapter`, with schema payloads from the helpers in `tests/test_schema.py`. A real API response is trimmed to a few nodes of each kind, commented with where it came from and when.
-- A new test uses real input rather than a mock, edge cases rather than another happy path, and asserts what the contract promises.
+- A unit test is one module, real input, no network, no credentials. A failure the test is about uses `pytest.raises`.
+- No fixture directory, and no test imports another. A test writes its input inline as JSON-shaped dictionaries validated through `pydantic.TypeAdapter`, with schema payloads from the helpers in `tests/test_schema.py`. A real API response is trimmed to a few nodes of each kind, commented with where it came from and when.
+- A new test prefers edge cases to another happy path, and asserts what the contract promises.
 
 ## Running A Subset
 
@@ -17,7 +17,7 @@ Where the tests live, how to run them, and the live checks.
 
 ## Not Covered by `pytest`
 
-Checked live; unit tests cover only the decisions Coral makes on its own:
+Checked live; unit tests cover only what Coral decides on its own:
 
 - The GitHub API, the format `coral/diff.py` parses, and the workflow with its composite actions.
 - The model call, and summarization firing mid-run.
@@ -27,47 +27,40 @@ Checked live; unit tests cover only the decisions Coral makes on its own:
 
 ## The Live Checks
 
-One real run in `kkestell/coral-test`, started by hand, in order within a group, after pushing to the branch the example file pins. Each check names where its evidence is: the pull request, or the run's own log.
-
-**The walking skeleton**
-
-1. Open a pull request as a draft: a run is recorded with its jobs skipped, nothing posted. Mark it ready: a full run.
+One real run in `kkestell/coral-test`, started by hand, in order within a group, after pushing to the branch the example file pins. Each names its evidence: the pull request or the run's log.
 
 **Reading the conversation**
 
 1. From a developer machine, fetch `cli/cli` 10513 with the command in `.agents/docs/development.md`. Expect 84 threads, a bound reporting dropped comments, and a second page forced on the reviews connection by its 117 reviews.
-2. Open a pull request. The review says it read a conversation of nothing — where a token that cannot reach `reviewThreads` goes red.
-3. Comment `/coral`. The second review reads the first review's marker, names the commit, and counts the asking comment.
-4. Reply to Coral's inline finding, resolve the thread, comment `/coral`. The third review reports the thread resolved and Coral's finding as Coral's.
-5. Push a commit changing the line under Coral's finding, comment `/coral`. The review reports that thread outdated — the flag a finding's standing is decided by.
+2. Comment `/coral`. The second review reads the first review's marker, names the commit, and counts the asking comment.
+3. Reply to Coral's inline finding, resolve the thread, comment `/coral`. The third review reports the thread resolved and Coral's finding as Coral's.
+4. Push a commit changing the line under Coral's finding, comment `/coral`. The review reports that thread outdated — the flag a finding's standing is decided by.
 
 **The gatekeeper**
 
 1. Comment a body carrying `/coral` only fenced, mid-sentence, and blockquoted. A run starts (the job condition is coarse), no reaction, no review, green.
 2. Comment `/coral` alone on its own line with prose around it. Reaction and review — the control for the check above.
-3. Comment `/coral`, then twice more while that run is going. The second run queues and is cancelled by the third. All three comments get the reaction and two reviews appear.
-4. Reply `/coral` on the diff. Reaction in the pulls namespace, and no second reaction from a later run — checks `viewerHasReacted` answers for the token's account.
+3. Comment `/coral` twice more while that run is going. The second run queues and is cancelled by the third; all three comments get the reaction and two reviews appear.
+4. Reply `/coral` on the diff. Reaction in the pulls namespace, and no second reaction from a later run — `viewerHasReacted` answers for the token's account.
 5. Close the pull request, comment `/coral`. Reaction, decline, no review, green.
-6. Let Coral review a pull request, convert to draft, mark ready again: the run declines on the marker. Comment `/coral` on the same commit and get a review: the gate declines automatic paths only.
+6. Let Coral review a pull request, convert to draft, mark ready again: the run declines on the marker. Ask on the same commit and get a review — the gate declines automatic paths only.
 7. Open a pull request adding a generated file over 30,000 lines. One comment saying the change exceeds what Coral will read, no review, green.
-8. From a fork under another account, open a pull request and comment `/coral`. The run declines on the fork gate. With no second account, recorded as not run; the unit test covers it.
 
 **What Coral looks for**
 
 1. Open a pull request with a planted defect. The review carries a finding at a sensible severity, its regression test in a collapsed block that renders as one on GitHub, and the log shows the verifier's confirming verdict.
 2. Watch a rejection drop a finding: edit `coral/prompts/verify.md` to reject every finding, push, then open a pull request with a fresh defect — one already reviewed produces no findings to reject. Expect a summary standing alone, and the log naming each drop and its reason. Revert.
-3. Comment `/coral` on that pull request with no new commits. The second review repeats nothing from the first.
+3. Comment `/coral` with no new commits, on that pull request and on the clean one below. Neither second review repeats the first, and the clean one says everything is already said rather than that there was nothing to find.
 4. Open a pull request with a trivially clean change. No findings, and the review says there was nothing to find.
 
 **Posting**
 
 1. Open a pull request that gives Coral something to find. Inline comments land on the lines the findings name; whatever could not attach is in the summary with its file and line.
-2. Comment `/coral`, wait for the review job to start, then close the pull request before it finishes. Green run, nothing posted, a log line saying it is no longer open.
-3. Ask again on the clean pull request above, no new commits. The second review says everything is already said rather than that there was nothing to find.
+2. Comment `/coral`, then close the pull request before the review job finishes. Green run, nothing posted, a log line saying it is no longer open.
 
 **Failure**
 
-1. Set `STEP_BUDGET_SECONDS` in `coral/deadline.py` to about 60, push, and ask for a review of a change big enough to outlast it. Expect exactly one comment naming the elapsed seconds and the budget inside a fence, the same `RuntimeError` in the review step's log, and a red run. Restore the constant.
+1. Set the caller's `time_budget_minutes` to 1 and ask for a review of a change big enough to outlast it. Expect exactly one comment naming the elapsed seconds and the budget inside a fence, the same `RuntimeError` in the review step's log, and a red run.
 2. Put a `raise RuntimeError("live check")` at the top of `resolve()`, push, and comment `/coral`. Expect a red run and one comment saying the run failed with no reason, linking the run. In the same state, a mid-sentence mention of `/coral`: red run, no comment. Revert.
 3. Set the test repository's `OPENROUTER_API_KEY` secret to a broken value and ask for a review. Expect one comment carrying the provider's own error inside the fence.
 4. A run that succeeds posts its review and nothing else. The control for the three above.
@@ -76,16 +69,16 @@ One real run in `kkestell/coral-test`, started by hand, in order within a group,
 
 1. Open a pull request that gives Coral something to find. Three jobs run, the review appears as before, and the review job's "GITHUB_TOKEN Permissions" log block lists `Contents: read` and nothing else.
 2. Add a step to the review job that posts a comment with `${{ github.token }}`, push, and ask for a review. Expect 403 and a red run; remove the step.
-3. Set the review job's `timeout-minutes` to 1, push, and ask for a review. GitHub kills the job mid-agent, no reason file crosses, and the publishing job's comment says the run failed with no reason. Restore it.
-4. Force the 422: edit `attachable` in `coral/diff.py` to shift every line anchor past its file's end, push, and review a change with a line finding. One review carries every finding in its summary, no inline comments, and the publishing job's log holds the 422 warning. Revert.
+3. Replace the review job's `timeout-minutes` expression with 1, push, and ask for a review. GitHub kills the job mid-agent, no reason file crosses, and the publishing job's comment says the run failed with no reason. Revert.
+4. Force the 422: edit `attachable` in `coral/diff.py` to shift every line anchor past its file's end, push, and review a change with a line finding. One review carries every finding in its summary, no inline comments, and the 422 warning is in the publishing log. Revert.
 
 **A key per run**
 
 The secrets swap in `kkestell/coral-test`'s Actions secrets and its caller file.
 
 1. Pass-through, the control: `OPENROUTER_API_KEY` set, the caller passing only `openrouter_api_key`. Open a pull request: a review appears, green run.
-2. Minting: remove that secret, set `OPENROUTER_MANAGEMENT_KEY`, point the caller at `openrouter_management_key`, open a pull request. A review appears, green run. The key shows in the clear only in the masking step's own header, `***` in every later echo. Under the management key, `GET /api/v1/keys` lists a key named for the run, capped and expiring as `coral/openrouter.py` sets.
-3. Expiry: a run's own key is unrecoverable, so rehearse the path by hand. Call `mint` from a developer machine with a short TTL patched in, watch a completion succeed before `expires_at` and answer 401 after, then delete the key.
+2. Minting: remove that secret, set `OPENROUTER_MANAGEMENT_KEY`, point the caller at `openrouter_management_key`, open a pull request. A review appears, green run. The key is in the clear only in the masking step's header, `***` in every later echo, and `GET /api/v1/keys` lists it named for the run, capped and expiring as `coral/openrouter.py` sets.
+3. Expiry: a run's own key is unrecoverable, so rehearse by hand. Call `mint` from a developer machine with a short TTL, watch a completion succeed before `expires_at` and answer 401 after, then delete the key.
 4. Misconfiguration: set both secrets and comment `/coral`. Red run, one comment saying to pass exactly one. Then a broken management key with no API key: red run, one comment carrying OpenRouter's own error.
 
 **Take the agent out of the runner user**
@@ -101,3 +94,13 @@ Each of the first three needs a project of that language with a planted defect.
 
 1. From a developer machine, review a local clone with a planted defect on DeepSeek across three providers, `openai/gpt-5.5`, and `anthropic/claude-haiku-4.5`. Each returns a valid `Review`, tool calls ahead of the schema tool call.
 2. A pull request with a planted defect on the default model still posts a confirmed finding.
+
+**Configuration knobs**
+
+The knobs swap in the caller file.
+
+1. Name all three — a model the group above tested, an explicit effort, `time_budget_minutes: 10`. A review posts green, the review step's log carries the budget and the fetched profile, and the review job's timeout is 20 minutes.
+2. Remove the `with:` block. A review posts as before, and the logged profile is the one Coral carried by hand: a million-token window, 128,000 out, no temperature.
+3. Set `model` to `~openai/gpt-mini-latest`. Red run, one comment refusing the alias and saying to name the model exactly.
+4. Set `time_budget_minutes` to 355. Red run, one comment carrying the ceiling.
+5. Set `model` to a name OpenRouter does not list. Red run, one comment saying so.

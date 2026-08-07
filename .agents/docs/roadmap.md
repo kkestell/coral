@@ -119,6 +119,46 @@ Runs the agent's shell inside a container on the runner, out of reach of `Runner
 
 Done when: reviews in the test repository run a Python, a Node, and a Go project's own tests from inside the container, and a shell command the agent runs there can reach neither the runner's filesystem nor its process table.
 
+## 13. Structured output on any model
+
+Status: not started
+Depends on: 12
+
+The agent returns its structured object through an arrangement that is not written for one model's behavior. `coral/agent.py` drops `structured_output` from the profile to force a synthetic tool, which is what buys the agent loop from `openai/gpt-5.6-luna` alone; item 14 cannot let a caller name a model until that arrangement holds for models generally.
+
+Settled by running the reviewer from a developer machine against DeepSeek on several of its providers, an OpenAI model, and Anthropic's Haiku. Local rather than through a review: the question is what an endpoint answers, which costs a checkout and a handful of requests.
+
+- A model that answers in the schema on its first response has reviewed the diff alone, having read no file and run no test. Whatever lands keeps the tool calls ahead of the answer.
+- One arrangement for every model. A branch per model is a lookup table that goes stale without saying so.
+
+Done when: the reviewer returns a valid `Review` from each model tested with tools called before the answer, and a real review in the test repository still posts confirmed findings.
+
+## 14. Configuration knobs
+
+Status: not started
+Depends on: 13
+
+The caller file sets the model, the reasoning effort, and the review's time budget, as `workflow_call` inputs whose defaults leave an existing install reviewing exactly as it does today. The model's context window is fetched from OpenRouter at run time, retiring the profile `coral/agent.py` copies by hand.
+
+- Configuration lives in the caller's workflow file and never in the reviewed repository. GitHub reads that file from the default branch on the comment paths, so a file in the checkout would let a pull request pick the model that reviews it by commenting `/coral`.
+- A model name carrying a `~` alias is refused, which is what keeps the exact-naming rule in `.agents/docs/architecture.md` true once the name comes from outside.
+- A model OpenRouter does not list stops the run saying so. A model run against a guessed profile is one whose summarization triggers are scaled to somebody else's context window.
+- The job's `timeout-minutes` is derived from the budget input and keeps the headroom `coral/deadline.py` explains, and the input is bounded by GitHub's own ceiling on a job.
+- Nothing validates the model or the effort ahead of the review job. A value the provider refuses arrives as the provider's own words in the failure comment, the path a broken key already takes.
+
+Done when: a review in the test repository runs green on a model, an effort, and a budget the caller named; an install naming none of them is unchanged; and an aliased model name and an over-ceiling budget each stop the run with the reason said.
+
+## 15. A spend ceiling
+
+Status: not started
+Depends on: 14
+
+Coral stops a review that has spent more than the caller's cap, in both key modes. Every OpenRouter response carries its own cost, which `ChatOpenRouter` puts in the message's `response_metadata`; the running total is checked between steps, where the deadline is checked.
+
+- One input drives both mechanisms: it caps a minted key at mint time and stops the run when the accounting reaches it. The provider's cap survives Coral's arithmetic being wrong, and the accounting reaches the passed-through key that no minted cap does.
+
+Done when: a review capped at a fraction of a cent stops and posts one comment naming what it spent against the cap, in each key mode, and a review under its cap posts its review and nothing beside it.
+
 ## Not On This Roadmap
 
 Named so nobody has to guess. Everything under "Out Of Scope" in `.agents/docs/functional-requirements.md` also applies.
