@@ -1,4 +1,4 @@
-"""The one authenticated transport. Every REST call Coral makes goes through here."""
+"""The one authenticated transport. Every call Coral makes to GitHub goes through here."""
 
 from dataclasses import dataclass
 from typing import Any, Final
@@ -10,9 +10,20 @@ API_VERSION: Final = "2022-11-28"
 TIMEOUT: Final = 30.0
 
 
+def data_of(answer: dict[str, Any]) -> Any:
+    """The `data` half of a GraphQL answer, or the errors it carries instead."""
+    # A GraphQL query that failed still answers with HTTP 200 and an `errors` key, so the status
+    # check in `_request` sees a success. This is the only place that failure shows up, and
+    # without it a broken query becomes a `KeyError` on `data` several frames later.
+    if "errors" in answer:
+        messages = "; ".join(str(error["message"]) for error in answer["errors"])
+        raise RuntimeError(f"GraphQL query failed: {messages}")
+    return answer["data"]
+
+
 @dataclass(frozen=True)
 class GitHub:
-    """The GitHub REST API, holding the job's token."""
+    """The GitHub API, holding the job's token."""
 
     token: str
 
@@ -21,6 +32,9 @@ class GitHub:
 
     def post(self, path: str, body: dict[str, Any]) -> Any:
         return self._request("POST", path, body)
+
+    def graphql(self, query: str, variables: dict[str, Any]) -> Any:
+        return data_of(self._request("POST", "/graphql", {"query": query, "variables": variables}))
 
     def _request(self, method: str, path: str, body: dict[str, Any] | None) -> Any:
         response = httpx.request(

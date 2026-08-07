@@ -106,4 +106,5 @@ def test_the_temporary_directory_is_made_under_the_runners_own(
     monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
     assert runner.temporary_directory() == tmp_path / "coral"
     assert runner.pull_request_path() == tmp_path / "coral" / "pull-request.json"
+    assert runner.conversation_path() == tmp_path / "coral" / "conversation.json"
     assert (tmp_path / "coral").is_dir()

@@ -81,6 +81,15 @@ def pull_request_path() -> Path:
     return temporary_directory() / "pull-request.json"
 
 
+def conversation_path() -> Path:
+    """Where resolve leaves the conversation for review to read.
+
+    Same reasoning as the pull request, and the same directory. The conversation is the larger of
+    the two and is the reason the temporary directory carries files at all.
+    """
+    return temporary_directory() / "conversation.json"
+
+
 def workspace() -> Path:
     """Where the checkout lives. This is the one place that knows."""
     return Path(os.environ["GITHUB_WORKSPACE"])
