@@ -110,16 +110,12 @@ Done when: a real review runs green in each mode, the minted key no longer authe
 
 ## 12. Take the agent out of the runner user
 
-Status: not started
+Status: built
 Depends on: 11
 
-Runs the agent's shell inside a container on the runner, out of reach of `Runner.Worker`'s memory, the runner's filesystem, and every secret the job holds. Items 10 and 11 bound what a compromised agent gets; this is the item that stops it getting anything.
+Runs the agent's shell inside a container on the runner, out of reach of `Runner.Worker`'s memory, the runner's filesystem, and every secret the job holds. Items 10 and 11 bound what a compromised agent gets; this is the item that stops it getting anything. `coral/container.py` is the only place Coral speaks to `docker`, and `reset` in `coral/diff.py` is retired by it.
 
-- Coral's own process stays on the runner and only the shell tool executes in the container, so no credential enters the container at all.
-- A container rather than a second user. Root in a container is not root on the host, so `sudo` and `apt-get` keep working, which is what a second user gives up.
-- No Docker reachable from the container, and never `--privileged`. Both are host root, so a daemon the agent can reach is not a sandbox. `.agents/docs/functional-requirements.md` gains this under "Out Of Scope" when this is built.
-- `.agents/docs/architecture.md` records that the hosted image's preinstalled toolchain is the only reason a repository Coral has never seen builds at all. The container answers that with `/opt/hostedtoolcache` mounted read-only plus `apt-get` for the rest, and that answer is what this item has to prove.
-- The agent gets a copy of the checkout that it owns.
+- Each agent run gets its own copy of the checkout and its own container, so the verifier installs whatever the reviewer already installed. Revisit only against a measurement of what that costs.
 
 Done when: reviews in the test repository run a Python, a Node, and a Go project's own tests from inside the container, and a shell command the agent runs there can reach neither the runner's filesystem nor its process table.
 

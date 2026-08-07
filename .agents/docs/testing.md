@@ -7,7 +7,7 @@ Where this project's own tests live, how to run them, and the live checks.
 - `tests/` at the repository root, one `test_<module>.py` per module under test, run with `pytest`.
 - A unit test is one module, real input, no network, no credentials. A failure that is the point of the test uses `pytest.raises`.
 - No fixture directory. A test writes its input inline as JSON-shaped dictionaries validated through `pydantic.TypeAdapter`; schema payloads use the helpers in `tests/test_schema.py`. A real API response is trimmed to a few nodes of each kind, with a comment saying where it came from and when.
-- A new test uses real input rather than a mock and edge cases rather than another happy path, and asserts what the contract promises. Every bug fixed earns one.
+- A new test uses real input rather than a mock, edge cases rather than another happy path, and asserts what the contract promises. Every bug fixed earns one.
 
 ## Running A Subset
 
@@ -29,7 +29,7 @@ Each checked live; unit tests cover only the decisions Coral makes on its own:
 
 ## The Live Checks
 
-One real run in `kkestell/coral-test`, started by hand, in order within a group, after pushing to the branch the example file pins. That repository is public, disposable, and exists for this alone. Evidence is on the pull request, not in what the run printed.
+One real run in `kkestell/coral-test`, started by hand, in order within a group, after pushing to the branch the example file pins. That repository is public, disposable, and exists for this alone. Each check names where its evidence is: the pull request, or the run's own log.
 
 **The walking skeleton**
 
@@ -94,9 +94,9 @@ The secrets swap in `kkestell/coral-test`'s Actions secrets and its caller file.
 
 **Take the agent out of the runner user**
 
-Each of the first three needs a project of that language on its own branch, with a planted defect.
+Each of the first three needs a project of that language with a planted defect.
 
-1. Python: open a pull request. The review carries the finding with its failing regression test, and the step log shows the test command running through the container.
+1. Python: open a pull request. The review carries the finding with its failing regression test, and the log's confirming verdict quotes its failure output. Coral logs no command text.
 2. Node: the same, on a project with an `npm test` suite.
 3. Go: the same, on a module with a `go test` suite.
 4. The escape probe: patch `coral/review.py` to run `ps -e`, `ls /home/runner`, `cat /proc/1/comm`, `touch /opt/hostedtoolcache/probe`, and `docker ps` through the agent's backend after provisioning, and log them. Expect only the container's own processes, no `Runner.Worker`, no `/home/runner`, an init as PID 1, a read-only refusal, and no `docker`. Revert.
