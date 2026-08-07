@@ -1,6 +1,9 @@
 """The conversation on the pull request: the query that reads it, the bound, and the file it
 crosses the step boundary on.
 
+Read over GraphQL, because `isResolved` and `isOutdated` on a review thread have no REST
+equivalent, and those two flags are what decide whether an earlier finding still stands.
+
 Three connections make up a conversation and they do not agree on what a unit is. A comment here
 is one piece of prose somebody wrote: an issue comment, a review whose body is not empty, or a
 comment inside a review thread. A review with an empty body is the envelope GitHub creates to
@@ -13,6 +16,8 @@ a comment inside it is kept.
 
 Coral recognizes its own work by the marker on the comment and never by the author login, which
 belongs to the repository's automation and is shared with everything else that account posts.
+Where the marker decides something rather than labelling something, `viewerDidAuthor` narrows it
+to the comments the job's own token wrote, because the marker itself is forgeable.
 """
 
 import logging
@@ -56,6 +61,9 @@ EYES: Final = "EYES"
 # GraphQL node id is not. `reactionGroups` is how Coral knows it has already reacted. Both are
 # asked for on reviews as well, because the review dataclass inherits the comment's fields and
 # not because a review is ever a reaction target.
+#
+# `viewerDidAuthor` is asked for on reviews only, because `reviewed_commits` is the one place a
+# marker decides something rather than labelling something.
 
 REVIEW_FIELDS: Final = """
 fragment ReviewFields on PullRequestReview {
@@ -67,6 +75,7 @@ fragment ReviewFields on PullRequestReview {
   submittedAt
   body
   commit { oid }
+  viewerDidAuthor
   reactionGroups { content viewerHasReacted }
 }
 """
@@ -409,7 +418,7 @@ def parse_thread_comments(nodes: list[Any]) -> list[ThreadComment]:
 
 
 def parse_threads(nodes: list[Any]) -> list[Thread]:
-    """The review threads, with the flags item 6 reads to decide whether a finding still stands."""
+    """The review threads, with the flags the prompt reads to decide whether a finding stands."""
     return [
         Thread(
             id=node["id"],
@@ -434,8 +443,13 @@ def reviewed_commits(nodes: list[Any]) -> list[str]:
     function of how much other people talked. Read from review bodies only: an inline finding
     carries a marker naming a commit too, and so will the failure comment, and neither of those
     means the commit was reviewed.
+
+    Only reviews the job's own token wrote count. The marker is characters anybody can type, and
+    anybody with read access can submit a review on a public pull request, so without
+    `viewerDidAuthor` a stranger could suppress the automatic review of a commit — silently, since
+    that gate posts nothing.
     """
-    found = (reviewed_commit(node["body"]) for node in nodes)
+    found = (reviewed_commit(node["body"]) for node in nodes if node["viewerDidAuthor"])
     return list(dict.fromkeys(commit for commit in found if commit is not None))
 
 
@@ -546,8 +560,12 @@ def bound(fetched: Fetched) -> Conversation:
     characters = 0
     oldest: str | None = None
     for candidate in sorted(candidates, key=lambda c: c.written_at, reverse=True):
-        if len(kept) == MAX_COMMENTS or characters + candidate.length > MAX_CHARACTERS:
+        if len(kept) == MAX_COMMENTS:
             break
+        # Skipped rather than stopped on, so one comment too large for what is left of the budget
+        # does not discard every older comment that would still have fit.
+        if characters + candidate.length > MAX_CHARACTERS:
+            continue
         kept.add(candidate.id)
         characters += candidate.length
         oldest = candidate.written_at

@@ -47,6 +47,9 @@ class PullRequestAnchor:
     kind: Literal["pull_request"]
 
 
+# A plain union with no Pydantic discriminator on it. The `kind` literals discriminate without
+# one, and adding one emits `oneOf` where a strict provider-side validator takes only `anyOf`.
+# `tests/test_schema.py` pins the generated schema against that.
 Anchor = SpanAnchor | LineAnchor | FileAnchor | PullRequestAnchor
 
 

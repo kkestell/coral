@@ -38,11 +38,11 @@ def rendered_thread(thread: Thread) -> str:
     # A thread whose line is null is one whose code is gone, which is what an outdated thread
     # against a deleted line looks like.
     if thread.line is None:
-        where = "a line that is gone"
+        location = "a line that is gone"
     elif thread.start_line is None:
-        where = f"line {thread.line}"
+        location = f"line {thread.line}"
     else:
-        where = f"lines {thread.start_line} to {thread.line}"
+        location = f"lines {thread.start_line} to {thread.line}"
     state = "resolved" if thread.resolved else "unresolved"
     staleness = "outdated" if thread.outdated else "current"
     held = f"It holds {count(thread.total_comments, 'comment')}."
@@ -51,7 +51,7 @@ def rendered_thread(thread: Thread) -> str:
         held = held.removesuffix(".") + f", of which the bound left {unread} unread."
     return "\n\n".join(
         [
-            f"### `{thread.path}`, {where}",
+            f"### `{thread.path}`, {location}",
             f"This thread is {state} and {staleness}. {held}",
             *(rendered_comment(4, comment) for comment in thread.comments),
         ]

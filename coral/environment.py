@@ -19,7 +19,8 @@ def shell_environment(source: Mapping[str, str]) -> dict[str, str]:
     """The subprocess environment for the agent's shell, taken from `source` by name.
 
     Takes a mapping rather than reading `os.environ` itself, so the caller pops both secrets
-    first and the barrier holds twice over.
+    first and the omission is checked in two places. Hygiene, not a boundary: the runner holds
+    both secrets in memory for the whole job and the agent's shell has `sudo`.
     """
     # A shell with no `PATH` runs nothing, which is a broken invocation rather than an empty
     # environment to work in.

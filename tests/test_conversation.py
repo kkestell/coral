@@ -64,6 +64,7 @@ CAPTURED: dict[str, Any] = {
                         "submittedAt": "2025-03-06T20:02:02Z",
                         "body": "",
                         "commit": {"oid": "dde7e24847970df859ca883ba316b4e09d039a71"},
+                        "viewerDidAuthor": False,
                         "reactionGroups": groups(),
                     },
                     {
@@ -79,6 +80,7 @@ CAPTURED: dict[str, Any] = {
                             ":shipit: "
                         ),
                         "commit": {"oid": "f43e1cafdba856830f2592085bde14e6f32d9617"},
+                        "viewerDidAuthor": False,
                         "reactionGroups": groups(),
                     },
                 ],
@@ -223,6 +225,7 @@ def review_node(
     state: str = "COMMENTED",
     commit: str | None = COMMIT,
     database_id: int = 1,
+    authored: bool = False,
 ) -> dict[str, Any]:
     return {
         "id": identifier,
@@ -233,6 +236,7 @@ def review_node(
         "submittedAt": written_at,
         "body": body,
         "commit": {"oid": commit} if commit else None,
+        "viewerDidAuthor": authored,
         "reactionGroups": groups(),
     }
 
@@ -367,14 +371,27 @@ def test_the_already_reviewed_set_comes_from_every_review_fetched() -> None:
         fetched_from(
             comments=[comment_node(f"IC_{n}", written_at=at(500 + n)) for n in range(MAX_COMMENTS)],
             reviews=[
-                review_node("PRR_1", body=f"{marker(COMMIT)}\n\nOld.", written_at=at(1)),
-                review_node("PRR_2", body="", written_at=at(2)),
-                review_node("PRR_3", body=marker(OTHER_COMMIT), written_at=at(3)),
+                review_node(
+                    "PRR_1", body=f"{marker(COMMIT)}\n\nOld.", written_at=at(1), authored=True
+                ),
+                review_node("PRR_2", body="", written_at=at(2), authored=True),
+                review_node("PRR_3", body=marker(OTHER_COMMIT), written_at=at(3), authored=True),
             ],
         )
     )
     assert conversation.reviews == []
     assert conversation.reviewed_commits == [COMMIT, OTHER_COMMIT]
+
+
+def test_a_marker_somebody_else_typed_is_not_a_commit_coral_reviewed() -> None:
+    # The marker is characters anybody can type, and anybody with read access can submit a review
+    # on a public pull request. Counting a forged one would let a stranger suppress the automatic
+    # review of that commit, and that gate posts nothing, so the suppression would be silent.
+    reviews = [
+        review_node("PRR_1", body=marker(COMMIT), authored=False),
+        review_node("PRR_2", body=marker(OTHER_COMMIT), authored=True),
+    ]
+    assert reviewed_commits(reviews) == [OTHER_COMMIT]
 
 
 def test_the_bound_takes_the_most_recent_across_all_three_connections() -> None:
@@ -416,6 +433,24 @@ def test_the_character_bound_binds_first_when_the_bodies_are_long() -> None:
     # Eight of them come to exactly the ceiling, and the ninth would pass it.
     assert conversation.bound.read == 8
     assert conversation.bound.unread == 4
+
+
+def test_one_comment_too_large_to_fit_does_not_take_the_older_ones_with_it() -> None:
+    # Skipped rather than stopped on. GitHub caps a comment at 65,536 characters against a budget
+    # of 400,000, so at most a handful can ever be skipped this way, and none of them costs the
+    # comments behind it.
+    conversation = bound(
+        fetched_from(
+            comments=[
+                comment_node("IC_big", body="x" * (MAX_CHARACTERS - 10), written_at=at(3)),
+                comment_node("IC_over", body="y" * 100, written_at=at(2)),
+                comment_node("IC_small", body="z" * 5, written_at=at(1)),
+            ]
+        )
+    )
+    assert [comment.id for comment in conversation.comments] == ["IC_small", "IC_big"]
+    assert conversation.bound.read == 2
+    assert conversation.bound.unread == 1
 
 
 def test_the_comment_bound_binds_first_when_the_bodies_are_short() -> None:

@@ -8,12 +8,15 @@ A review is neither, and is never owed a reaction: GitHub has no endpoint for re
 which is also why the body of a submitted review is not a place to ask.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Literal
 
 from coral.command import is_request
-from coral.github.client import GitHub
+from coral.github.client import ApiError, GitHub
 from coral.github.conversation import EYES, Comment, Conversation
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -51,13 +54,23 @@ def requests_in(conversation: Conversation) -> list[Request]:
 
 
 def react(github: GitHub, owner: str, repo: str, requests: list[Request]) -> None:
-    """Acknowledge each request, one call each."""
+    """Acknowledge each request, one call each, and go on when one of them will not take it.
+
+    A failed reaction is logged and costs nothing else. A comment deleted between the fetch and
+    the reaction answers 404, and a locked conversation answers 403, and neither is a reason to
+    fail a review that had nothing wrong with it and report on the pull request that Coral could
+    not read the change. Every status is swallowed alike: the only thing a reaction failure can
+    tell Coral is that this comment did not get its acknowledgment.
+    """
     for request in requests:
         match request.namespace:
             case "issues":
                 path = f"/repos/{owner}/{repo}/issues/comments/{request.id}/reactions"
             case "pulls":
                 path = f"/repos/{owner}/{repo}/pulls/comments/{request.id}/reactions"
-        # The REST endpoint takes the reaction name in lower case. Posting one that is already
-        # there returns 200 and creates nothing, so nothing here reads first.
-        github.post(path, {"content": EYES.lower()})
+        try:
+            # The REST endpoint takes the reaction name in lower case. Posting one that is already
+            # there returns 200 and creates nothing, so nothing here reads first.
+            github.post(path, {"content": EYES.lower()})
+        except ApiError as error:
+            log.warning("Could not acknowledge comment %d: %s", request.id, error)

@@ -59,6 +59,7 @@ def review_node(body: str, author: str = "reviewer", state: str = "APPROVED") ->
         "submittedAt": "2025-01-01T00:01:00Z",
         "body": body,
         "commit": {"oid": COMMIT},
+        "viewerDidAuthor": False,
         "reactionGroups": groups(),
     }
 

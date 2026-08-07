@@ -3,6 +3,10 @@
 Two steps can report a failure and only one of them ever does. The review step catches its own,
 because it is the step holding the reason. This step runs on job failure and covers everything
 before it, where the reason never reached Coral at all. They meet at `runner.reported_path()`.
+
+Neither covers a death that takes the job down with it: the runner vanishing, GitHub's own
+timeout, or a setup failure leaving no console script to run. Those are visible in the Actions tab
+and nowhere else, and the recovery is asking again.
 """
 
 import json

@@ -69,9 +69,9 @@ MODEL_PROFILE: Final[ModelProfile] = {
 }
 
 # `ChatOpenRouter` takes its timeout in milliseconds. No real run has come near it: real reviews
-# in `kkestell/coral-test` used 14 to 51 messages against the 200-message `STEP_CAP`, and their
-# longest single shell command ran 12.2 seconds against the 300-second `SHELL_CEILING_SECONDS`.
-# Both hold as chosen.
+# in `kkestell/coral-test` used 14 to 51 messages against the 200-message `STEP_CAP` and a
+# verifier run confirming one finding used 9, while the longest single shell command any of them
+# ran took 12.2 seconds against the 300-second `SHELL_CEILING_SECONDS`. Both hold as chosen.
 MODEL_TIMEOUT_MILLISECONDS: Final = 180_000
 STEP_CAP: Final = 200
 SHELL_CEILING_SECONDS: Final = 300

@@ -28,29 +28,33 @@ def parse_added_lines(text: str) -> list[AddedLine]:
     """Read the lines on the new side out of the text `git diff --unified=0` produced."""
     added: list[AddedLine] = []
     path: str | None = None
-    # An added line whose own content begins with `++` renders as `+++ ...`, so a `+++` line is a
-    # file header only where one belongs: directly after the `---` line of the same pair.
-    after_old_side = False
+    # Content can look like a file header: an added line beginning with `++` renders as `+++ ...`,
+    # and a deleted line beginning with `--` renders as `--- ...`. So a header is read only where
+    # one belongs, which is after the `diff --git` line and before the file's first hunk. A hunk
+    # header is unambiguous either way, because every line inside a hunk carries a `+`, a `-`, or
+    # a `\` in front of its own content.
+    in_hunk = False
 
     for line in text.splitlines():
-        if line.startswith("--- "):
-            after_old_side = True
+        if line.startswith("diff --git "):
+            path = None
+            in_hunk = False
             continue
-        if after_old_side and line.startswith("+++ "):
-            after_old_side = False
+        hunk = HUNK.match(line)
+        if hunk is not None:
+            in_hunk = True
+            if path is None:
+                continue
+            start = int(hunk.group(1))
+            # A hunk header with no count means one line. A count of zero is a pure deletion.
+            count = 1 if hunk.group(2) is None else int(hunk.group(2))
+            added.extend(AddedLine(path=path, line=start + offset) for offset in range(count))
+            continue
+        if not in_hunk and line.startswith("+++ "):
             # git terminates the name with a tab when it contains a space, so that the header
             # line stays unambiguous. The tab is a delimiter and not part of the path.
             target = line.removeprefix("+++ ").removesuffix("\t")
             path = None if target == "/dev/null" else target.removeprefix("b/")
-            continue
-        after_old_side = False
-        hunk = HUNK.match(line)
-        if hunk is None or path is None:
-            continue
-        start = int(hunk.group(1))
-        # A hunk header with no count means one line. A count of zero is a pure deletion.
-        count = 1 if hunk.group(2) is None else int(hunk.group(2))
-        added.extend(AddedLine(path=path, line=start + offset) for offset in range(count))
 
     return added
 
@@ -138,10 +142,16 @@ def merge_base(workspace: Path, base: str, head: str) -> str:
 
 def git(workspace: Path, *arguments: str) -> str:
     """Run one git command inside the checkout. The one place a subprocess is involved."""
-    return subprocess.run(
+    result = subprocess.run(
         ["git", *arguments],
         cwd=workspace,
-        check=True,
         capture_output=True,
         text=True,
-    ).stdout
+    )
+    # Raised here rather than by `check=True`, whose `CalledProcessError` message carries the exit
+    # status and not git's stderr. The message is what reaches the pull request when a review
+    # fails, and an exit status alone says nothing about a missing commit or a bad ref.
+    if result.returncode != 0:
+        command = " ".join(["git", *arguments])
+        raise RuntimeError(f"`{command}` failed: {result.stderr.strip() or 'no output'}")
+    return result.stdout

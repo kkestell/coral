@@ -1,10 +1,13 @@
 """Tests of `coral.github.reactions`.
 
-Which comments are owed a reaction is a decision Coral makes on its own, and it is what these
-cover. Whether `viewerHasReacted` answers for the account the job's token belongs to is a live
-check, and no test here holds an opinion about it.
+Which comments are owed a reaction, and what a refused reaction costs, are decisions Coral makes
+on its own, and they are what these cover. Whether `viewerHasReacted` answers for the account the
+job's token belongs to is a live check, and no test here holds an opinion about it.
 """
 
+from typing import Any
+
+from coral.github.client import ApiError, GitHub
 from coral.github.conversation import (
     Bound,
     Comment,
@@ -14,7 +17,7 @@ from coral.github.conversation import (
     ThreadComment,
 )
 from coral.github.marker import marker
-from coral.github.reactions import Request, requests_in
+from coral.github.reactions import Request, react, requests_in
 
 COMMIT = "9f3a1c2b4d5e6f708192a3b4c5d6e7f809a1b2c3"
 
@@ -135,3 +138,29 @@ def test_corals_own_comment_is_not_a_request() -> None:
 
 def test_a_conversation_nobody_asked_anything_in() -> None:
     assert requests_in(conversation()) == []
+
+
+def recording(refuses: dict[str, int], attempted: list[str]) -> GitHub:
+    """A `GitHub` that records every path posted to and refuses the ones named, with a status."""
+
+    class Recording(GitHub):
+        def post(self, path: str, body: dict[str, Any]) -> Any:
+            attempted.append(path)
+            if path in refuses:
+                raise ApiError("POST", path, refuses[path], "the comment is gone")
+            return {}
+
+    return Recording(token="not a real token")
+
+
+def test_a_reaction_github_refuses_costs_neither_the_run_nor_the_requests_after_it() -> None:
+    # A comment deleted between the fetch and the reaction answers 404 and a locked conversation
+    # answers 403. Raising here would fail a run whose review had nothing wrong with it, and the
+    # report step would then say on the pull request that Coral did not review the change.
+    attempted: list[str] = []
+    github = recording({"/repos/o/r/issues/comments/1/reactions": 404}, attempted)
+    react(github, "o", "r", [Request(id=1, namespace="issues"), Request(id=2, namespace="pulls")])
+    assert attempted == [
+        "/repos/o/r/issues/comments/1/reactions",
+        "/repos/o/r/pulls/comments/2/reactions",
+    ]

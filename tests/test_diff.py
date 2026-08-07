@@ -10,7 +10,9 @@ real repository built in a temporary directory.
 
 from pathlib import Path
 
-from coral.diff import AddedLine, attachable, git, parse_added_lines, reset
+import pytest
+
+from coral.diff import AddedLine, attachable, git, merge_base, parse_added_lines, reset
 from coral.schema import FileAnchor, LineAnchor, PullRequestAnchor, SpanAnchor
 
 TWO_FILES = """\
@@ -123,6 +125,27 @@ diff --git a/a.txt b/a.txt
     assert parse_added_lines(diff) == [AddedLine(path="a.txt", line=2)]
 
 
+def test_content_shaped_like_a_header_pair_does_not_take_over_the_path() -> None:
+    # A deleted line whose content begins with `--` and an added line whose content begins with
+    # `++` are a `---` and `+++` pair, which is what a real file header is. Reading this one as a
+    # header would lose line 3 and record a phantom path for every later hunk in the file.
+    diff = """\
+diff --git a/f.txt b/f.txt
+--- a/f.txt
++++ b/f.txt
+@@ -1 +1 @@
+--- alpha
++++ beta
+@@ -3 +3 @@ keep
+-second
++CHANGED
+"""
+    assert parse_added_lines(diff) == [
+        AddedLine(path="f.txt", line=1),
+        AddedLine(path="f.txt", line=3),
+    ]
+
+
 ADDED = {
     AddedLine(path="a.py", line=4),
     AddedLine(path="a.py", line=5),
@@ -208,6 +231,15 @@ def test_reset_removes_a_scratch_file_the_agent_wrote(tmp_path: Path) -> None:
     reset(workspace)
     assert not (workspace / "test_scratch.py").exists()
     assert not (workspace / "scratch").exists()
+
+
+def test_a_failed_git_command_raises_with_gits_own_diagnosis(tmp_path: Path) -> None:
+    # The exception's message is what a failure comment posts, and `CalledProcessError`'s message
+    # holds the exit status alone: a bad ref would reach the pull request saying nothing.
+    workspace = repository(tmp_path)
+    with pytest.raises(RuntimeError) as raised:
+        merge_base(workspace, "HEAD", "nosuchref")
+    assert "nosuchref" in str(raised.value)
 
 
 def test_reset_leaves_ignored_files_alone(tmp_path: Path) -> None:
