@@ -1,26 +1,32 @@
 """Tests of `coral.agent`.
 
 No model is called and no agent is built here; that is live only. What these tests cover is the
-prompt loading, the deadline hook, and one behavior of the dependency the construction relies on.
+prompt loading, the deadline hook, what the agent is asked for, and two behaviors of the dependency
+the construction relies on.
 """
 
 import time
 from inspect import signature
 from pathlib import Path
+from typing import Any
 
 import pytest
+from langchain.agents.structured_output import ToolStrategy
 from langchain_core.tools import StructuredTool
 
+import coral.agent
 from coral.agent import (
     SHELL_CEILING_SECONDS,
     ContainerBackend,
     DeadlineMiddleware,
+    _run,
     caught,
     forgiving,
     review_prompt,
     verify_prompt,
 )
 from coral.deadline import STEP_BUDGET_SECONDS, Deadline
+from coral.schema import Review
 
 
 def backend(tmp_path: Path) -> ContainerBackend:
@@ -93,6 +99,44 @@ def test_the_container_backend_is_still_offered_a_shell(tmp_path: Path) -> None:
 
     middleware = FilesystemMiddleware(backend=backend(tmp_path))
     assert "execute" in {tool.name for tool in middleware.tools}
+
+
+def test_the_structured_output_strategy_is_named_rather_than_detected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Left to the framework, the strategy is picked from the model's profile and from a table of
+    # model names kept upstream, and a model either of those catches answers in the schema on its
+    # first response — a review written from the diff alone. Naming the synthetic tool is what
+    # holds the agent loop on every model, so a change back to detection fails here.
+    built: list[dict[str, Any]] = []
+
+    class Built:
+        """Stands in for the agent: the run reaches `invoke` and gets an empty message list."""
+
+        def with_config(self, config: dict[str, Any]) -> Built:
+            return self
+
+        def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
+            return {"messages": []}
+
+    def build(model: Any, **keywords: Any) -> Built:
+        built.append(keywords)
+        return Built()
+
+    monkeypatch.setattr(coral.agent, "create_deep_agent", build)
+    _run(
+        "not-a-key",
+        tmp_path,
+        "coral-reviewer",
+        "review this",
+        Deadline(started=time.monotonic(), budget=STEP_BUDGET_SECONDS),
+        review_prompt(),
+        Review,
+    )
+
+    strategy = built[0]["response_format"]
+    assert isinstance(strategy, ToolStrategy)
+    assert strategy.schema is Review
 
 
 def test_the_container_backends_execute_still_takes_the_ceiling(tmp_path: Path) -> None:

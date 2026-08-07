@@ -23,6 +23,7 @@ from deepagents import (
 from deepagents.backends import LocalShellBackend
 from deepagents.backends.protocol import ExecuteResponse
 from langchain.agents.middleware import AgentMiddleware
+from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models.model_profile import ModelProfile
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import StructuredTool
@@ -48,15 +49,11 @@ register_harness_profile(
 
 MODEL: Final = "openai/gpt-5.6-luna"
 
-# Copied by hand from the profile the exact name above resolves to, minus one key. Supplying it
-# rather than letting the lookup run keeps the profile a decision this file makes: a model with no
-# profile gets summarization triggers scaled to 170,000 tokens rather than the real million.
+# Copied by hand from the profile the exact name above resolves to. Supplying it rather than
+# letting the lookup run keeps the profile a decision this file makes: a model with no profile gets
+# summarization triggers scaled to 170,000 tokens rather than the real million.
 #
-# `structured_output` is deliberately absent, though the resolved profile carries it. LangChain
-# reads that key to pick a native structured-output request over a synthetic tool, and the native
-# request makes the endpoint answer in the schema on its first response — so the model returns a
-# review written from the diff alone, having called no tool, and sometimes a summary of "...".
-# Omitting the key buys the synthetic tool instead, and with it the agent loop.
+# No key here decides the structured-output strategy; `_run` names it.
 #
 # `temperature` is false because this model rejects the parameter outright, which the profile is
 # what tells LangChain.
@@ -225,7 +222,15 @@ def _run(
             DeadlineMiddleware(deadline),
         ],
         backend=backend,
-        response_format=response_format,
+        # Named rather than left to the framework's auto-detection, which asks for the provider's
+        # own structured output whenever the model's profile carries `structured_output` or its
+        # name matches a table of GPT, Claude, and Grok names kept upstream. That request makes the
+        # endpoint answer in the schema on its first response, so the model returns a review
+        # written from the diff alone, having read no file and run no test. The synthetic tool
+        # instead binds every call with `tool_choice="any"`: the model must call a tool at each
+        # step and the run ends when it calls the schema tool, which is the agent loop, on every
+        # model rather than on the ones a lookup happens to miss.
+        response_format=ToolStrategy(response_format),
     )
     # DeepAgents binds a recursion limit of 9,999 through `with_config`; a second `with_config`
     # on the compiled graph overrides it. There is no constructor parameter for it.

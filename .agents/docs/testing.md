@@ -1,13 +1,13 @@
 # Testing
 
-Where this project's own tests live, how to run them, and the live checks.
+Where the tests live, how to run them, and the live checks.
 
 ## Layout
 
-- `tests/` at the repository root, one `test_<module>.py` per module under test, run with `pytest`.
+- `tests/` at the repository root, one `test_<module>.py` per module under test.
 - A unit test is one module, real input, no network, no credentials. A failure that is the point of the test uses `pytest.raises`.
-- No fixture directory. A test writes its input inline as JSON-shaped dictionaries validated through `pydantic.TypeAdapter`; schema payloads use the helpers in `tests/test_schema.py`. A real API response is trimmed to a few nodes of each kind, with a comment saying where it came from and when.
-- A new test uses real input rather than a mock, edge cases rather than another happy path, and asserts what the contract promises. Every bug fixed earns one.
+- No fixture directory. A test writes its input inline as JSON-shaped dictionaries validated through `pydantic.TypeAdapter`, with schema payloads from the helpers in `tests/test_schema.py`. A real API response is trimmed to a few nodes of each kind, commented with where it came from and when.
+- A new test uses real input rather than a mock, edge cases rather than another happy path, and asserts what the contract promises.
 
 ## Running A Subset
 
@@ -17,19 +17,17 @@ Where this project's own tests live, how to run them, and the live checks.
 
 ## Not Covered by `pytest`
 
-Each checked live; unit tests cover only the decisions Coral makes on its own:
+Checked live; unit tests cover only the decisions Coral makes on its own:
 
-- The GitHub API.
-- That `git diff` produces the format `coral/diff.py` parses.
-- The workflow and the composite actions.
-- The model call and which structured-output strategy the framework resolves to.
-- The agent's shell on a real runner, and summarization firing mid-run.
+- The GitHub API, the format `coral/diff.py` parses, and the workflow with its composite actions.
+- The model call, and summarization firing mid-run.
+- The agent's shell on a real runner.
 - The deadline firing; only its arithmetic has unit tests.
 - Docker: that namespaces isolate, that mounts mount, that `--init` reaps.
 
 ## The Live Checks
 
-One real run in `kkestell/coral-test`, started by hand, in order within a group, after pushing to the branch the example file pins. That repository is public, disposable, and exists for this alone. Each check names where its evidence is: the pull request, or the run's own log.
+One real run in `kkestell/coral-test`, started by hand, in order within a group, after pushing to the branch the example file pins. Each check names where its evidence is: the pull request, or the run's own log.
 
 **The walking skeleton**
 
@@ -50,15 +48,13 @@ One real run in `kkestell/coral-test`, started by hand, in order within a group,
 3. Comment `/coral`, then twice more while that run is going. The second run queues and is cancelled by the third. All three comments get the reaction and two reviews appear.
 4. Reply `/coral` on the diff. Reaction in the pulls namespace, and no second reaction from a later run — checks `viewerHasReacted` answers for the token's account.
 5. Close the pull request, comment `/coral`. Reaction, decline, no review, green.
-6. Let Coral review a pull request, convert to draft, mark ready again: the run declines on the marker. Comment `/coral` on the same commit and get a review — the automatic-paths-only half of that gate.
+6. Let Coral review a pull request, convert to draft, mark ready again: the run declines on the marker. Comment `/coral` on the same commit and get a review: the gate declines automatic paths only.
 7. Open a pull request adding a generated file over 30,000 lines. One comment saying the change exceeds what Coral will read, no review, green.
 8. From a fork under another account, open a pull request and comment `/coral`. The run declines on the fork gate. With no second account, recorded as not run; the unit test covers it.
 
 **What Coral looks for**
 
-Two of these read the review step's log rather than the pull request.
-
-1. Open a pull request with a planted real defect. The review carries a finding at a sensible severity, its regression test in a collapsed block that renders as one on GitHub, and the log shows the verifier's confirming verdict.
+1. Open a pull request with a planted defect. The review carries a finding at a sensible severity, its regression test in a collapsed block that renders as one on GitHub, and the log shows the verifier's confirming verdict.
 2. Watch a rejection drop a finding: edit `coral/prompts/verify.md` to reject every finding, push, then open a pull request with a fresh defect — one already reviewed produces no findings to reject. Expect a summary standing alone, and the log naming each drop and its reason. Revert.
 3. Comment `/coral` on that pull request with no new commits. The second review repeats nothing from the first.
 4. Open a pull request with a trivially clean change. No findings, and the review says there was nothing to find.
@@ -88,8 +84,8 @@ Two of these read the review step's log rather than the pull request.
 The secrets swap in `kkestell/coral-test`'s Actions secrets and its caller file.
 
 1. Pass-through, the control: `OPENROUTER_API_KEY` set, the caller passing only `openrouter_api_key`. Open a pull request: a review appears, green run.
-2. Minting: remove that secret, set `OPENROUTER_MANAGEMENT_KEY`, point the caller at `openrouter_management_key`, open a pull request. A review appears, green run. The key shows in the clear once, in the masking step's own header, and `***` in every later echo. Under the management key, `GET /api/v1/keys` lists a key named for the run, capped and expiring as `coral/openrouter.py` sets.
-3. Expiry: a run's own key is unrecoverable by design, so rehearse the path by hand. Call `mint` from a developer machine with a short TTL patched in, watch a completion succeed before `expires_at` and answer 401 after, then delete the key.
+2. Minting: remove that secret, set `OPENROUTER_MANAGEMENT_KEY`, point the caller at `openrouter_management_key`, open a pull request. A review appears, green run. The key shows in the clear only in the masking step's own header, `***` in every later echo. Under the management key, `GET /api/v1/keys` lists a key named for the run, capped and expiring as `coral/openrouter.py` sets.
+3. Expiry: a run's own key is unrecoverable, so rehearse the path by hand. Call `mint` from a developer machine with a short TTL patched in, watch a completion succeed before `expires_at` and answer 401 after, then delete the key.
 4. Misconfiguration: set both secrets and comment `/coral`. Red run, one comment saying to pass exactly one. Then a broken management key with no API key: red run, one comment carrying OpenRouter's own error.
 
 **Take the agent out of the runner user**
@@ -100,3 +96,8 @@ Each of the first three needs a project of that language with a planted defect.
 2. Node: the same, on a project with an `npm test` suite.
 3. Go: the same, on a module with a `go test` suite.
 4. The escape probe: patch `coral/review.py` to run `ps -e`, `ls /home/runner`, `cat /proc/1/comm`, `touch /opt/hostedtoolcache/probe`, and `docker ps` through the agent's backend after provisioning, and log them. Expect only the container's own processes, no `Runner.Worker`, no `/home/runner`, an init as PID 1, a read-only refusal, and no `docker`. Revert.
+
+**Structured output on any model**
+
+1. From a developer machine, review a local clone with a planted defect on DeepSeek across three providers, `openai/gpt-5.5`, and `anthropic/claude-haiku-4.5`. Each returns a valid `Review`, tool calls ahead of the schema tool call.
+2. A pull request with a planted defect on the default model still posts a confirmed finding.
