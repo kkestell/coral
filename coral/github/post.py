@@ -136,7 +136,7 @@ def review_payload(commit: str, review: Review, added: set[AddedLine]) -> dict[s
     lines = [
         marker(commit),
         "",
-        f"Coral reviewed `{commit}`.",
+        f"🪸 Coral reviewed `{commit}`.",
         "",
         review.summary,
     ]

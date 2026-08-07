@@ -1,4 +1,4 @@
-# Coral
+# 🪸 Coral
 
 A code review agent that runs as a GitHub Actions workflow. When a pull request is opened or marked ready for review, or when somebody comments `/coral` on one, Coral clones the repository, reads the change, and leaves its findings as comments on the pull request.
 
