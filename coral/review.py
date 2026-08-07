@@ -52,8 +52,11 @@ def what_was_read(conversation: Conversation) -> str:
         state = "resolved" if thread.resolved else "unresolved"
         staleness = "outdated" if thread.outdated else "current"
         authors = ", ".join(whose(comment) for comment in thread.comments)
+        # A thread whose line is null is one whose code is gone, which is what an outdated
+        # thread against a deleted line looks like.
+        where = f"line {thread.line}" if thread.line is not None else "a line that is gone"
         lines.append(
-            f"- Thread on `{thread.path}` line {thread.line}, {state} and {staleness}, holding "
+            f"- Thread on `{thread.path}` {where}, {state} and {staleness}, holding "
             f"{count(thread.total_comments, 'comment')} from {authors}."
         )
     return "\n".join(lines)
