@@ -1,29 +1,51 @@
-"""The environment the agent's shell runs in, built name by name rather than inherited.
+"""The environment the agent's container is started with, built from the toolcache.
 
-An allowlist is what makes the omissions checkable. The OpenRouter key, `VIRTUAL_ENV`, and every
-`UV_*` are absent by construction rather than by a rule somebody has to remember to add:
-`VIRTUAL_ENV` and the `UV_*` variables point at Coral's own interpreter, and the reviewed
-repository's `pytest` must run against its own.
+Nothing here is read out of the process environment. The runner's own `PATH` names directories
+the container cannot see, and every other name the review job holds — the OpenRouter key first
+among them — is absent by construction rather than by an allowlist somebody has to maintain.
 """
 
-from collections.abc import Mapping
+from pathlib import Path
 from typing import Final
 
-# `CI` is on the list because it is the one extra variable a real test suite reads. Measured
-# against real pull requests in `kkestell/coral-test`: Python's, Node's, and Go's own test runners
-# each ran under exactly this list on a real runner with no failure for a missing variable.
-KEEP: Final = ("CI", "HOME", "LANG", "LC_ALL", "PATH", "TERM", "TMPDIR")
+# `ubuntu:24.04`'s own `PATH`, which is where everything `apt-get` installs lands.
+IMAGE_PATH: Final = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# `CI` is the one extra variable a real test suite reads. `HOME` because the toolchains write
+# caches under it, and `LANG` because a C locale makes some test output unreadable.
+FIXED: Final = {"CI": "true", "HOME": "/root", "LANG": "C.UTF-8"}
+
+# The hosted image's toolcache layout is `<tool>/<version>/x64/bin`.
+ARCHITECTURE: Final = "x64"
 
 
-def shell_environment(source: Mapping[str, str]) -> dict[str, str]:
-    """The subprocess environment for the agent's shell, taken from `source` by name.
+def version_key(name: str) -> tuple[int, ...]:
+    """A version directory's name read as numbers, so 1.9 sorts under 1.25."""
+    return tuple(int(part) for part in name.split(".") if part.isdigit())
 
-    Takes a mapping rather than reading `os.environ` itself, so the caller pops the OpenRouter
-    key first and the omission is checked in two places. Hygiene, not a boundary: the runner
-    holds everything the job references in memory for the whole job and the agent's shell has
-    `sudo`.
+
+def newest(tool: Path) -> Path | None:
+    """The `bin` directory of one tool's newest cached version, or None when it caches none."""
+    versions = sorted(tool.iterdir(), key=lambda version: version_key(version.name))
+    binaries = [
+        version / ARCHITECTURE / "bin"
+        for version in versions
+        if (version / ARCHITECTURE / "bin").is_dir()
+    ]
+    return binaries[-1] if binaries else None
+
+
+def toolchain_path(toolcache: Path) -> str:
+    """The image's `PATH` with the newest version of each cached tool in front of it.
+
+    Only the newest of each, so a `go` or a `node` on `PATH` is one version rather than an
+    accident of ordering. Every other cached version is still reachable by absolute path under the
+    toolcache, which a repository pinned to an older toolchain needs and the prompt says so.
     """
-    # A shell with no `PATH` runs nothing, which is a broken invocation rather than an empty
-    # environment to work in.
-    assert "PATH" in source, "The review step's own environment has no PATH."
-    return {name: source[name] for name in KEEP if name in source}
+    found = [newest(tool) for tool in sorted(toolcache.iterdir()) if tool.is_dir()]
+    return ":".join([*(str(binaries) for binaries in found if binaries is not None), IMAGE_PATH])
+
+
+def shell_environment(toolcache: Path) -> dict[str, str]:
+    """The environment the agent's container is started with, read off the runner's toolcache."""
+    return {**FIXED, "PATH": toolchain_path(toolcache)}

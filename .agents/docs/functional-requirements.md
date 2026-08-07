@@ -1,13 +1,13 @@
 # Functional Requirements
 
-What Coral does, as behavior someone could watch happen. Coral is a proof of concept; these requirements are the whole of it, and anything not listed is out of scope until this document says otherwise.
+What Coral does, as behavior someone could watch happen. These requirements are the whole of it, and anything not listed is out of scope until this document says otherwise.
 
 ## Trigger
 
 - Coral reviews a pull request when it is opened and when a draft is marked ready for review, in any repository where Coral is installed. Nobody has to ask for that first review.
 - A draft gets no automatic review — it is not finished being written. A bot-opened pull request gets no automatic review — dependency bots open more pull requests than people do. Both can still be reviewed on request.
-- Coral reviews only pull requests whose head branch lives in the same repository as the base. Forks are out of scope, and Coral checks rather than assumes — a fork's branch is code nobody with write access vouched for.
-- After the automatic review, Coral reviews again only when someone asks. Pushes start no review: a bot that reviews every push teaches people to ignore it.
+- Coral reviews only pull requests whose head branch lives in the same repository as the base. Coral checks rather than assumes — a fork's branch is code nobody with write access vouched for.
+- After the automatic review, Coral reviews again only when someone asks. A bot that reviews every push teaches people to ignore it.
 - Asking is a comment containing `/coral`, on the pull request as a whole or in a reply on the diff; it means the same thing in both places. The body of a submitted review is not a place to ask — GitHub offers no way to react to a review, so no way to acknowledge.
 - The command counts only when `/coral` stands alone on its own line, lowercase, matched exactly. Quoting (including GitHub's quote-reply), mid-sentence mention, and code fences are all inert. Otherwise every conversation about Coral starts a review.
 - Coral never reads its own comments as a request — its findings arrive as the same kind of comment a person asks with, and a bot that can trigger itself will.
@@ -31,7 +31,7 @@ Coral decides which of these to use, in what order, how many times.
 - Run shell commands inside the checkout.
 - Run individual tests it chooses, never the full suite — CI already does that, and a pull request is assumed to arrive passing. Coral runs a test to answer a question it formed.
 - Write scratch test files into the checkout. Never committed, never pushed; they disappear with the checkout.
-- Never write to the repository on GitHub: no commits, no branches, nothing outside the checkout. Everything Coral posts comes from the deterministic code that composes it, and the agent holds no credential that reaches GitHub — which is the part that matters.
+- Never write to the repository on GitHub: no commits, no branches, nothing outside the checkout. Everything Coral posts comes from the deterministic code that composes it, and the agent holds no credential that reaches GitHub.
 
 ## Output
 
@@ -76,3 +76,4 @@ Named so nobody has to guess whether the omission was deliberate.
 - Suggested changes a reviewer applies with a click.
 - Per-repository configuration of what Coral looks for.
 - Any store of past reviews beyond the pull request itself.
+- A Docker daemon the agent's shell can reach, and `--privileged`. Both are host root, which is what the container takes away.

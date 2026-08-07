@@ -104,7 +104,7 @@ Depends on: 10
 
 Coral takes either a plain OpenRouter API key, used as it is, or a management key it mints one capped, expiring API key per run with. `coral/openrouter.py` is the only place Coral speaks to the management API, and the resolve job is the only job the management key reaches.
 
-- A minted key reaches the review job through one cleartext line of that job's log, which no arrangement of masking removes. "The Run" in `.agents/docs/architecture.md` holds the measurement; item 12 is what ends it.
+- A minted key reaches the review job through one cleartext line of that job's log, which no arrangement of masking removes. Its audience is whoever can already read the repository's logs.
 
 Done when: a real review runs green in each mode, the minted key no longer authenticates once its run is over, and the README says which mode to choose.
 

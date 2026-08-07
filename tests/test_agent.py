@@ -6,12 +6,26 @@ prompt loading, the deadline hook, and one behavior of the dependency the constr
 
 import time
 from inspect import signature
+from pathlib import Path
 
 import pytest
 from langchain_core.tools import StructuredTool
 
-from coral.agent import DeadlineMiddleware, caught, forgiving, review_prompt, verify_prompt
+from coral.agent import (
+    SHELL_CEILING_SECONDS,
+    ContainerBackend,
+    DeadlineMiddleware,
+    caught,
+    forgiving,
+    review_prompt,
+    verify_prompt,
+)
 from coral.deadline import STEP_BUDGET_SECONDS, Deadline
+
+
+def backend(tmp_path: Path) -> ContainerBackend:
+    """A backend over an empty directory. Nothing here executes, so no container is started."""
+    return ContainerBackend(tmp_path, "coral-reviewer", SHELL_CEILING_SECONDS)
 
 
 def test_the_prompt_comes_out_of_the_installed_package() -> None:
@@ -51,24 +65,40 @@ def test_a_wrapped_tool_keeps_the_signature_langchain_injects_against() -> None:
     assert list(signature(caught(read)).parameters) == ["file_path", "runtime", "offset"]
 
 
-def test_every_filesystem_tool_is_wrapped() -> None:
+def test_every_filesystem_tool_is_wrapped(tmp_path: Path) -> None:
     # `execute` included. A shell command that will not parse is the same kind of mistake.
     from deepagents import FilesystemMiddleware
-    from deepagents.backends import LocalShellBackend
 
-    middleware = forgiving(FilesystemMiddleware(backend=LocalShellBackend("/tmp")))
+    middleware = forgiving(FilesystemMiddleware(backend=backend(tmp_path)))
     for tool in middleware.tools:
         assert isinstance(tool, StructuredTool)
         assert hasattr(tool.func, "__wrapped__"), f"{tool.name} was left raising"
 
 
-def test_the_filesystem_middleware_name_is_the_class_name() -> None:
+def test_the_filesystem_middleware_name_is_the_class_name(tmp_path: Path) -> None:
     # Recording a dependency's behavior, and the one Coral's construction rests on: middleware
     # merges by name, so an instance named `FilesystemMiddleware` replaces the framework's own
     # rather than joining it. An upstream rename would leave two middlewares each registering a
     # `read_file` tool, and the shell ceiling would be whichever one won.
     from deepagents import FilesystemMiddleware
-    from deepagents.backends import LocalShellBackend
 
-    middleware = FilesystemMiddleware(backend=LocalShellBackend("/tmp"))
-    assert middleware.name == "FilesystemMiddleware"
+    assert FilesystemMiddleware(backend=backend(tmp_path)).name == "FilesystemMiddleware"
+
+
+def test_the_container_backend_is_still_offered_a_shell(tmp_path: Path) -> None:
+    # The framework registers `execute` only for a backend passing `isinstance` against
+    # `SandboxBackendProtocol`, which is why the container is a subclass rather than a wrapper
+    # forwarding to one. Without this the agent would have file tools and no shell.
+    from deepagents import FilesystemMiddleware
+
+    middleware = FilesystemMiddleware(backend=backend(tmp_path))
+    assert "execute" in {tool.name for tool in middleware.tools}
+
+
+def test_the_container_backends_execute_still_takes_the_ceiling(tmp_path: Path) -> None:
+    # The framework introspects `execute`'s signature before forwarding a `timeout`, so an
+    # override that dropped the keyword would silently lose the model's own ceiling.
+    from deepagents.backends.protocol import execute_accepts_timeout
+
+    assert execute_accepts_timeout(ContainerBackend)
+    assert backend(tmp_path).ceiling == SHELL_CEILING_SECONDS

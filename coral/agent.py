@@ -7,7 +7,6 @@ seconds of import off `coral resolve` and keeps the rest of the code testable wi
 
 import functools
 import logging
-import os
 import time
 from collections.abc import Callable
 from importlib.resources import files
@@ -22,6 +21,7 @@ from deepagents import (
     register_harness_profile,
 )
 from deepagents.backends import LocalShellBackend
+from deepagents.backends.protocol import ExecuteResponse
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models.model_profile import ModelProfile
 from langchain_core.messages import HumanMessage
@@ -30,8 +30,8 @@ from langchain_openrouter import ChatOpenRouter
 from langgraph.runtime import Runtime
 from pydantic import SecretStr
 
+from coral import container
 from coral.deadline import Deadline
-from coral.environment import shell_environment
 from coral.schema import Review, Verification, review_from_result, verification_from_result
 
 log = logging.getLogger(__name__)
@@ -82,6 +82,30 @@ SHELL_CEILING_SECONDS: Final = 300
 # fourteen minutes, past the ten minutes of headroom before the job's own timeout. One makes it
 # about eight and a half. No real run has fired a retry.
 MODEL_RETRIES: Final = 1
+
+
+class ContainerBackend(LocalShellBackend):
+    """The framework's local backend with its one shell method sent into the container.
+
+    Only `execute` moves. Every file tool is inherited unchanged: they are Coral's own Python over
+    `root_dir`, resolving virtual paths under it and refusing traversal, and `root_dir` is the copy
+    the container has mounted at `/checkout`. So a scratch file written with `write_file` is
+    immediately runnable in the shell, and the other way around.
+
+    A subclass rather than a wrapper around the backend, because the middleware exposes the
+    `execute` tool only to a backend passing `isinstance(backend, SandboxBackendProtocol)`.
+    """
+
+    def __init__(self, checkout: Path, container_name: str, timeout: int) -> None:
+        super().__init__(checkout, timeout=timeout)
+        self.container_name = container_name
+        self.ceiling = timeout
+
+    def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
+        result = container.execute(self.container_name, command, timeout or self.ceiling)
+        return ExecuteResponse(
+            output=result.output, exit_code=result.exit_code, truncated=result.truncated
+        )
 
 
 class DeadlineMiddleware(AgentMiddleware[Any, Any]):
@@ -151,13 +175,14 @@ def forgiving(middleware: FilesystemMiddleware) -> FilesystemMiddleware:
 
 def _run(
     api_key: str,
-    workspace: Path,
+    checkout: Path,
+    container_name: str,
     request: str,
     deadline: Deadline,
     system_prompt: str,
     response_format: type,
 ) -> dict[str, Any]:
-    """Build an agent over the checkout, run it, and return its result state.
+    """Build an agent over its copy of the checkout, run it, and return its result state.
 
     The one place the model client, the backend, and the middleware are constructed. Both runs
     share every bound here; what differs between them is the prompt and the type they return.
@@ -176,9 +201,7 @@ def _run(
     # The ceiling needs both halves. The middleware rejects a command whose own `timeout` argument
     # overshoots, telling the model the ceiling rather than clamping; the backend bounds the case
     # where the model omits the argument, which is the common one.
-    backend = LocalShellBackend(
-        workspace, timeout=SHELL_CEILING_SECONDS, env=shell_environment(os.environ)
-    )
+    backend = ContainerBackend(checkout, container_name, SHELL_CEILING_SECONDS)
     agent = create_deep_agent(
         model,
         system_prompt=system_prompt,
@@ -208,7 +231,7 @@ def _run(
     # on the compiled graph overrides it. There is no constructor parameter for it.
     bounded = agent.with_config({"recursion_limit": STEP_CAP})
 
-    log.info("Running the agent over %s with %.0f seconds of budget.", workspace, deadline.budget)
+    log.info("Running the agent over %s with %.0f seconds of budget.", checkout, deadline.budget)
     result: dict[str, Any] = bounded.invoke({"messages": [HumanMessage(request)]})
     log.info(
         "The agent finished after %.0f seconds and %d messages.",
@@ -218,15 +241,19 @@ def _run(
     return result
 
 
-def produce_review(api_key: str, workspace: Path, request: str, deadline: Deadline) -> Review:
-    """Run the reviewer over the checkout and return the review it produced, or fail."""
-    return review_from_result(_run(api_key, workspace, request, deadline, review_prompt(), Review))
+def produce_review(
+    api_key: str, checkout: Path, container_name: str, request: str, deadline: Deadline
+) -> Review:
+    """Run the reviewer over its copy of the checkout and return the review it produced, or fail."""
+    return review_from_result(
+        _run(api_key, checkout, container_name, request, deadline, review_prompt(), Review)
+    )
 
 
 def verify_findings(
-    api_key: str, workspace: Path, request: str, deadline: Deadline
+    api_key: str, checkout: Path, container_name: str, request: str, deadline: Deadline
 ) -> Verification:
-    """Run the verifier over the reset checkout and return its verdicts, or fail."""
+    """Run the verifier over its own fresh copy of the checkout and return its verdicts, or fail."""
     return verification_from_result(
-        _run(api_key, workspace, request, deadline, verify_prompt(), Verification)
+        _run(api_key, checkout, container_name, request, deadline, verify_prompt(), Verification)
     )

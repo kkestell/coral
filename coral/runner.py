@@ -128,6 +128,16 @@ def reason_path() -> Path:
     return temporary_directory() / "reason.txt"
 
 
+def checkout_copy_path(name: str) -> Path:
+    """Where one agent run's own copy of the checkout lives.
+
+    Inside Coral's temporary directory rather than the workspace, so nothing an agent writes ends
+    up in the tree `coral/diff.py` reads. The artifact steps upload named files, so a directory
+    sitting beside them never crosses a job boundary.
+    """
+    return temporary_directory() / name
+
+
 def run_url() -> str:
     """This job's run in the Actions tab, which is where a failure comment sends the reader."""
     server = os.environ["GITHUB_SERVER_URL"]

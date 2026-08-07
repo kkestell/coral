@@ -1,48 +1,82 @@
 """Tests of `coral.environment`.
 
-The point of these tests is the omissions. An allowlist excludes by construction, so what is
-worth asserting is that the names which must never reach the agent's shell really do not.
+The toolcache is built for real in a temporary directory, in the layout the hosted image uses, so
+what these tests read is a directory listing rather than a description of one. The point is which
+version wins and that nothing at all comes out of the process environment.
 """
+
+from pathlib import Path
 
 import pytest
 
-from coral.environment import KEEP, shell_environment
+from coral.environment import FIXED, IMAGE_PATH, shell_environment, toolchain_path, version_key
 
 
-def test_every_allowed_name_present_in_the_source_survives() -> None:
-    source = dict.fromkeys(KEEP, "value")
-    assert shell_environment(source) == source
+def toolcache(root: Path, layout: dict[str, list[str]]) -> Path:
+    """A toolcache holding the given versions of each tool, laid out as the hosted image does."""
+    for tool, versions in layout.items():
+        for version in versions:
+            (root / tool / version / "x64" / "bin").mkdir(parents=True)
+    (root / "empty-marker").touch()
+    return root
 
 
-def test_an_allowed_name_the_source_does_not_have_is_simply_absent() -> None:
-    kept = shell_environment({"PATH": "/usr/bin", "HOME": "/home/runner"})
-    assert kept == {"PATH": "/usr/bin", "HOME": "/home/runner"}
-    assert "TMPDIR" not in kept
-    assert "LANG" not in kept
+def test_the_newest_version_of_each_tool_is_on_the_path(tmp_path: Path) -> None:
+    path = toolchain_path(toolcache(tmp_path, {"go": ["1.24.5", "1.26.0"], "node": ["22.14.0"]}))
+    assert f"{tmp_path}/go/1.26.0/x64/bin" in path.split(":")
+    assert f"{tmp_path}/node/22.14.0/x64/bin" in path.split(":")
 
 
-def test_neither_secret_survives() -> None:
-    kept = shell_environment(
-        {"PATH": "/usr/bin", "GITHUB_TOKEN": "ghs_x", "OPENROUTER_API_KEY": "sk-x"}
-    )
-    assert kept == {"PATH": "/usr/bin"}
+def test_only_the_newest_version_of_a_tool_is_on_the_path(tmp_path: Path) -> None:
+    # Every other cached version is still reachable by absolute path, which is what a repository
+    # pinned to an older toolchain needs.
+    path = toolchain_path(toolcache(tmp_path, {"go": ["1.24.5", "1.26.0"]}))
+    assert f"{tmp_path}/go/1.24.5/x64/bin" not in path.split(":")
 
 
-def test_coral_own_interpreter_does_not_survive() -> None:
-    # `VIRTUAL_ENV` and the `UV_*` variables point at Coral's virtual environment. A reviewed
-    # repository's test suite has to run against its own interpreter, not this one.
-    kept = shell_environment(
-        {"PATH": "/usr/bin", "VIRTUAL_ENV": "/tmp/coral/.venv", "UV_CACHE_DIR": "/tmp/uv"}
-    )
-    assert kept == {"PATH": "/usr/bin"}
+def test_versions_are_ordered_as_numbers_rather_than_text(tmp_path: Path) -> None:
+    # The case that makes this worth writing: 1.25 sorts under 1.9 as text.
+    path = toolchain_path(toolcache(tmp_path, {"python": ["1.9.0", "1.25.0"]}))
+    assert f"{tmp_path}/python/1.25.0/x64/bin" in path.split(":")
 
 
-def test_a_name_nobody_thought_about_does_not_survive() -> None:
-    assert shell_environment({"PATH": "/usr/bin", "AWS_SECRET_ACCESS_KEY": "x"}) == {
-        "PATH": "/usr/bin"
-    }
+def test_a_version_is_read_as_its_numbers() -> None:
+    assert version_key("1.25.3") == (1, 25, 3)
+    assert version_key("1.9.0") < version_key("1.25.0")
 
 
-def test_a_source_without_path_is_a_broken_invocation() -> None:
-    with pytest.raises(AssertionError):
-        shell_environment({"HOME": "/home/runner"})
+def test_a_tool_caching_no_versions_contributes_nothing(tmp_path: Path) -> None:
+    root = toolcache(tmp_path, {"go": ["1.26.0"]})
+    (root / "ruby").mkdir()
+    path = toolchain_path(root)
+    assert "ruby" not in path
+
+
+def test_the_images_own_path_is_last(tmp_path: Path) -> None:
+    # Everything `apt-get` installs lands there, so the toolcache goes in front of it rather than
+    # replacing it.
+    assert toolchain_path(toolcache(tmp_path, {"go": ["1.26.0"]})).endswith(IMAGE_PATH)
+
+
+def test_an_empty_toolcache_leaves_the_images_own_path(tmp_path: Path) -> None:
+    assert toolchain_path(tmp_path) == IMAGE_PATH
+
+
+def test_the_fixed_names_are_all_there(tmp_path: Path) -> None:
+    environment = shell_environment(tmp_path)
+    assert environment == {**FIXED, "PATH": IMAGE_PATH}
+    assert environment["HOME"] == "/root"
+
+
+def test_nothing_is_read_out_of_the_process_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The runner's `PATH` names directories the container cannot see, and everything else the
+    # review job holds has no business in there at all.
+    monkeypatch.setenv("PATH", "/the/runners/own/path")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-x")
+    monkeypatch.setenv("VIRTUAL_ENV", "/tmp/coral/.venv")
+    environment = shell_environment(toolcache(tmp_path, {"go": ["1.26.0"]}))
+    assert "/the/runners/own/path" not in environment["PATH"]
+    assert "sk-x" not in str(environment)
+    assert set(environment) == {"CI", "HOME", "LANG", "PATH"}

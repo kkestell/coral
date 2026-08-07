@@ -1,8 +1,8 @@
 """The diff between the two pinned commits, and the lines a finding may be anchored to.
 
-This is Coral's own deterministic code running `git` inside the checkout. The agent never does;
-it reaches the checkout through the DeepAgents backend. Both halves computing the same diff is
-what makes the diff the agent saw and the diff the anchors are checked against the same diff.
+This is Coral's own deterministic code running `git` inside the workspace, which no agent can
+reach: each one works on a copy of its own. Both halves computing the same diff is what makes the
+diff the agent saw and the diff the anchors are checked against the same diff.
 """
 
 import re
@@ -121,18 +121,6 @@ def diff_text(workspace: Path, first: str, second: str) -> str:
         first,
         second,
     )
-
-
-def reset(workspace: Path) -> None:
-    """Put the checkout back at the head commit, between the two agent runs.
-
-    The verifier reproduces each regression test from the finding's own content, and a scratch
-    file the reviewer left behind could make that test pass or fail for a reason the finding never
-    states. `-fd` rather than `-fdx`: ignored files survive, so dependencies the reviewer installed
-    to run tests are still installed for the verifier.
-    """
-    git(workspace, "checkout", "--", ".")
-    git(workspace, "clean", "-fd")
 
 
 def merge_base(workspace: Path, base: str, head: str) -> str:

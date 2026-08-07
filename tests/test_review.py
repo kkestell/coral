@@ -4,8 +4,13 @@ The rendering is the whole of what this module decides on its own; `review()`'s 
 unit test, same as `resolve()`'s. The conversation the renderer is given is built through the real
 parsers out of node dictionaries shaped like GitHub's, so a change to what a comment holds reaches
 these tests rather than passing them.
+
+`copy_checkout` is the exception: it is what `cp` does rather than what Coral renders, so it runs
+against a real directory in a temporary one. `provision` around it needs Docker and is checked
+live.
 """
 
+from pathlib import Path
 from typing import Any
 
 from coral.github.conversation import (
@@ -16,7 +21,12 @@ from coral.github.conversation import (
     parse_threads,
 )
 from coral.github.marker import marker
-from coral.review import render_conversation, render_request, render_verification_request
+from coral.review import (
+    copy_checkout,
+    render_conversation,
+    render_request,
+    render_verification_request,
+)
 from coral.schema import (
     Finding,
     LineAnchor,
@@ -279,6 +289,33 @@ def test_a_speculative_finding_says_so() -> None:
     )
     rendered = render_verification_request("A title", None, DIFF, review)
     assert "could not reproduce this with a test; it is speculative" in rendered
+
+
+def checkout(root: Path) -> Path:
+    """A directory shaped like the workspace: a tracked file, a hidden one, and a nested one."""
+    workspace = root / "workspace"
+    (workspace / ".git" / "refs").mkdir(parents=True)
+    (workspace / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    (workspace / "coral.py").write_text("print('hello')\n")
+    return workspace
+
+
+def test_the_copy_carries_the_history_along(tmp_path: Path) -> None:
+    # `.git` is what the `git log` the reviewer's prompt offers reads, and a copy that dropped it
+    # would leave the agent with a tree and no history.
+    copy_checkout(checkout(tmp_path), tmp_path / "coral-reviewer")
+    assert (tmp_path / "coral-reviewer" / ".git" / "HEAD").exists()
+    assert (tmp_path / "coral-reviewer" / "coral.py").read_text() == "print('hello')\n"
+
+
+def test_the_copy_is_the_agents_own(tmp_path: Path) -> None:
+    # The whole point: what an agent writes is not in the tree `coral/diff.py` reads.
+    workspace = checkout(tmp_path)
+    copy_checkout(workspace, tmp_path / "coral-reviewer")
+    (tmp_path / "coral-reviewer" / "coral.py").write_text("the reviewer's edit\n")
+    (tmp_path / "coral-reviewer" / "test_scratch.py").write_text("assert False\n")
+    assert (workspace / "coral.py").read_text() == "print('hello')\n"
+    assert not (workspace / "test_scratch.py").exists()
 
 
 def test_the_verifier_never_sees_the_conversation() -> None:

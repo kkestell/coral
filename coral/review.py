@@ -7,16 +7,24 @@ the publishing job as an artifact, and so does the reason when the step fails.
 import json
 import logging
 import os
+import subprocess
+from pathlib import Path
+from typing import Final
 
-from coral import runner
+from coral import container, runner
 from coral.deadline import REVIEWER_BUDGET_SECONDS, start
-from coral.diff import added_lines, diff_text, merge_base, reset
+from coral.diff import added_lines, diff_text, merge_base
 from coral.github.conversation import Comment, Conversation, Thread, read_conversation
 from coral.github.post import count, payloads, write_payloads
 from coral.publish import described
 from coral.schema import Review, confirmed, where
 
 log = logging.getLogger(__name__)
+
+# One container and one copy per agent run. Fixed names rather than generated ones: a job gets a
+# runner VM to itself, so there is nothing for these to collide with.
+REVIEWER: Final = "coral-reviewer"
+VERIFIER: Final = "coral-verifier"
 
 
 def attribution(comment: Comment) -> str:
@@ -164,6 +172,33 @@ def render_verification_request(title: str, body: str | None, diff: str, review:
     )
 
 
+def copy_checkout(workspace: Path, destination: Path) -> None:
+    """Copy the checkout to where one agent run will own it.
+
+    `cp -a` rather than `shutil.copytree`: `.git` and the whole history come along, which the
+    `git log` the reviewer's prompt offers needs, and the file modes come with them.
+    """
+    result = subprocess.run(
+        ["cp", "-a", str(workspace), str(destination)], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Copying the checkout failed: {result.stderr.strip() or 'no output'}")
+
+
+def provision(name: str, workspace: Path) -> Path:
+    """A fresh copy of the checkout and a container over it, for one agent run.
+
+    Each run gets its own of both, so the verifier reads a checkout holding nothing the reviewer
+    wrote and the workspace itself is never written by an agent at all. That makes the diff the
+    agent saw and the diff the anchors are checked against the same diff by construction rather
+    than by cleaning up in between.
+    """
+    checkout = runner.checkout_copy_path(name)
+    copy_checkout(workspace, checkout)
+    container.start(name, checkout)
+    return checkout
+
+
 def review() -> None:
     """Review the checked-out change, verify what it found, and leave the result for publishing."""
     # The budget runs from the top of the step, so everything below is spent out of it.
@@ -198,14 +233,20 @@ def review() -> None:
 
         # The reviewer gets a slice of the step rather than the whole of it, so that whatever it
         # leaves behind is time the verifier is guaranteed.
-        review = produce_review(api_key, workspace, request, start(REVIEWER_BUDGET_SECONDS))
+        review = produce_review(
+            api_key,
+            provision(REVIEWER, workspace),
+            REVIEWER,
+            request,
+            start(REVIEWER_BUDGET_SECONDS),
+        )
 
         if review.findings:
-            reset(workspace)
             log.info("Asking a second agent to verify %s.", count(len(review.findings), "finding"))
             verification = verify_findings(
                 api_key,
-                workspace,
+                provision(VERIFIER, workspace),
+                VERIFIER,
                 render_verification_request(
                     pull_request["title"], pull_request["body"], diff, review
                 ),

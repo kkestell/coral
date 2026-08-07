@@ -41,7 +41,7 @@ jobs:
 
 Pass one of two kinds of key, under Settings → Secrets and variables → Actions, and pass only the one you created:
 
-- `OPENROUTER_API_KEY` — a plain API key, used as it is. The simplest thing. Set a credit limit on it: the agent reviewing your code runs shell commands of its own choosing, and that limit is the only bound on what the key can spend if it leaks.
+- `OPENROUTER_API_KEY` — a plain API key, used as it is. The simplest thing. Set a credit limit on it: that limit is the only bound on what the key can spend if it leaks.
 - `OPENROUTER_MANAGEMENT_KEY` — a [provisioning key](https://openrouter.ai/settings/provisioning-keys), which Coral uses to mint a fresh API key for each run, capped at a couple of dollars and expiring within the hour. A leaked key is then worth almost nothing, and there is nothing to rotate afterwards.
 
 Choose the management key if your account's balance would hurt to lose. The workflow file above passes the plain key; comment that line out and uncomment the management one to switch.
@@ -62,7 +62,7 @@ Every line in the file above has to be there. A reusable workflow cannot declare
 
 - `on:` — the three events Coral answers. The comment events are separate because GitHub sends one for a comment on the pull request and a different one for a reply on the diff.
 - `concurrency:` — one run per pull request. A run already going finishes; a newly queued run replaces whichever run was still waiting.
-- `permissions:` — the scopes the called workflow may use. It narrows them per job: the job that runs the agent gets `contents: read` alone, and the write scopes go only to the jobs that post. Both write scopes are needed because the reaction on a pull request comment and the reaction on a diff reply go through different endpoints, and neither permission grants the other.
+- `permissions:` — the scopes the called workflow may use. It narrows them per job: the job that runs the agent gets `contents: read` alone, and the write scopes go only to the jobs that post. The agent's shell runs inside a container that holds no credential at all. Both write scopes are needed because the reaction on a pull request comment and the reaction on a diff reply go through different endpoints, and neither permission grants the other.
 - `uses:` — the version pin. `@main` tracks the latest; pin a tag once there is one.
 
 ## Development
