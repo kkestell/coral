@@ -51,6 +51,7 @@ The log line the fetch writes to stderr says how many queries it took and what t
 ## Environment
 
 - `OPENROUTER_API_KEY` — the credential for the model provider. Required by `coral review`. In a run it comes from the secret the calling repository passes to the reusable workflow; locally, from `.env`, which is gitignored and is not read by any code. Source it: `set -a; . ./.env; set +a`.
+- `OPENROUTER_MANAGEMENT_KEY` — an OpenRouter management key, which mints API keys rather than making completions. Optional locally, and used by the expiry rehearsal in `.agents/docs/testing.md`; source it out of `.env` the same way. In a run it comes from the caller's secret and reaches the resolve job alone.
 - `GITHUB_TOKEN` — authorizes the API calls that read the pull request and post the review. Required by `coral resolve` and `coral publish`; it never reaches the review step, whose job holds a `contents: read` token that only the checkout uses. Each job's token is scoped by that job's `permissions` block in the reusable workflow and expires when the job ends. Locally, `gh auth token` supplies one.
 
 Both are deliberately kept out of the agent's environment. `coral review` deletes `OPENROUTER_API_KEY` — the one credential its own process has — before it does anything else, so a later reader finds nothing. No tracked file in the repository records either value.

@@ -8,6 +8,12 @@ inputs:
   github-token:
     description: The job's token, scoped by the calling workflow's permissions block.
     required: true
+  openrouter-management-key:
+    description: The management key Coral mints this run's API key with, or empty in the other mode.
+    required: false
+  openrouter-api-key-present:
+    description: Whether the caller passed a plain API key, as the string `true` or `false`.
+    required: true
 
 outputs:
   proceed:
@@ -16,6 +22,11 @@ outputs:
   head-sha:
     description: The commit the review is of, and the commit the checkout takes.
     value: ${{ steps.resolve.outputs.head-sha }}
+  minted-key:
+    description: >
+      This run's own OpenRouter API key, when the caller passed a management key. Unmasked here:
+      the runner drops a job output its masker would alter, so the mask waits for the review job.
+    value: ${{ steps.resolve.outputs.minted-key }}
 
 runs:
   using: composite
@@ -27,6 +38,8 @@ runs:
       env:
         CORAL_BIN: ${{ inputs.coral-bin }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        OPENROUTER_MANAGEMENT_KEY: ${{ inputs.openrouter-management-key }}
+        OPENROUTER_API_KEY_PRESENT: ${{ inputs.openrouter-api-key-present }}
       run: |
         set -euo pipefail
         "$CORAL_BIN/coral" resolve

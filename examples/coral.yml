@@ -27,5 +27,8 @@ jobs:
       issues: write
       pull-requests: write
     uses: kkestell/coral/.github/workflows/coral.yml@main
+    # Pass the one you created, and only that one. A management key gets each run its own key,
+    # capped and expiring; a plain API key is used as it is.
     secrets:
       openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
+      # openrouter_management_key: ${{ secrets.OPENROUTER_MANAGEMENT_KEY }}

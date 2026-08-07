@@ -5,7 +5,10 @@ them makes a call, so all of them are decided here. Wiring those three together 
 a decline owes the pull request is a live run.
 """
 
+from pathlib import Path
 from typing import Any
+
+import pytest
 
 from coral import runner
 from coral.github.conversation import Bound, Comment, Conversation, Thread, ThreadComment
@@ -16,6 +19,8 @@ from coral.resolve import (
     Subject,
     acknowledgments,
     declined,
+    management_key,
+    reported,
     subject_of,
 )
 from coral.runner import Event
@@ -272,3 +277,50 @@ def test_an_automatic_run_acknowledges_only_what_the_conversation_offers() -> No
 
 def test_an_inert_triggering_comment_is_acknowledged_by_nothing() -> None:
     assert acknowledgments(asked(body="Nothing to see."), conversation()) == []
+
+
+def test_a_management_key_alone_is_the_key_to_mint_with() -> None:
+    assert management_key("sk-or-v1-management", api_key_present=False) == "sk-or-v1-management"
+
+
+def test_a_plain_key_alone_leaves_nothing_to_mint_with() -> None:
+    # Pass-through mode. The review job reads that secret itself, so resolve is handed only the
+    # fact that it exists.
+    assert management_key("", api_key_present=True) is None
+
+
+def test_neither_secret_names_both_and_says_to_pass_one() -> None:
+    with pytest.raises(RuntimeError) as raised:
+        management_key("", api_key_present=False)
+    assert "openrouter_api_key" in str(raised.value)
+    assert "openrouter_management_key" in str(raised.value)
+    assert "neither" in str(raised.value)
+
+
+def test_both_secrets_are_a_choice_coral_will_not_make() -> None:
+    with pytest.raises(RuntimeError) as raised:
+        management_key("sk-or-v1-management", api_key_present=True)
+    assert "both of them" in str(raised.value)
+
+
+def test_a_reported_failure_leaves_its_reason_for_the_publishing_job(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+
+    def refused() -> str:
+        raise RuntimeError("POST /api/v1/keys returned 401: User not found.")
+
+    with pytest.raises(RuntimeError):
+        reported(refused)
+    assert runner.reason_path().read_text() == (
+        "RuntimeError: POST /api/v1/keys returned 401: User not found."
+    )
+
+
+def test_work_that_succeeds_writes_no_reason(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    assert reported(lambda: "minted") == "minted"
+    assert not runner.reason_path().exists()

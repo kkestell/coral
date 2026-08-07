@@ -8,7 +8,9 @@ pull request.
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Final
 
 from coral import runner
@@ -17,6 +19,8 @@ from coral.github.client import GitHub
 from coral.github.conversation import Conversation, bound, fetch_conversation, write_conversation
 from coral.github.post import count, post_comment
 from coral.github.reactions import Request, react, requests_in
+from coral.openrouter import mint
+from coral.publish import described
 from coral.runner import Event
 
 log = logging.getLogger(__name__)
@@ -65,6 +69,37 @@ def subject_of(pull_request: dict[str, Any]) -> Subject:
         changed_files=pull_request["changed_files"],
         changed_lines=pull_request["additions"] + pull_request["deletions"],
     )
+
+
+def management_key(passed: str, api_key_present: bool) -> str | None:
+    """The management key to mint this run's key with, or `None` for a plain key passed through.
+
+    Exactly one of the two secrets. Neither leaves the review job with no credential at all, and
+    both leave Coral choosing on the caller's behalf between two keys they told it about. Which
+    kind a single secret holds is never detected: that costs a probe request to answer a question
+    the caller already knows.
+    """
+    if bool(passed) == api_key_present:
+        held = "both of them" if api_key_present else "neither"
+        raise RuntimeError(
+            "Coral takes exactly one of the `openrouter_api_key` and `openrouter_management_key` "
+            f"secrets, and this run was passed {held}. Pass the one you created."
+        )
+    return passed or None
+
+
+def reported[T](work: Callable[[], T]) -> T:
+    """Run something whose failure the pull request is owed the words of, then re-raise.
+
+    Resolve's other failures reach the pull request as a comment with no reason. A broken
+    OpenRouter secret has something to say — OpenRouter's own refusal — and this is the same
+    reason file the review step writes, read by the same publishing step.
+    """
+    try:
+        return work()
+    except Exception as error:
+        runner.reason_path().write_text(described(error))
+        raise
 
 
 def acknowledgments(event: Event, conversation: Conversation) -> list[Request]:
@@ -129,6 +164,16 @@ def declined(event: Event, subject: Subject, conversation: Conversation) -> Decl
 
 def resolve() -> None:
     """Pin the commits Coral will review, or stop the run."""
+    # Checked before the fetch, so a misconfigured install is loud on every triggered run rather
+    # than only on the ones that reach a review. The plain key's value never comes here; the
+    # review job reads that secret itself, and all resolve is told is whether it exists.
+    management = reported(
+        lambda: management_key(
+            os.environ["OPENROUTER_MANAGEMENT_KEY"],
+            os.environ["OPENROUTER_API_KEY_PRESENT"] == "true",
+        )
+    )
+
     event = runner.event()
     github = GitHub(token=os.environ["GITHUB_TOKEN"])
     pull_request = github.get(f"/repos/{event.owner}/{event.repo}/pulls/{event.number}")
@@ -173,6 +218,12 @@ def resolve() -> None:
             )
         runner.write_output("proceed", "false")
         return
+
+    # After the gates, so a declined run mints nothing, and before the outputs, so a mint that
+    # fails leaves no `proceed=true` behind it. The key is named for the run, which is what ties
+    # a key in the OpenRouter dashboard to the review that asked for it.
+    if management is not None:
+        runner.write_output("minted-key", reported(partial(mint, management, runner.run_url())))
 
     runner.write_output("head-sha", subject.head_sha)
     runner.write_output("proceed", "true")

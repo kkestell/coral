@@ -7,9 +7,8 @@ How the code is organized and how it runs on GitHub Actions. The exact rules, en
 - A GitHub Actions workflow. No cloud account, no standing service; GitHub supplies the trigger, compute, checkout, and credential.
 - Python, built with `uv`. Dependencies install with `uv sync --frozen` against the committed lockfile; nothing resolves at run time.
 - The agent is DeepAgents. Models are reached only through OpenRouter, via `langchain-openrouter`'s `ChatOpenRouter`.
-- The model is `openai/gpt-5.6-luna`: 1,050,000-token context, tool calling, structured outputs, reasoning output, and no `temperature` parameter. Named exactly rather than through a `~` alias, so the concrete model cannot change under a review. The upstream provider is OpenAI.
+- The model is `openai/gpt-5.6-luna`, named exactly rather than through a `~` alias, so the concrete model cannot change under a review. The upstream provider is OpenAI.
 - No datastore. Everything Coral remembers about a pull request is written on the pull request and read back each run.
-- `ruff`, `pytest`, and `mypy` are configured in `.python-version` and `pyproject.toml` and nowhere else.
 
 ## Installation and Packaging
 
@@ -17,20 +16,19 @@ How the code is organized and how it runs on GitHub Actions. The exact rules, en
 - The caller file must carry all five of: version pin, OpenRouter secret, `on:` block, `permissions:` block, concurrency group. A reusable workflow cannot declare its caller's triggers or grant itself withheld permissions.
 - A ruleset-pushed workflow is no substitute: rulesets have no comment triggers and act as merge gates, contradicting an advisory review.
 - This repository is public, so callers need no access configuration.
-- One secret: the OpenRouter API key, passed by the caller. The GitHub token comes from the job.
+- One OpenRouter secret, exactly one of two kinds: a plain API key, used as it is, or a management key Coral mints one capped, expiring API key per run with. The GitHub token comes from the job.
 
 ## The Run
 
 Three jobs in fixed order — resolve, review, publish — each on its own runner with its own `permissions`.
 
-- Resolve holds `contents: read`, `issues: write`, and `pull-requests: write`. The gatekeeper: it fetches the pull request and the conversation, acknowledges requests, and decides whether a review runs. Both commits are pinned here and never re-read; the merge base of two fixed commits keeps the diff stable while branches move.
+- Resolve holds `contents: read`, `issues: write`, and `pull-requests: write`. The gatekeeper: it fetches the pull request and the conversation, acknowledges requests, and decides whether a review runs. Both commits are pinned here and never re-read; the merge base of two fixed commits keeps the diff stable while branches move. It is also the only job the management key reaches: it mints once the gates pass and hands the key on as a job output, masked only on receipt, because the runner drops an output its masker would alter.
 - Review runs the agent and holds `contents: read` — what the checkout needs and nothing more; its review step makes no API call and its environment carries no token. It verifies the reviewer's findings with a second agent run over a reset checkout and writes the two finished create-review bodies: the anchored one and the one with every finding demoted. The review object never crosses: both bodies need the added-line set the anchors were checked against, which exists only in this job.
 - The checkout takes the pinned head SHA, full history, and no persisted credentials; the workflow file says why. A force-pushed SHA can make it fail; the publishing job covers that.
 - Publish holds resolve's three scopes and is the only job that posts: the review, or the failure comment — including for a review job that died whole and crossed no reason file. It stamps `commit_id` and `event` on whichever body it posts; the agent's job gets no say in either.
-- Each job installs `uv` and builds Coral's virtual environment under the runner's temporary directory — outside the workspace, never activated, never on `PATH`; every step invokes the console script by absolute path, so the checkout cannot disturb it and the agent's shell never sees it. Three environments per run rather than a shared cache: one the review job could write would put a compromised agent's code in the jobs holding the write scopes.
-- A job boundary is a machine boundary. The head SHA and the `proceed` flag cross as job outputs — the values YAML reads; everything else crosses as artifacts under the runner's temporary directory, outside the workspace.
+- Each job installs `uv` and builds Coral's virtual environment under the runner's temporary directory — outside the workspace, never activated, never on `PATH`, every step invoking the console script by absolute path. Three environments per run rather than a shared cache: one the review job could write would put a compromised agent's code in the jobs holding the write scopes.
+- A job boundary is a machine boundary, each side a fresh runner and filesystem. The head SHA, the `proceed` flag, and the minted key cross as job outputs — the values YAML reads; everything else crosses as artifacts under the runner's temporary directory, outside the workspace.
 - A stopped run is green: `proceed=false`, reason on stderr, exit zero, later jobs skipped. Only a broken run is red. A cancelled run posts nothing.
-- Every job gets a fresh runner and filesystem.
 
 ## The Codebase
 
@@ -42,6 +40,7 @@ One console script, three subcommands — `coral resolve`, `coral review`, `cora
 - `coral/review.py` — render each request, run both agents, filter, write the bodies that cross to publish.
 - `coral/publish.py` — the publishing step: the review, or the failure comment.
 - `coral/agent.py` — the only module that imports `deepagents`.
+- `coral/openrouter.py` — the management API: minting this run's key.
 - `coral/schema.py` — the review object and its anchors, the verifier's verdicts, and the filter between them; the only place structure originates.
 - `coral/command.py` — what counts as a request: the command, who may make one, Coral's own comments.
 - `coral/environment.py` — the agent's shell environment.
@@ -62,14 +61,13 @@ One console script, three subcommands — `coral resolve`, `coral review`, `cora
 
 Rules:
 
-- `coral/agent.py` is the only module importing `deepagents`; everything else depends on the review object's schema. `coral/review.py` imports it inside the function rather than at module scope; the comment there says why.
+- Everything but `coral/agent.py` depends on the review object's schema rather than on `deepagents`. `coral/review.py` imports the agent inside the function; the comment there says why.
 - The prompt is Markdown inside the package, read with `importlib.resources`, so changes diff readably.
 
 ## Rules That Hold Everywhere
 
 - An agent's only return value is a structured object, and deterministic code does the posting. Nothing the model produces becomes a push, an approval, or a comment Coral did not compose.
-- The review is advisory: always a comment, never approving, never requesting changes, never blocking a merge.
-- Coral is installed only on private repositories whose read, write, and admin access is controlled. Everybody who can open a pull request, comment, or submit a review is already trusted to run code in that repository's CI. This is the threat model, and the bullets below rest on it. A public repository, or one taking pull requests from outside, needs them rewritten first.
+- Coral is installed only on private repositories whose read, write, and admin access is controlled. Everybody who can open a pull request, comment, or submit a review is already trusted to run code in that repository's CI. A public repository, or one taking pull requests from outside, needs every bullet here rewritten first.
 - The agent reaches the checkout only through the backend, and Coral's own code reaches `git` there only through `coral/diff.py`, so the diff the agent saw and the diff the anchors are checked against are the same.
 - This is not a sandbox. The agent runs arbitrary shell as the runner user, with passwordless `sudo` and network access, and everything its job references is reachable: the runner keeps each value in `Runner.Worker`'s memory for the whole job — and that job holds the OpenRouter key and a `contents: read` token. Keeping them out of the shell's environment is hygiene, not a boundary; only taking the agent out of the runner user closes this.
 - What a compromised agent can still choose is the text of the review the publishing job posts, marker included — never `event`, `commit_id`, or any write anywhere.

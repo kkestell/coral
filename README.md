@@ -34,9 +34,17 @@ jobs:
     uses: kkestell/coral/.github/workflows/coral.yml@main
     secrets:
       openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
+      # openrouter_management_key: ${{ secrets.OPENROUTER_MANAGEMENT_KEY }}
 ```
 
-**2. Add the secret.** Set `OPENROUTER_API_KEY` under Settings → Secrets and variables → Actions. Coral reaches its model through [OpenRouter](https://openrouter.ai), so that key is the only credential you supply. Set a credit limit on it: the agent reviewing your code runs shell commands of its own choosing, and that limit is the only bound on what the key can spend if it leaks. The GitHub token comes from the job itself and expires when the job ends.
+**2. Add the secret.** Coral reaches its model through [OpenRouter](https://openrouter.ai), so an OpenRouter key is the only credential you supply. The GitHub token comes from the job itself and expires when the job ends.
+
+Pass one of two kinds of key, under Settings → Secrets and variables → Actions, and pass only the one you created:
+
+- `OPENROUTER_API_KEY` — a plain API key, used as it is. The simplest thing. Set a credit limit on it: the agent reviewing your code runs shell commands of its own choosing, and that limit is the only bound on what the key can spend if it leaks.
+- `OPENROUTER_MANAGEMENT_KEY` — a [provisioning key](https://openrouter.ai/settings/provisioning-keys), which Coral uses to mint a fresh API key for each run, capped at a couple of dollars and expiring within the hour. A leaked key is then worth almost nothing, and there is nothing to rotate afterwards.
+
+Choose the management key if your account's balance would hurt to lose. The workflow file above passes the plain key; comment that line out and uncomment the management one to switch.
 
 That is the whole installation. Nothing to host, nothing to provision, and nothing to rotate.
 

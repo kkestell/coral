@@ -108,7 +108,7 @@ Coral accepts either a plain OpenRouter API key, used as it is today, or a manag
 - `POST /api/v1/keys` takes `limit` and `expires_at` and returns the key once alongside a `hash`. Set `expires_at` to cover the run, so revocation does not depend on a cleanup job that can be cancelled or skipped.
 - A management key cannot call the completion endpoints, and a per-key `limit` caps that key rather than partitioning the account balance.
 - Pass-through mode needs no channel; the review job reads the caller's secret directly. Minting mode crosses as a job output, because Actions refuses to set an output matching a registered secret.
-- Mask the minted key where it is created and again where it is received. A mask does not cross a job boundary.
+- Mask the minted key only where it is received, and never log it where it is minted: the runner drops a job output whose value its masker would alter, so a key masked at creation never crosses.
 - Both modes get live checks. The workflow and the composite actions have no `pytest` coverage, so an unexercised mode is an untested one.
 
 Done when: a real review runs green in each mode, the minted key no longer authenticates once its run is over, and the README says which mode to choose.

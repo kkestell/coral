@@ -74,8 +74,9 @@ def event() -> Event:
 
 def write_output(name: str, value: str) -> None:
     """Publish a step output for the YAML that reads it."""
-    # Every value Coral writes is a SHA or a boolean, so the heredoc form of the Actions protocol
-    # is not built. The assertion is what stops a later caller assuming multiline works.
+    # Every value Coral writes is one line — a SHA, a boolean, or a minted key — so the heredoc
+    # form of the Actions protocol is not built. The assertion is what stops a later caller
+    # assuming multiline works.
     assert "\n" not in value, f"Step output {name} holds a newline: {value!r}"
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         output.write(f"{name}={value}\n")

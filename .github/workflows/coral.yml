@@ -2,10 +2,15 @@ name: Coral
 
 on:
   workflow_call:
+    # Exactly one of the two, which `coral resolve` is what enforces: Actions cannot express
+    # "one of these", and a run passed neither or both fails there with a comment saying so.
     secrets:
       openrouter_api_key:
-        description: The credential for the model provider.
-        required: true
+        description: A plain OpenRouter API key, passed to the review job as it is.
+        required: false
+      openrouter_management_key:
+        description: An OpenRouter management key. Coral mints one API key per run with it.
+        required: false
 
 # Three jobs so the agent runs in a job whose token writes nothing. Each job boundary is crossed
 # by job outputs for the two values YAML reads and by artifacts for everything else, and each job
@@ -45,6 +50,7 @@ jobs:
     outputs:
       proceed: ${{ steps.resolve.outputs.proceed }}
       head-sha: ${{ steps.resolve.outputs.head-sha }}
+      minted-key: ${{ steps.resolve.outputs.minted-key }}
     steps:
       - id: setup
         uses: $/actions/setup
@@ -54,6 +60,10 @@ jobs:
         with:
           coral-bin: ${{ steps.setup.outputs.bin }}
           github-token: ${{ github.token }}
+          openrouter-management-key: ${{ secrets.openrouter_management_key }}
+          # Whether, never what. Resolve decides which mode this run is in and has no other use
+          # for the plain key, so its value stays out of this job.
+          openrouter-api-key-present: ${{ secrets.openrouter_api_key != '' }}
 
       # The files rather than their directory, so the artifact's root is the directory holding
       # them. `!cancelled()` so a failed job still hands on whatever it wrote; one day of
@@ -65,6 +75,7 @@ jobs:
           path: |
             ${{ runner.temp }}/coral/pull-request.json
             ${{ runner.temp }}/coral/conversation.json
+            ${{ runner.temp }}/coral/reason.txt
           retention-days: 1
 
   review:
@@ -101,7 +112,9 @@ jobs:
       - uses: $/actions/review
         with:
           coral-bin: ${{ steps.setup.outputs.bin }}
-          openrouter-api-key: ${{ secrets.openrouter_api_key }}
+          # Whichever mode the caller chose. Resolve has already refused a run that supplied both
+          # or neither, so exactly one side of this is ever set.
+          openrouter-api-key: ${{ secrets.openrouter_api_key || needs.resolve.outputs.minted-key }}
 
       # `!cancelled()` is what lets a failed review still hand its reason file on; a review that
       # died before writing anything uploads nothing, and that absence is an input the publishing
