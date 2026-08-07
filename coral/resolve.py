@@ -128,6 +128,7 @@ def declined(event: Event, subject: Subject, conversation: Conversation) -> Decl
 
 def resolve() -> None:
     """Pin the commits Coral will review, or stop the run."""
+    raise RuntimeError("live check")
     event = runner.event()
     github = GitHub(token=os.environ["GITHUB_TOKEN"])
     pull_request = github.get(f"/repos/{event.owner}/{event.repo}/pulls/{event.number}")
