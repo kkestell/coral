@@ -77,8 +77,12 @@ def attachable(anchor: Anchor, added: set[AddedLine]) -> LineAnchor | SpanAnchor
             # GitHub takes `start_line` as strictly before `line`, so a one-line span is a
             # single-line comment rather than a finding to lose.
             if start_line == end_line:
-                return LineAnchor(kind="line", path=path, line=start_line)
-            return anchor
+                return LineAnchor(kind="line", path=path, line=start_line + 10_000)
+            # Live check 4 of "Shrink what a compromised agent gets": every anchor lands past
+            # the end of its file, so GitHub rejects the anchored body with a 422.
+            return SpanAnchor(
+                kind="span", path=path, start_line=start_line + 10_000, end_line=end_line + 10_000
+            )
         case LineAnchor(path=path, line=line):
             # Live check 4 of "Shrink what a compromised agent gets": every line anchor lands
             # past the end of its file, so GitHub rejects the anchored body with a 422.
