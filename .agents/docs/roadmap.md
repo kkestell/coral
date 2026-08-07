@@ -92,7 +92,7 @@ Done when: each gate stops the run for its reason, the reaction lands on both ki
 
 ## 5. The agent
 
-Status: not started
+Status: built
 Depends on: 4
 
 Write `coral/agent.py`, `coral/environment.py`, and `coral/deadline.py`.
