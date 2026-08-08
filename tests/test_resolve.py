@@ -26,10 +26,11 @@ from coral.resolve import (
     declined,
     handoff_key,
     management_key,
+    push_decline,
     reported,
     subject_of,
 )
-from coral.runner import Event
+from coral.runner import Event, Push
 from coral.spend import cap_dollars
 
 HEAD = "9f3a1c2b4d5e6f708192a3b4c5d6e7f809a1b2c3"
@@ -179,6 +180,22 @@ def test_a_pull_request_whose_head_repository_is_gone_reduces_rather_than_crashi
 def test_a_pull_request_that_passes_every_gate() -> None:
     assert declined(opened(), subject(), reviewed(), writers()) is None
     assert declined(asked(), subject(), reviewed(), writers()) is None
+
+
+def test_a_main_push_to_main_with_a_parent_passes() -> None:
+    assert push_decline(Push(sha=HEAD, parent=OTHER_COMMIT, ref="refs/heads/main")) is None
+
+
+def test_a_push_to_another_branch_stops_before_a_key_is_minted() -> None:
+    assert push_decline(Push(sha=HEAD, parent=OTHER_COMMIT, ref="refs/heads/feature")) == (
+        "it is not a push to main"
+    )
+
+
+def test_a_root_commit_stops_before_a_key_is_minted() -> None:
+    assert push_decline(Push(sha=HEAD, parent=None, ref="refs/heads/main")) == (
+        "it has no parent commit"
+    )
 
 
 def test_an_inert_command_stops_the_run() -> None:

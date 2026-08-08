@@ -90,6 +90,7 @@ jobs:
       || (github.event_name == 'pull_request_review_comment'
       && contains(github.event.comment.body, '/coral')
       && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     outputs:
       proceed: ${{ steps.resolve.outputs.proceed }}
       head-sha: ${{ steps.resolve.outputs.head-sha }}
@@ -125,6 +126,7 @@ jobs:
           path: |
             ${{ runner.temp }}/coral/pull-request.json
             ${{ runner.temp }}/coral/conversation.json
+            ${{ runner.temp }}/coral/push.json
             ${{ runner.temp }}/coral/reason.txt
           retention-days: 1
 
@@ -181,6 +183,7 @@ jobs:
           name: coral-review
           path: |
             ${{ runner.temp }}/coral/review-payloads.json
+            ${{ runner.temp }}/coral/issue-payloads.json
             ${{ runner.temp }}/coral/reason.txt
           retention-days: 1
 

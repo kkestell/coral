@@ -190,9 +190,62 @@ def payloads(commit: str, review: Review, added: set[AddedLine], spent: float) -
     )
 
 
+@dataclass(frozen=True)
+class IssuePayload:
+    """One issue Coral creates for a confirmed main-branch finding."""
+
+    title: str
+    body: str
+
+
+@dataclass(frozen=True)
+class IssuePayloads:
+    """The issues a main-push review earned, one per finding."""
+
+    issues: list[IssuePayload]
+
+
+def issue_title(finding: Finding) -> str:
+    """A GitHub issue title naming the finding's severity and location."""
+    return f"[Coral] {finding.severity.capitalize()} finding: {issue_where(finding)}"[:256]
+
+
+def issue_where(finding: Finding) -> str:
+    """The finding's location as an issue describes a main-branch change."""
+    if isinstance(finding.anchor, PullRequestAnchor):
+        return "the change as a whole"
+    return where(finding.anchor)
+
+
+def issue_payloads(commit: str, review: Review, spent: float) -> IssuePayloads:
+    """One complete GitHub issue body for every confirmed finding."""
+    return IssuePayloads(
+        issues=[
+            IssuePayload(
+                title=issue_title(finding),
+                body="\n".join(
+                    [
+                        marker(commit),
+                        "",
+                        f"🪸 Coral found this in main commit `{commit}`.",
+                        "",
+                        f"**{issue_where(finding)}**",
+                        "",
+                        rendered_finding(finding),
+                        "",
+                        cost(spent),
+                    ]
+                ),
+            )
+            for finding in review.findings
+        ]
+    )
+
+
 # The same validator the agent framework runs over the review object, so the project has one
 # answer to "JSON back into a frozen dataclass" rather than two.
 PAYLOADS: Final = TypeAdapter(Payloads)
+ISSUE_PAYLOADS: Final = TypeAdapter(IssuePayloads)
 
 
 def write_payloads(path: Path, payloads: Payloads) -> None:
@@ -203,6 +256,16 @@ def write_payloads(path: Path, payloads: Payloads) -> None:
 def read_payloads(path: Path) -> Payloads:
     """Read the two bodies back into the pair they were written from."""
     return PAYLOADS.validate_json(path.read_bytes())
+
+
+def write_issue_payloads(path: Path, payloads: IssuePayloads) -> None:
+    """Leave the main-push issue bodies where the publishing job will read them."""
+    path.write_bytes(ISSUE_PAYLOADS.dump_json(payloads))
+
+
+def read_issue_payloads(path: Path) -> IssuePayloads:
+    """Read the main-push issue bodies back into the set review produced."""
+    return ISSUE_PAYLOADS.validate_json(path.read_bytes())
 
 
 def submitted(commit: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -239,6 +302,13 @@ def post_review(
             raise
         log.warning("GitHub rejected the anchored review: %s", rejection.body)
         return github.post(path, submitted(commit, payloads.demoted))
+
+
+def post_issue(github: GitHub, owner: str, repo: str, payload: IssuePayload) -> Any:
+    """Create one issue for a confirmed finding on a main-branch commit."""
+    return github.post(
+        f"/repos/{owner}/{repo}/issues", {"title": payload.title, "body": payload.body}
+    )
 
 
 @dataclass(frozen=True)

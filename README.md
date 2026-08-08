@@ -1,6 +1,6 @@
 # 🪸 Coral
 
-A code review agent that runs as a GitHub Actions workflow. When a pull request is opened or marked ready for review, or when somebody comments `/coral` on one, Coral reviews the change and leaves its findings as comments on the pull request.
+A code review agent that runs as a GitHub Actions workflow. Coral reviews pull requests and comments on them. It also reviews each commit pushed to `main` and creates an issue for every confirmed finding.
 
 Coral is a proof of concept and is early.
 
@@ -12,6 +12,8 @@ Coral is a proof of concept and is early.
 name: Coral
 
 on:
+  push:
+    branches: [main]
   pull_request:
     types: [opened, ready_for_review]
   issue_comment:
@@ -20,7 +22,7 @@ on:
     types: [created]
 
 concurrency:
-  group: coral-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: coral-${{ github.event.pull_request.number || github.event.issue.number || github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -69,6 +71,10 @@ Coral is configured in that workflow file and nowhere else, so a pull request ca
 Comment `/coral` on a pull request, or as a reply on the diff, to ask for a review at any time. Coral reacts with 👀, then posts its review.
 
 Anyone with write access can ask. Coral only comments: it never pushes, approves, or requests changes.
+
+## Reviewing main
+
+The caller file above reviews every commit pushed to `main`. Coral compares that commit with its first parent. It creates one issue for each finding its verifier confirms. A main-push review with no confirmed findings creates no issue. A failed main-push review is visible in Actions and creates no issue.
 
 ## Risks
 
