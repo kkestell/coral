@@ -12,7 +12,7 @@ Each document owns a subject and is the only place that subject is written down.
 - `.agents/docs/architecture.md` — how the code is organized and how it runs on GitHub Actions: the stack, the layout, the run, the rules that hold everywhere, and the decisions still open.
 - `.agents/docs/roadmap.md` — the order the work happens in: what each item builds, what it depends on, its status, and its done condition.
 - `.agents/docs/development.md` — prerequisites, setup, commands, environment variables, and gotchas.
-- `.agents/docs/testing.md` — where the tests live, how to run a subset, what a new test looks like, and the live checks.
+- `.agents/docs/testing.md` — where the tests live, what a new test looks like, what the unit suite cannot show, and how a change is checked against a real run.
 - `.agents/docs/code-style.md` — the conventions this code follows, including the ones no linter checks.
 - `README.md` — how somebody outside the project installs and uses Coral. Nothing under `.agents/docs/` describes installation or use.
 
@@ -50,7 +50,7 @@ Keep every document true. A change that leaves one wrong is not finished.
 
 ## Finishing Work
 
-An item's done condition includes the live checks named for it in `.agents/docs/testing.md`. Run them for real, against `kkestell/coral-test`, before calling the item done or changing its status. Describing what a check would show, or naming it as left over for later, is not running it — an item is not done until the check actually ran.
+An item's done condition is in `.agents/docs/roadmap.md`, and every claim it makes is met by a real run, the way `.agents/docs/testing.md` describes. Do those runs before calling the item done or changing its status. Describing what a run would show, or naming it as left over for later, is not doing it — an item is not done until the run actually happened and its evidence was read.
 
 ## Artifacts
 
