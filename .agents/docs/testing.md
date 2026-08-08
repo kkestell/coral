@@ -21,7 +21,7 @@ One real run in `kkestell/coral-test`, started by hand, in order within a group,
 
 **Reading the conversation**
 
-1. From a developer machine, fetch `cli/cli` 10513 with the command in `.agents/docs/development.md`. Expect 84 threads, a bound reporting dropped comments, and a second page forced on the reviews connection by its 117 reviews.
+1. Fetch `cli/cli` 10513 with the command in `.agents/docs/development.md`. Expect 84 threads, a bound reporting dropped comments, and its 117 reviews forcing a second page on that connection.
 2. Comment `/coral`. The second review reads the first review's marker, names the commit, and counts the asking comment.
 3. Reply to Coral's inline finding, resolve the thread, comment `/coral`. The third review reports the thread resolved and Coral's finding as Coral's.
 4. Push a commit changing the line under Coral's finding, comment `/coral`. The review reports that thread outdated.
@@ -77,7 +77,7 @@ Each of the first two needs a project of that language with a planted defect.
 
 1. Python: open a pull request. The review carries the finding with its failing regression test, and the log's confirming verdict quotes its failure output. Coral logs no command text.
 2. The same on a Node project with an `npm test` suite, then on a Go module with a `go test` suite.
-3. The escape probe: patch `coral/review.py` to run `ps -e`, `ls /home/runner`, `cat /proc/1/comm`, `touch /opt/hostedtoolcache/probe`, and `docker ps` through the agent's backend after provisioning. Expect only the container's own processes, no `Runner.Worker`, no `/home/runner`, an init as PID 1, a read-only refusal, and no `docker`. Revert.
+3. The escape probe: patch `coral/review.py` to run `ps -e`, `ls /home/runner`, `cat /proc/1/comm`, `touch /opt/hostedtoolcache/probe`, and `docker ps` through the agent's backend. Expect the container's own processes alone, no `/home/runner`, an init as PID 1, a read-only refusal, and no `docker`. Revert.
 
 **Structured output on any model**
 
@@ -89,7 +89,7 @@ Each of the first two needs a project of that language with a planted defect.
 The knobs swap in the caller file.
 
 1. Name all three — a model the group above tested, an explicit effort, `time_budget_minutes: 10`. A review posts green, the review step's log carries the budget and the fetched profile, and the review job's timeout is 20 minutes.
-2. Remove the `with:` block. A review posts as before, and the logged profile is the one Coral carried by hand: a million-token window, 128,000 out, no temperature.
+2. Remove the `with:` block. A review posts as before, and the logged profile is a million-token window, 128,000 out, no temperature.
 3. Set `model` to `~openai/gpt-mini-latest`. Red run, one comment refusing the alias and saying to name the model exactly.
 4. Set `time_budget_minutes` to 355. Red run, one comment carrying the ceiling.
 5. Set `model` to a name OpenRouter does not list. Red run, one comment saying so.

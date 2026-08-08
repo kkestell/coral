@@ -25,7 +25,8 @@ Three jobs in fixed order — resolve, review, publish — each on its own runne
 - Review runs the agent and holds `contents: read` — what the checkout needs and nothing more; its review step makes no API call and its environment carries no token. Its `timeout-minutes` is resolve's derived output. Each agent run gets a fresh copy of the checkout and a container of its own, so no agent writes the workspace. It verifies the reviewer's findings with a second run and writes the two finished create-review bodies: the anchored one and the one with every finding demoted. The review object never crosses: both bodies need the added-line set the anchors were checked against, which exists only here.
 - The checkout takes the pinned head SHA, full history, and no persisted credentials; the workflow file says why. A force-pushed SHA can make it fail; the publishing job covers that.
 - Publish holds resolve's three scopes and is the only job that posts: the review, or the failure comment — including for a review job that died whole and crossed no reason file. It stamps `commit_id` and `event` on whichever body it posts; the agent's job gets no say in either.
-- Each job installs `uv` and builds Coral's virtual environment under the runner's temporary directory — outside the workspace, never activated, never on `PATH`, every step invoking the console script by absolute path. - A job boundary is a machine boundary, each side a fresh runner and filesystem. The head SHA, the `proceed` flag, the review job's timeout, and the minted key cross as job outputs — the values YAML reads; everything else crosses as artifacts under the runner's temporary directory, outside the workspace.
+- Each job installs `uv` and builds Coral's virtual environment under the runner's temporary directory — outside the workspace, never activated, never on `PATH`, every step invoking the console script by absolute path.
+- A job boundary is a machine boundary, each side a fresh runner and filesystem. The head SHA, the `proceed` flag, the review job's timeout, and the minted key cross as job outputs — the values YAML reads; everything else crosses as artifacts under the runner's temporary directory, outside the workspace.
 - A stopped run is green: `proceed=false`, reason on stderr, exit zero, later jobs skipped. Only a broken run is red. A cancelled run posts nothing.
 
 ## The Codebase
@@ -67,7 +68,8 @@ Rules:
 ## Rules That Hold Everywhere
 
 - An agent's only return value is a structured object, and deterministic code does the posting. Nothing the model produces becomes a push, an approval, or a comment Coral did not compose.
-- Coral is installed only on private repositories whose read, write, and admin access is controlled. Everybody who can open a pull request, comment, or submit a review is already trusted to run code in that repository's CI. A public repository, or one taking pull requests from outside, needs every bullet here rewritten first.
+- Every change Coral runs came from somebody with push access: it refuses a fork's pull request and `/coral` from below collaborator. As true on a public repository as a private one.
+- On a public repository the logs are public, so the minted key's cleartext line is readable by anybody until it expires. Coral's own install passes a plain key.
 - Each agent run reaches only its own copy of the checkout, and Coral's own code reaches `git` in the workspace only through `coral/diff.py`, so the diff the agent saw and the diff the anchors are checked against are the same.
 - The agent's shell holds no credential and sees only that copy and the read-only toolcache. The runner's filesystem, its process table, and `Runner.Worker`'s memory are on the far side of a namespace boundary. It keeps the network, because there is nothing in the container to send out.
 - What a compromised agent can still choose is the text of the review the publishing job posts, marker included — never `event`, `commit_id`, or any write anywhere.
@@ -77,5 +79,5 @@ Rules:
 ## The Runner
 
 - Hosted Ubuntu: 4 vCPU / 16 GB public, 2 vCPU / 8 GB private, 14 GB SSD. Larger runners need Team or Enterprise Cloud.
-- Coral's own process runs on the runner; the agent's shell runs as root in an `ubuntu:24.04` container. Reviewing a repository means running its tests with its toolchain, and the container answers that with the hosted image's toolcache mounted read-only plus `apt-get` for the rest.
+- Coral's own process runs on the runner; the agent's shell runs as root in an `ubuntu:24.04` container. Reviewing a repository means running its tests with its toolchain, so the container mounts the hosted image's toolcache read-only and has `apt-get` for the rest.
 - On the comment paths the workflow file is read from the default branch, so a pull request cannot change how it is reviewed by asking. On the `pull_request` path it comes from the head, so a pull request can alter its own review.

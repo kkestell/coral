@@ -1,0 +1,29 @@
+# Coral reviewing Coral. What a repository installs is `examples/coral.yml`; this file differs
+# from it in one line, calling the workflow beside it rather than a pinned reference.
+
+name: Coral
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+concurrency:
+  group: coral-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  coral:
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    # A relative reference resolves in the commit this file came from, so a pull request is
+    # reviewed by the Coral it changes. GitHub reads this file from the default branch on the
+    # comment paths, so a `/coral` runs the default branch's Coral whatever the branch holds.
+    uses: ./.github/workflows/coral.yml
+    secrets:
+      openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
