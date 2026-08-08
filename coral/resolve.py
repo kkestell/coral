@@ -108,10 +108,10 @@ def acknowledgments(event: Event, conversation: Conversation, access: Access) ->
     """Every request waiting on this run: the conversation's, and the one on the payload.
 
     The triggering comment is read off the payload rather than out of the conversation. It is
-    nearly always in there, and nearly always is not always — the conversation is bounded, a
-    thread is read twenty comments deep, and the paging stops after four pages — so a request on
-    a busy pull request can be one the fetch did not offer. It is dropped from the conversation's
-    list when the conversation produced it as well.
+    nearly always in there, and nearly always is not always — the conversation is bounded, a long
+    thread is read at both ends and not through the middle, and the paging stops after four pages
+    — so a request on a busy pull request can be one the fetch did not offer. It is dropped from
+    the conversation's list when the conversation produced it as well.
     """
     requests = requests_in(conversation, access)
     if event.comment is None or not is_request(event.comment.body, event.comment.author, access):

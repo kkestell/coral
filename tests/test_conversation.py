@@ -50,6 +50,38 @@ def groups(reacted: bool = False) -> list[dict[str, Any]]:
     ]
 
 
+# A thread's first comment comes back twice, once under `opening` and once at the head of
+# `comments`, and the response holds the same node in both places. Each of the two threads below
+# holds its own once here and is referenced from both.
+OPENED_THE_OUTDATED_THREAD: dict[str, Any] = {
+    "id": "PRRC_kwDODKw3uc51qgxu",
+    "databaseId": 1974078574,
+    "author": {"login": "copilot-pull-request-reviewer"},
+    "authorAssociation": "CONTRIBUTOR",
+    "body": (
+        "Consider clarifying the error handling and updating or removing the TODO comment near "
+        "the headRemote lookup."
+    ),
+    "createdAt": "2025-02-27T17:51:06Z",
+    "outdated": True,
+    "originalLine": 679,
+    "viewerDidAuthor": False,
+    "reactionGroups": groups(),
+}
+
+OPENED_THE_SUGGESTION_THREAD: dict[str, Any] = {
+    "id": "PRRC_kwDODKw3uc52Odl8",
+    "databaseId": 1983502716,
+    "author": {"login": "andyfeller"},
+    "authorAssociation": "CONTRIBUTOR",
+    "body": "```suggestion\r\nexec git config set push.default simple\r\n```",
+    "createdAt": "2025-03-06T14:52:51Z",
+    "outdated": False,
+    "originalLine": 20,
+    "viewerDidAuthor": False,
+    "reactionGroups": groups(),
+}
+
 CAPTURED: dict[str, Any] = {
     "repository": {
         "pullRequest": {
@@ -100,25 +132,10 @@ CAPTURED: dict[str, Any] = {
                         "startLine": None,
                         "diffSide": "RIGHT",
                         "subjectType": "LINE",
+                        "opening": {"nodes": [OPENED_THE_OUTDATED_THREAD]},
                         "comments": {
                             "totalCount": 1,
-                            "nodes": [
-                                {
-                                    "id": "PRRC_kwDODKw3uc51qgxu",
-                                    "databaseId": 1974078574,
-                                    "author": {"login": "copilot-pull-request-reviewer"},
-                                    "authorAssociation": "CONTRIBUTOR",
-                                    "body": (
-                                        "Consider clarifying the error handling and updating or "
-                                        "removing the TODO comment near the headRemote lookup."
-                                    ),
-                                    "createdAt": "2025-02-27T17:51:06Z",
-                                    "outdated": True,
-                                    "originalLine": 679,
-                                    "viewerDidAuthor": False,
-                                    "reactionGroups": groups(),
-                                }
-                            ],
+                            "nodes": [OPENED_THE_OUTDATED_THREAD],
                         },
                     },
                     {
@@ -132,24 +149,11 @@ CAPTURED: dict[str, Any] = {
                         "startLine": 20,
                         "diffSide": "RIGHT",
                         "subjectType": "LINE",
+                        "opening": {"nodes": [OPENED_THE_SUGGESTION_THREAD]},
                         "comments": {
                             "totalCount": 2,
                             "nodes": [
-                                {
-                                    "id": "PRRC_kwDODKw3uc52Odl8",
-                                    "databaseId": 1983502716,
-                                    "author": {"login": "andyfeller"},
-                                    "authorAssociation": "CONTRIBUTOR",
-                                    "body": (
-                                        "```suggestion\r\nexec git config set push.default "
-                                        "simple\r\n```"
-                                    ),
-                                    "createdAt": "2025-03-06T14:52:51Z",
-                                    "outdated": False,
-                                    "originalLine": 20,
-                                    "viewerDidAuthor": False,
-                                    "reactionGroups": groups(),
-                                },
+                                OPENED_THE_SUGGESTION_THREAD,
                                 {
                                     "id": "PRRC_kwDODKw3uc52QOwV",
                                     "databaseId": 1983966229,
@@ -252,11 +256,21 @@ def review_node(
 def thread_node(
     identifier: str,
     comments: list[dict[str, Any]],
+    opening: dict[str, Any] | None = None,
     total: int | None = None,
     resolved: bool = False,
     outdated: bool = False,
     line: int | None = 12,
 ) -> dict[str, Any]:
+    """A thread as the query asks for it: its newest comments, and the one that opened it.
+
+    `opening` defaults to the first of `comments`, which is what a thread no longer than
+    `THREAD_COMMENTS` comes back as. A longer one is given its own, older than any of them.
+    """
+
+    def inline(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [dict(node, outdated=False, originalLine=12) for node in nodes]
+
     return {
         "id": identifier,
         "isResolved": resolved,
@@ -266,9 +280,10 @@ def thread_node(
         "startLine": None,
         "diffSide": "RIGHT",
         "subjectType": "LINE",
+        "opening": {"nodes": inline([opening] if opening else comments[:1])},
         "comments": {
             "totalCount": total if total is not None else len(comments),
-            "nodes": [dict(node, outdated=False, originalLine=12) for node in comments],
+            "nodes": inline(comments),
         },
     }
 
@@ -384,6 +399,28 @@ def test_a_thread_against_a_deleted_line_has_no_line() -> None:
     assert thread.line is None
     assert thread.comments[0].outdated is True
     assert thread.comments[0].original_line == 679
+
+
+def test_a_thread_longer_than_the_bound_is_read_at_both_ends() -> None:
+    # The newest comments are where a maintainer's correction lands, and the comment that opened
+    # the thread is the finding the rest of it replies to. A gap in the middle costs neither.
+    newest = [comment_node(f"PRRC_{n}", written_at=at(n)) for n in range(10, 30)]
+    thread = parse_threads(
+        [thread_node("PRRT_1", newest, opening=comment_node("PRRC_0", written_at=at(0)), total=30)]
+    )[0]
+    assert [comment.id for comment in thread.comments] == [
+        "PRRC_0",
+        *(f"PRRC_{n}" for n in range(10, 30)),
+    ]
+    assert thread.total_comments == 30
+
+
+def test_a_thread_short_enough_to_read_whole_does_not_read_its_first_comment_twice() -> None:
+    # `opening` and the head of `comments` are the same node whenever the thread fits in one.
+    thread = parse_threads(
+        [thread_node("PRRT_1", [comment_node("PRRC_1"), comment_node("PRRC_2")])]
+    )[0]
+    assert [comment.id for comment in thread.comments] == ["PRRC_1", "PRRC_2"]
 
 
 def test_a_review_with_an_empty_body_is_not_a_comment() -> None:
@@ -553,7 +590,7 @@ def test_a_thread_survives_when_one_of_its_comments_does_and_keeps_its_flags() -
 
 
 def test_a_thread_holding_more_comments_than_were_fetched_reports_the_rest_unread() -> None:
-    # The `first: 20` inside the thread, which is not the same truncation as the global bound.
+    # The `last: 20` inside the thread, which is not the same truncation as the global bound.
     conversation = bound(
         fetched_from(threads=[thread_node("PRRT_1", [comment_node("PRRC_1")], total=25)])
     )
