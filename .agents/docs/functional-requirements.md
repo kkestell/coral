@@ -7,7 +7,7 @@ What Coral does, as behavior someone could watch happen. These requirements are 
 - Coral reviews a pull request when it is opened and when a draft is marked ready for review. Nobody has to ask for that first review.
 - Coral reviews every push to `main`, without a request. It creates issues for confirmed findings rather than commenting on a pull request.
 - A push carrying several commits is one review of all of them together, not one review each.
-- A push to any other branch starts nothing. Neither does a push to a `main` that had no commit before it, nor one that deletes `main`.
+- A push to any other branch starts nothing. Neither does a push to a `main` that had no commit before it, nor one that deletes `main`, which GitHub delivers as a push whose commit is forty zeroes.
 - Draft and bot-opened pull requests get no automatic review. Both can still be reviewed on request.
 - Coral reviews only pull requests whose head branch lives in the same repository as the base — a fork's branch is code nobody with write access vouched for.
 - After the automatic review, Coral reviews the pull request again only when someone asks. A bot that reviews every push to a branch teaches people to ignore it.

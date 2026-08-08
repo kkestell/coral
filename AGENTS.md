@@ -26,7 +26,7 @@ A reason earns one clause — "X, because Y" — only when it protects the fact 
 
 No rhetoric. Never restate a fact from a second angle, never write a sentence whose only job is emphasis or transition, and never narrate — no "this is what makes X possible", no walking the reader through rejected alternatives, no building up to a conclusion. If deleting a sentence loses no fact, delete it.
 
-Ceilings, checked with `wc -w`: `roadmap.md` holds at most 3,500 words; every other document under `.agents/docs/`, `plans/` and `reviews/` excepted, holds at most 1,500. An edit that would cross a ceiling deletes something old before it adds. Ceilings never rise, and a ceiling is a limit rather than a target.
+Ceilings, checked with `wc -w`: `roadmap.md` holds at most 3,500 words; every other document under `.agents/docs/`, `functional-requirements.md`, `plans/` and `reviews/` excepted, holds at most 1,500. An edit that would cross a ceiling deletes something old before it adds. Ceilings never rise, and a ceiling is a limit rather than a target. `functional-requirements.md` has no ceiling, because it enumerates behavior and a cap on it is a cap on what Coral may do.
 
 An item's bullets hold only what constrains work still to come: a decision a later item is written against, a number that must not be tuned, a shape the next build has to match. A mechanic the code explains where it lives is a comment there. Verifying an item settles its mechanics, so the bullets describing them go then, leaving what the item built, what it depended on, its status, and its done condition. The roadmap shrinks as the work finishes.
 
