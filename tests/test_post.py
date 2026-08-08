@@ -11,12 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from coral.diff import AddedLine
-from coral.github.client import GitHub
+from coral.github.client import ApiError, GitHub
 from coral.github.marker import marker
 from coral.github.post import (
+    LABELS,
     bullet,
     cost,
     count,
+    create_labels,
     demotion,
     issue_payloads,
     issue_title,
@@ -120,8 +122,17 @@ def test_a_count_of_one_is_singular() -> None:
     assert count(2, "finding") == "2 findings"
 
 
-def finding_at(anchor: Anchor, body: str = "The parser drops the last token.") -> Finding:
-    return Finding(body=body, anchor=anchor, severity="medium", regression_test=None)
+def finding_at(
+    anchor: Anchor,
+    body: str = "The parser drops the last token.",
+    severity: str = "medium",
+) -> Finding:
+    return Finding(
+        body=body,
+        anchor=anchor,
+        severity=severity,  # type: ignore[arg-type]
+        regression_test=None,
+    )
 
 
 def line(number: int) -> LineAnchor:
@@ -226,7 +237,7 @@ def test_each_main_push_finding_becomes_one_issue_with_the_commit_and_cost() -> 
     review = review_of(finding_at(line(7)), finding_at(FileAnchor(kind="file", path="a.py")))
     issues = issue_payloads(COMMIT, review, SPENT).issues
     assert len(issues) == 2
-    assert issues[0].title == "🪸 [Medium] The parser drops the last token."
+    assert issues[0].title == "The parser drops the last token."
     assert marker(COMMIT) in issues[0].body
     assert f"main commit `{COMMIT}`" in issues[0].body
     assert "The parser drops the last token." in issues[0].body
@@ -241,14 +252,33 @@ def test_an_issue_title_names_the_defect_not_its_location() -> None:
     issue = issue_payloads(
         COMMIT, review_of(finding_at(PullRequestAnchor(kind="pull_request"))), SPENT
     ).issues[0]
-    assert issue.title == "🪸 [Medium] The parser drops the last token."
+    assert issue.title == "The parser drops the last token."
     assert "the change as a whole" in issue.body
     assert "the pull request" not in issue.body
 
 
 def test_an_issue_title_stays_on_one_line() -> None:
     finding = finding_at(FileAnchor(kind="file", path="a.py"), "The first line.\n\nThe detail.")
-    assert issue_title(finding) == "🪸 [Medium] The first line."
+    assert issue_title(finding) == "The first line."
+
+
+def test_an_issue_carries_corals_label_and_its_severity() -> None:
+    for severity in ("low", "medium", "high"):
+        review = review_of(finding_at(line(7), severity=severity))
+        assert issue_payloads(COMMIT, review, SPENT).issues[0].labels == [
+            "coral",
+            f"severity: {severity}",
+        ]
+
+
+def test_every_label_an_issue_carries_is_one_coral_creates() -> None:
+    # A label the repository has no definition for is dropped, so an issue may only ask for labels
+    # `create_labels` puts there.
+    review = review_of(
+        *(finding_at(line(7), severity=severity) for severity in ("low", "medium", "high"))
+    )
+    for issue in issue_payloads(COMMIT, review, SPENT).issues:
+        assert set(issue.labels) <= set(LABELS)
 
 
 def test_an_issue_title_stays_within_githubs_limit() -> None:
@@ -275,9 +305,46 @@ def test_posting_a_main_push_finding_uses_the_issue_endpoint() -> None:
     assert sent == [
         (
             "/repos/kkestell/coral-test/issues",
-            {"title": issue.title, "body": issue.body},
+            {"title": issue.title, "body": issue.body, "labels": issue.labels},
         )
     ]
+
+
+def test_corals_labels_are_created_before_its_issues_are_filed() -> None:
+    sent: list[tuple[str, dict[str, Any]]] = []
+
+    class Recording(GitHub):
+        def post(self, path: str, body: dict[str, Any]) -> Any:
+            sent.append((path, body))
+            return {}
+
+    create_labels(Recording(token="not a real token"), "kkestell", "coral-test")
+    assert [path for path, _ in sent] == ["/repos/kkestell/coral-test/labels"] * len(LABELS)
+    assert [body["name"] for _, body in sent] == list(LABELS)
+
+
+def test_a_label_the_repository_already_has_is_left_alone() -> None:
+    # GitHub answers 422 for a label that exists. Coral keeps the repository's color and
+    # description rather than replacing them, and files its issues either way.
+    tried: list[str] = []
+
+    class Refusing(GitHub):
+        def post(self, path: str, body: dict[str, Any]) -> Any:
+            tried.append(str(body["name"]))
+            raise ApiError("POST", path, 422, '{"message":"Validation Failed"}')
+
+    create_labels(Refusing(token="not a real token"), "kkestell", "coral-test")
+    assert tried == list(LABELS)
+
+
+def test_a_label_coral_cannot_create_does_not_stop_the_issues() -> None:
+    # An unlabeled issue is worth more than no issue, so a refusal that is not "it exists already"
+    # is left behind rather than raised at the step that has findings to file.
+    class Forbidding(GitHub):
+        def post(self, path: str, body: dict[str, Any]) -> Any:
+            raise ApiError("POST", path, 403, '{"message":"Resource not accessible"}')
+
+    create_labels(Forbidding(token="not a real token"), "kkestell", "coral-test")
 
 
 def test_both_bodies_report_the_same_cost() -> None:

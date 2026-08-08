@@ -51,7 +51,7 @@ Coral decides which of these to use, in what order, how many times.
 - On a pull request, line and span findings anchor to their code. Whole-file and pull-request findings appear in the summary, the file named — "this file has no tests" and "this change has no tests" must read differently.
 - A confirmed finding that cannot anchor still appears, in the summary, naming its intended file and line.
 - One review per run, not a comment per finding. A pull request reviewed several times carries several reviews.
-- On `main`, Coral creates one issue per confirmed finding. Its title names the defect, and its body names the commit the finding was found in.
+- On `main`, Coral creates one issue per confirmed finding. Its title names the defect, its body names the commit the finding was found in, and a `coral` label and a severity label carry the rest. Coral creates any of those labels the repository lacks, because GitHub drops a label with no definition.
 - A confirmed `main` finding creates no issue when an open issue Coral read describes the same defect. Who opened that issue does not matter. A closed issue suppresses nothing, because the finding is about code at the pushed commit and a closed issue did not fix it.
 - An empty `main` review creates no issue.
 - Every pull-request review names the commit it reviewed — readers need to know which state of the branch each review is about, and it is how Coral recognizes its own past work.

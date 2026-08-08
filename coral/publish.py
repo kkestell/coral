@@ -19,6 +19,7 @@ from coral import runner
 from coral.command import Access, is_request
 from coral.github.client import GitHub
 from coral.github.post import (
+    create_labels,
     post_comment,
     post_issue,
     post_review,
@@ -118,7 +119,10 @@ def publish() -> None:
 
     if runner.issues_path().exists():
         assert event.push is not None, "A main-push issue payload needs a push event."
-        for payload in read_issue_payloads(runner.issues_path()).issues:
+        issues = read_issue_payloads(runner.issues_path()).issues
+        # Before the first issue, so no issue is filed with its labels dropped.
+        create_labels(github, event.owner, event.repo)
+        for payload in issues:
             post_issue(github, event.owner, event.repo, payload)
         return
 

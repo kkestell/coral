@@ -190,12 +190,24 @@ def payloads(commit: str, review: Review, added: set[AddedLine], spent: float) -
     )
 
 
+# The labels Coral puts on the issues it files, each with the color and description it gets if
+# Coral is the one that creates it. Severity is a label rather than a title prefix so the title is
+# the defect and nothing else.
+LABELS: Final = {
+    "coral": ("ff7f50", "Filed by Coral."),
+    "severity: low": ("0e8a16", "Coral judged this a low-severity defect."),
+    "severity: medium": ("fbca04", "Coral judged this a medium-severity defect."),
+    "severity: high": ("d73a4a", "Coral judged this a high-severity defect."),
+}
+
+
 @dataclass(frozen=True)
 class IssuePayload:
     """One issue Coral creates for a confirmed main-branch finding."""
 
     title: str
     body: str
+    labels: list[str]
 
 
 @dataclass(frozen=True)
@@ -209,7 +221,12 @@ def issue_title(finding: Finding) -> str:
     """A GitHub issue title naming the finding rather than only its location."""
     summary, end, _ = " ".join(finding.body.split()).partition(". ")
     summary += end.rstrip()
-    return f"🪸 [{finding.severity.capitalize()}] {summary}"[:256]
+    return summary[:256]
+
+
+def issue_labels(finding: Finding) -> list[str]:
+    """The labels one finding's issue carries: Coral's own, and the severity it was given."""
+    return ["coral", f"severity: {finding.severity}"]
 
 
 def issue_where(finding: Finding) -> str:
@@ -225,6 +242,7 @@ def issue_payloads(commit: str, review: Review, spent: float) -> IssuePayloads:
         issues=[
             IssuePayload(
                 title=issue_title(finding),
+                labels=issue_labels(finding),
                 body="\n".join(
                     [
                         marker(commit),
@@ -306,10 +324,30 @@ def post_review(
         return github.post(path, submitted(commit, payloads.demoted))
 
 
+def create_labels(github: GitHub, owner: str, repo: str) -> None:
+    """Create whichever of Coral's labels the repository does not define yet.
+
+    GitHub silently drops a label the repository has no definition for, so a repository seeing
+    Coral for the first time would file unlabeled issues. A label that exists already answers 422
+    and is left as the repository has it, color and description included. Any other refusal is
+    logged rather than raised: an unlabeled issue is worth more than no issue.
+    """
+    for name, (color, description) in LABELS.items():
+        try:
+            github.post(
+                f"/repos/{owner}/{repo}/labels",
+                {"name": name, "color": color, "description": description},
+            )
+        except ApiError as rejection:
+            if rejection.status != 422:
+                log.warning("Unable to create the `%s` label: %s", name, rejection.body)
+
+
 def post_issue(github: GitHub, owner: str, repo: str, payload: IssuePayload) -> Any:
     """Create one issue for a confirmed finding on a main-branch commit."""
     return github.post(
-        f"/repos/{owner}/{repo}/issues", {"title": payload.title, "body": payload.body}
+        f"/repos/{owner}/{repo}/issues",
+        {"title": payload.title, "body": payload.body, "labels": payload.labels},
     )
 
 
