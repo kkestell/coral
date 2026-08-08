@@ -174,10 +174,17 @@ def test_a_comment_that_does_not_ask_costs_no_lookup() -> None:
     assert permitting.known == {}
 
 
-def test_a_comment_carrying_corals_marker_is_never_a_request() -> None:
+def test_a_comment_opening_with_corals_marker_is_never_a_request() -> None:
     # Free today, because an event created with the job's own token starts no run. Here for the
     # day Coral has an identity of its own.
     assert is_request(f"{marker(COMMIT)}\n\n/coral", "kestell", maintainer()) is False
+
+
+def test_a_reply_quoting_corals_review_still_asks_for_one() -> None:
+    # The quote-reply button copies the marker along with the prose, and the reply is the
+    # reader's own comment however much of Coral's it carries.
+    body = f"> {marker(COMMIT)}\n>\n> Coral reviewed this.\n\nHave another look.\n\n/coral"
+    assert is_request(body, "kestell", maintainer()) is True
 
 
 def test_a_comment_carrying_a_marker_naming_no_commit_is_never_a_request() -> None:

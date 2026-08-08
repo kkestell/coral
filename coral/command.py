@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from coral.github.client import ApiError, GitHub
-from coral.github.marker import has_marker
+from coral.github.marker import opens_with_marker
 
 log = logging.getLogger(__name__)
 
@@ -122,6 +122,6 @@ def is_request(body: str, author: str | None, access: Access) -> bool:
     # is given an identity of its own. The marker is taken at face value here, unlike everywhere
     # else, because the comment on a payload carries no `viewerDidAuthor` to check it against;
     # forging one costs the forger the command in their own comment and nothing else.
-    if has_marker(body) or not asks_for_review(body):
+    if opens_with_marker(body) or not asks_for_review(body):
         return False
     return access.writes(author)

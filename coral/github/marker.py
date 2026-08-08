@@ -7,8 +7,8 @@ is the whole of Coral's memory.
 The commit is optional because a run can fail before it has one: the pull request was never
 fetched, and a comment payload carries no head SHA.
 
-The marker is characters anybody can type, so a body carrying one says only that it claims to be
-Coral's. What settles that it is Coral's is `coral/github/conversation.py`.
+The marker is characters anybody can type, so a body opening with one says only that it claims to
+be Coral's. What settles that it is Coral's is `coral/github/conversation.py`.
 """
 
 import re
@@ -25,9 +25,14 @@ def marker(commit: str | None) -> str:
     return f"<!-- {SENTINEL} commit={commit} -->"
 
 
-def has_marker(body: str) -> bool:
-    """Whether a body carries the sentinel, which it does whether or not a commit follows it."""
-    return PATTERN.search(body) is not None
+def opens_with_marker(body: str) -> bool:
+    """Whether a body opens with the sentinel, which every comment Coral posts does.
+
+    Anchored rather than searched, because a marker anywhere else in a body is somebody quoting
+    Coral. GitHub's quote-reply button copies the marker along with the prose it wraps, and a
+    reply written that way is the reader's own comment however much of Coral's it carries.
+    """
+    return PATTERN.match(body) is not None
 
 
 def reviewed_commit(body: str) -> str | None:

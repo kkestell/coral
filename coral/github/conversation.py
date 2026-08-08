@@ -31,7 +31,7 @@ from typing import Any, Final
 from pydantic import TypeAdapter
 
 from coral.github.client import GitHub
-from coral.github.marker import has_marker, reviewed_commit
+from coral.github.marker import opens_with_marker, reviewed_commit
 
 log = logging.getLogger(__name__)
 
@@ -368,7 +368,7 @@ def already_reacted(node: dict[str, Any]) -> bool:
 
 def wrote_it(node: dict[str, Any]) -> bool:
     """Whether this node is Coral's own: the job's token wrote it and the marker is on it."""
-    return node["viewerDidAuthor"] and has_marker(node["body"])
+    return node["viewerDidAuthor"] and opens_with_marker(node["body"])
 
 
 def parse_comments(nodes: list[Any]) -> list[Comment]:
