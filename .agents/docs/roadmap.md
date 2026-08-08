@@ -177,12 +177,13 @@ The resolve job still mints the capped, expiring OpenRouter API key, but only ci
 
 - The plain API-key mode remains unchanged, because GitHub already registers that caller secret with the review job's masker.
 - The review process decrypts the minted key outside the agent's container and never writes its plaintext to the checkout or an artifact.
+- The code is written and merged: `coral/handoff.py`, the `coral_key_encryption_key` secret, and resolve's `encrypted-key` output. What is missing is the done condition's live check, which needs a valid OpenRouter management key installed in `kkestell/coral-test`.
 
 Done when: a real review using a management key runs green, the complete run log contains no cleartext minted key, and the review container still carries no credential.
 
 ## 18. External credential broker (optional)
 
-Status: built
+Status: not started
 Depends on: 17
 
 An installation can use an external broker that holds the OpenRouter management key outside GitHub Actions. The review job authenticates with its GitHub OIDC identity, and the broker grants authority for only that repository, workflow run, model, spend cap, and expiry.
