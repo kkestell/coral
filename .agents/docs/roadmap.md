@@ -182,7 +182,7 @@ Done when: a real review using a management key runs green, the complete run log
 
 ## 18. External credential broker (optional)
 
-Status: not started
+Status: built
 Depends on: 17
 
 An installation can use an external broker that holds the OpenRouter management key outside GitHub Actions. The review job authenticates with its GitHub OIDC identity, and the broker grants authority for only that repository, workflow run, model, spend cap, and expiry.
@@ -206,7 +206,7 @@ Done when: broker-backed and encrypted-handoff reviews each run Python, Node, an
 
 ## 20. Review main commits as issues
 
-Status: not started
+Status: built
 Depends on: 17
 
 Coral reviews every commit pushed to `main` against the prior main commit. It creates one issue for each confirmed finding instead of a pull-request review.
