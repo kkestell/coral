@@ -21,21 +21,23 @@ One real run in `kkestell/coral-test`, started by hand, in order within a group,
 
 **Reading the conversation**
 
-1. Fetch `cli/cli` 10513 with the command in `.agents/docs/development.md`. Expect 84 threads, a bound reporting dropped comments, and its 117 reviews forcing a second page on that connection.
+1. Fetch `cli/cli` 10513 with the command in `.agents/docs/development.md`. Expect 78 threads of its 84 — the bound empties the other six — a bound reporting dropped comments, and its 117 reviews forcing a second page on that connection.
 2. Comment `/coral`. The second review reads the first review's marker, names the commit, and counts the asking comment.
 3. Reply to Coral's inline finding, resolve the thread, comment `/coral`. The third review reports the thread resolved and the finding as Coral's.
-4. Push a commit changing the line under Coral's finding, comment `/coral`. The review reports that thread outdated.
+4. Comment a body opening with Coral's own marker from an account of your own, then `/coral`. Download the next run's `coral-resolve` artifact: `conversation.json` marks Coral's review and its thread comment `mine`, and that comment not. Nothing else shows `mine`, which is why the check reads the artifact.
+5. Push a commit changing the line under Coral's finding, comment `/coral`. The review reports that thread outdated.
 
 **The gatekeeper**
 
 1. Comment a body carrying `/coral` only fenced, mid-sentence, and blockquoted. A run starts, no reaction, no review, green.
 2. Comment `/coral` alone on its own line with prose around it. Reaction and review, the control above.
-3. Comment `/coral` twice more while that run is going. The second run queues and is cancelled by the third; all three comments get the reaction and two reviews appear.
-4. Reply `/coral` on the diff. Reaction in the pulls namespace, and no second reaction from a later run — `viewerHasReacted` answers for the token's account.
-5. Close the pull request, comment `/coral`. Reaction, decline, no review, green.
-6. Let Coral review a pull request, convert to draft, mark ready again: the run declines on the marker. Ask on the same commit and get a review.
-7. Open a pull request adding a generated file over 30,000 lines. One comment saying the change exceeds what Coral will read, no review, green.
-8. Comment `/coral` from a read-only account, then open a fork's pull request. Both decline green: no reaction or review for the first, the fork gate rather than a missing-secret failure for the second.
+3. Quote-reply Coral's own review, which copies its marker behind a `> `, and add `/coral` on its own line. Reaction and review: a marker anywhere but the top of a body is somebody quoting Coral.
+4. Comment `/coral` twice more while that run is going. The second run queues and is cancelled by the third; all three comments get the reaction and two reviews appear.
+5. Reply `/coral` on the diff. Reaction in the pulls namespace, and no second reaction from a later run — `viewerHasReacted` answers for the token's account.
+6. Close the pull request, comment `/coral`. Reaction, decline, no review, green.
+7. Let Coral review a pull request, convert to draft, mark ready again: the run declines on the marker. Ask on the same commit and get a review.
+8. Open a pull request adding a generated file over 30,000 lines. One comment saying the change exceeds what Coral will read, no review, green.
+9. Comment `/coral` from a read-only account, then open a fork's pull request. Both decline green: no reaction or review for the first, the fork gate rather than a missing-secret failure for the second.
 
 **What Coral looks for**
 
