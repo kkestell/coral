@@ -224,7 +224,7 @@ Done when: a repeated finding with changed wording matches its existing open iss
 
 ## 22. Readable agent progress
 
-Status: not started
+Status: built
 Depends on: 21
 
 The review stream names each agent tool call and its arguments in the tool's public vocabulary.
