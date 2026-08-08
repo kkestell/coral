@@ -89,7 +89,28 @@ fragment ReviewFields on PullRequestReview {
 }
 """
 
-THREAD_FIELDS: Final = """
+THREAD_COMMENT_FIELDS: Final = """
+fragment ThreadCommentFields on PullRequestReviewComment {
+  id
+  databaseId
+  author { login }
+  authorAssociation
+  body
+  createdAt
+  outdated
+  originalLine
+  viewerDidAuthor
+  reactionGroups { content viewerHasReacted }
+}
+"""
+
+# A thread is asked for at both ends. `comments(last:)` is where a correction, an answer, or a
+# request lands, and `opening` is the comment the rest of the thread replies to, so a thread longer
+# than `THREAD_COMMENTS` read from one end alone loses whichever of the two is further away. The
+# two selections overlap on any shorter thread, which the parsing drops.
+THREAD_FIELDS: Final = (
+    THREAD_COMMENT_FIELDS
+    + """
 fragment ThreadFields on PullRequestReviewThread {
   id
   isResolved
@@ -99,23 +120,16 @@ fragment ThreadFields on PullRequestReviewThread {
   startLine
   diffSide
   subjectType
-  comments(first: $threadComments) {
+  opening: comments(first: 1) {
+    nodes { ...ThreadCommentFields }
+  }
+  comments(last: $threadComments) {
     totalCount
-    nodes {
-      id
-      databaseId
-      author { login }
-      authorAssociation
-      body
-      createdAt
-      outdated
-      originalLine
-      viewerDidAuthor
-      reactionGroups { content viewerHasReacted }
-    }
+    nodes { ...ThreadCommentFields }
   }
 }
 """
+)
 
 COMMENT_FIELDS: Final = """
 fragment CommentFields on IssueComment {
@@ -130,11 +144,11 @@ fragment CommentFields on IssueComment {
 }
 """
 
-# Every connection is read with `last:` and none of them is given an ordering. Neither `reviews`
-# nor `reviewThreads` accepts one at all, and the only ordering field for issue comments is
-# `UPDATED_AT`, which would rank an ancient comment edited yesterday above one written last week.
-# So all three take the connection's default order, and `last:` returning the newest is a
-# behavior observed against a real pull request rather than one GitHub promises.
+# Every connection is read with `last:`, the comments inside a thread included, and none of them is
+# given an ordering. Neither `reviews` nor `reviewThreads` accepts one at all, and the only ordering
+# field for issue comments is `UPDATED_AT`, which would rank an ancient comment edited yesterday
+# above one written last week. So each takes the connection's default order, and `last:` returning
+# the newest is a behavior observed against a real pull request rather than one GitHub promises.
 CONVERSATION_QUERY: Final = (
     REVIEW_FIELDS
     + THREAD_FIELDS
@@ -433,6 +447,19 @@ def parse_thread_comments(nodes: list[Any]) -> list[ThreadComment]:
     ]
 
 
+def thread_comments(thread: dict[str, Any]) -> list[ThreadComment]:
+    """One thread's comments: the one that opened it, then the newest ones the bound asked for.
+
+    The two selections are the same comments on a thread no longer than `THREAD_COMMENTS`, so they
+    are merged by id. What goes unread is the middle of a longer thread, and `total_comments` is
+    what says how much of it.
+    """
+    nodes = {
+        node["id"]: node for node in [*thread["opening"]["nodes"], *thread["comments"]["nodes"]]
+    }
+    return parse_thread_comments(list(nodes.values()))
+
+
 def parse_threads(nodes: list[Any]) -> list[Thread]:
     """The review threads, with the flags the prompt reads to decide whether a finding stands."""
     return [
@@ -445,7 +472,7 @@ def parse_threads(nodes: list[Any]) -> list[Thread]:
             subject_type=node["subjectType"],
             resolved=node["isResolved"],
             outdated=node["isOutdated"],
-            comments=parse_thread_comments(node["comments"]["nodes"]),
+            comments=thread_comments(node),
             total_comments=node["comments"]["totalCount"],
         )
         for node in nodes

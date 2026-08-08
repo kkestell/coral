@@ -83,6 +83,7 @@ def thread_node(
     start_line: int | None = None,
     total: int = 1,
 ) -> dict[str, Any]:
+    inline = [dict(comment_node("Inline prose."), outdated=False, originalLine=12)]
     return {
         "id": "T_1",
         "isResolved": resolved,
@@ -92,10 +93,10 @@ def thread_node(
         "startLine": start_line,
         "diffSide": "RIGHT",
         "subjectType": "LINE",
-        "comments": {
-            "totalCount": total,
-            "nodes": [dict(comment_node("Inline prose."), outdated=False, originalLine=12)],
-        },
+        # The one comment is both the thread's opening and its newest, which is what the query
+        # returns for a thread this short.
+        "opening": {"nodes": inline},
+        "comments": {"totalCount": total, "nodes": inline},
     }
 
 
