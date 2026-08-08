@@ -226,7 +226,7 @@ def test_each_main_push_finding_becomes_one_issue_with_the_commit_and_cost() -> 
     review = review_of(finding_at(line(7)), finding_at(FileAnchor(kind="file", path="a.py")))
     issues = issue_payloads(COMMIT, review, SPENT).issues
     assert len(issues) == 2
-    assert issues[0].title == "[Coral] Medium: The parser drops the last token."
+    assert issues[0].title == "🪸 [Medium] The parser drops the last token."
     assert marker(COMMIT) in issues[0].body
     assert f"main commit `{COMMIT}`" in issues[0].body
     assert "The parser drops the last token." in issues[0].body
@@ -241,14 +241,14 @@ def test_an_issue_title_names_the_defect_not_its_location() -> None:
     issue = issue_payloads(
         COMMIT, review_of(finding_at(PullRequestAnchor(kind="pull_request"))), SPENT
     ).issues[0]
-    assert issue.title == "[Coral] Medium: The parser drops the last token."
+    assert issue.title == "🪸 [Medium] The parser drops the last token."
     assert "the change as a whole" in issue.body
     assert "the pull request" not in issue.body
 
 
 def test_an_issue_title_stays_on_one_line() -> None:
     finding = finding_at(FileAnchor(kind="file", path="a.py"), "The first line.\n\nThe detail.")
-    assert issue_title(finding) == "[Coral] Medium: The first line."
+    assert issue_title(finding) == "🪸 [Medium] The first line."
 
 
 def test_an_issue_title_stays_within_githubs_limit() -> None:
