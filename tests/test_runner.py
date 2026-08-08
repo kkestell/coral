@@ -67,7 +67,7 @@ def test_a_review_comment_reacts_through_the_pulls_namespace(
     assert event.comment == Comment(id=42, namespace="pulls", body="/coral", author="kestell")
 
 
-def test_a_main_push_carries_its_commit_and_first_parent(
+def test_a_main_push_carries_its_commit_and_prior_main_tip(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     deliver(
@@ -77,25 +77,25 @@ def test_a_main_push_carries_its_commit_and_first_parent(
         {
             "ref": "refs/heads/main",
             "after": "b" * 40,
-            "head_commit": {"parents": ["a" * 40]},
+            "before": "a" * 40,
         },
     )
     event = runner.event()
     assert event.number is None
     assert event.comment is None
-    assert event.push == Push(sha="b" * 40, parent="a" * 40, ref="refs/heads/main")
+    assert event.push == Push(sha="b" * 40, base="a" * 40, ref="refs/heads/main")
 
 
-def test_a_root_commit_carries_no_parent_rather_than_crashing(
+def test_an_initial_main_push_carries_githubs_zero_base(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     deliver(
         monkeypatch,
         tmp_path,
         "push",
-        {"ref": "refs/heads/main", "after": "a" * 40, "head_commit": {"parents": []}},
+        {"ref": "refs/heads/main", "after": "a" * 40, "before": "0" * 40},
     )
-    assert runner.event().push == Push(sha="a" * 40, parent=None, ref="refs/heads/main")
+    assert runner.event().push == Push(sha="a" * 40, base="0" * 40, ref="refs/heads/main")
 
 
 def test_a_comment_whose_author_is_gone_reduces_rather_than_crashing(

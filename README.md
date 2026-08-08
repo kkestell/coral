@@ -74,7 +74,7 @@ Anyone with write access can ask. Coral only comments: it never pushes, approves
 
 ## Reviewing main
 
-The caller file above reviews every commit pushed to `main`. Coral compares that commit with its first parent. It creates one issue for each finding its verifier confirms. A main-push review with no confirmed findings creates no issue. A failed main-push review is visible in Actions and creates no issue.
+The caller file above reviews every commit pushed to `main`. Coral compares that commit with the prior main commit. It creates one issue for each finding its verifier confirms. A main-push review with no confirmed findings creates no issue. A failed main-push review is visible in Actions and creates no issue.
 
 ## Risks
 

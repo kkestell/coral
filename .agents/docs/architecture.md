@@ -21,7 +21,7 @@ How the code is organized and how it runs on GitHub Actions.
 
 Three jobs in fixed order — resolve, review, publish — each on its own runner with its own `permissions`.
 
-- Resolve holds `contents: read`, `issues: write`, and `pull-requests: write`. It fetches the pull request and conversation, acknowledges requests, and decides whether a pull-request review runs. On a `main` push it pins the event's commit and first parent, without a pull-request call. It derives the review timeout and mints, masks, and encrypts a capped key after the gates pass.
+- Resolve holds `contents: read`, `issues: write`, and `pull-requests: write`. It fetches the pull request and conversation, acknowledges requests, and decides whether a pull-request review runs. On a `main` push it pins the event's commit and prior main tip, without a pull-request call. It derives the review timeout and mints, masks, and encrypts a capped key after the gates pass.
 - Review runs the agent and holds `contents: read`; its review step makes no API call and its environment carries no token. Its `timeout-minutes` is resolve's derived output. Each agent run gets a fresh checkout copy and container. It verifies findings, then writes two create-review bodies for a pull request or one issue body per main-push finding. The review object never crosses; the review bodies need the added-line set checked here.
 - The checkout takes the pinned head SHA, full history, and no persisted credentials.
 - Publish holds resolve's three scopes and is the only job that posts: a pull-request review, a failure comment, or main-push issues. It stamps `commit_id` and `event` on a pull-request review; the agent's job gets no say in either.

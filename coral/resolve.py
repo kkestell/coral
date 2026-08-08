@@ -175,11 +175,11 @@ def declined(
 
 
 def push_decline(push: runner.Push) -> str | None:
-    """Why a main-push run stops, or `None` when it has a reviewable parent diff."""
+    """Why a main-push run stops, or `None` when it has a reviewable main-branch diff."""
     if push.ref != "refs/heads/main":
         return "it is not a push to main"
-    if push.parent is None:
-        return "it has no parent commit"
+    if push.base == "0" * 40:
+        return "main has no prior commit"
     return None
 
 
@@ -209,7 +209,7 @@ def resolve() -> None:
             runner.write_output("proceed", "false")
             return
 
-        runner.push_path().write_text(json.dumps({"head": push.sha, "base": push.parent}))
+        runner.push_path().write_text(json.dumps({"head": push.sha, "base": push.base}))
         management = reported(
             lambda: management_key(
                 os.environ["OPENROUTER_MANAGEMENT_KEY"],

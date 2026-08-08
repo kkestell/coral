@@ -30,10 +30,10 @@ class Comment:
 
 @dataclass(frozen=True)
 class Push:
-    """The commit a main-branch push asks Coral to review."""
+    """The commit and prior main tip a main-branch push asks Coral to review."""
 
     sha: str
-    parent: str | None
+    base: str
     ref: str
 
 
@@ -87,7 +87,7 @@ def event() -> Event:
                 comment=None,
                 push=Push(
                     sha=payload["after"],
-                    parent=((payload["head_commit"] or {}).get("parents") or [None])[0],
+                    base=payload["before"],
                     ref=payload["ref"],
                 ),
             )

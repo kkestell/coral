@@ -140,8 +140,8 @@ def render_push_request(commit: str, diff: str) -> str:
             "This commit was pushed directly to main. There is no pull-request description or "
             "conversation.",
             "# The change under review",
-            "The diff between the commit's first parent and the commit follows, whole. It is the "
-            "subject of the review; the checkout holds every file at the commit.",
+            "The diff between the prior main commit and the pushed commit follows, whole. It is "
+            "the subject of the review; the checkout holds every file at the commit.",
             diff,
         ]
     )

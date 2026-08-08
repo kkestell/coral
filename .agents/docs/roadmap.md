@@ -209,7 +209,7 @@ Done when: broker-backed and encrypted-handoff reviews each run Python, Node, an
 Status: not started
 Depends on: 17
 
-Coral reviews every commit pushed to `main` against its first parent. It creates one issue for each confirmed finding instead of a pull-request review.
+Coral reviews every commit pushed to `main` against the prior main commit. It creates one issue for each confirmed finding instead of a pull-request review.
 
 Done when: a planted defect pushed to `main` in the test repository produces one issue per confirmed finding, no pull-request review, and an empty main-push review creates no issue.
 

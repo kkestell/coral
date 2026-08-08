@@ -19,7 +19,7 @@ What Coral does, as behavior someone could watch happen. These requirements are 
 ## What Coral Reviews
 
 - On a pull request, the subject is the diff between the head commit and its merge base with the base branch, both fixed at the start of the run, so the reviewed change cannot shift while branches move.
-- On `main`, the subject is the pushed commit against its first parent, both fixed from the event.
+- On `main`, the subject is the pushed commit against the prior main commit, both fixed from the event.
 - Coral works from a full checkout and reads any file, touched or not — understanding a change means reading code around it.
 - Every review covers the whole change, not what is new since the last review. A rebase leaves no meaningful range of new commits, and a change reads differently once the rest has moved.
 - Before a pull-request review, Coral reads its conversation — its own past reviews and everyone's comments — and does not repeat a finding that still stands. A finding stops standing when its thread is resolved or the code beneath it has moved.

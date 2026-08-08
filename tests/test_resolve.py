@@ -183,18 +183,18 @@ def test_a_pull_request_that_passes_every_gate() -> None:
 
 
 def test_a_main_push_to_main_with_a_parent_passes() -> None:
-    assert push_decline(Push(sha=HEAD, parent=OTHER_COMMIT, ref="refs/heads/main")) is None
+    assert push_decline(Push(sha=HEAD, base=OTHER_COMMIT, ref="refs/heads/main")) is None
 
 
 def test_a_push_to_another_branch_stops_before_a_key_is_minted() -> None:
-    assert push_decline(Push(sha=HEAD, parent=OTHER_COMMIT, ref="refs/heads/feature")) == (
+    assert push_decline(Push(sha=HEAD, base=OTHER_COMMIT, ref="refs/heads/feature")) == (
         "it is not a push to main"
     )
 
 
-def test_a_root_commit_stops_before_a_key_is_minted() -> None:
-    assert push_decline(Push(sha=HEAD, parent=None, ref="refs/heads/main")) == (
-        "it has no parent commit"
+def test_an_initial_main_commit_stops_before_a_key_is_minted() -> None:
+    assert push_decline(Push(sha=HEAD, base="0" * 40, ref="refs/heads/main")) == (
+        "main has no prior commit"
     )
 
 
