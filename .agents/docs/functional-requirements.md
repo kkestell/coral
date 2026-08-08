@@ -7,7 +7,7 @@ What Coral does, as behavior someone could watch happen. These requirements are 
 - Coral reviews a pull request when it is opened and when a draft is marked ready for review. Nobody has to ask for that first review.
 - Coral reviews every push to `main`, without a request. It creates issues for confirmed findings rather than commenting on a pull request.
 - A push carrying several commits is one review of all of them together, not one review each.
-- A push to any other branch starts nothing. Neither does a push to a `main` that had no commit before it.
+- A push to any other branch starts nothing. Neither does a push to a `main` that had no commit before it, nor one that deletes `main`.
 - Draft and bot-opened pull requests get no automatic review. Both can still be reviewed on request.
 - Coral reviews only pull requests whose head branch lives in the same repository as the base — a fork's branch is code nobody with write access vouched for.
 - After the automatic review, Coral reviews the pull request again only when someone asks. A bot that reviews every push to a branch teaches people to ignore it.
@@ -53,7 +53,7 @@ Coral decides which of these to use, in what order, how many times.
 - One review per run, not a comment per finding. A pull request reviewed several times carries several reviews.
 - On `main`, Coral creates one issue per confirmed finding. Its title names the defect, its body names the commit the finding was found in, and a `coral` label and a severity label carry the rest. Coral creates any of those labels the repository lacks, because GitHub drops a label with no definition.
 - A confirmed `main` finding creates no issue when an open issue Coral read describes the same defect. Who opened that issue does not matter. A closed issue suppresses nothing, because the finding is about code at the pushed commit and a closed issue did not fix it.
-- An empty `main` review creates no issue.
+- An empty `main` review creates no issue, and no label either.
 - Every pull-request review names the commit it reviewed — readers need to know which state of the branch each review is about, and it is how Coral recognizes its own past work.
 - Every review ends with what the run spent.
 - Every review says it is Coral's; the posting account belongs to the repository's automation, not to Coral.

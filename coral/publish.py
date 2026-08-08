@@ -120,8 +120,10 @@ def publish() -> None:
     if runner.issues_path().exists():
         assert event.push is not None, "A main-push issue payload needs a push event."
         issues = read_issue_payloads(runner.issues_path()).issues
-        # Before the first issue, so no issue is filed with its labels dropped.
-        create_labels(github, event.owner, event.repo)
+        # Before the first issue, so no issue is filed with its labels dropped, and not at all for
+        # an empty review, which would leave labels on a repository Coral filed nothing in.
+        if issues:
+            create_labels(github, event.owner, event.repo)
         for payload in issues:
             post_issue(github, event.owner, event.repo, payload)
         return

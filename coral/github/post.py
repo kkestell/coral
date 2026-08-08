@@ -7,6 +7,7 @@ batched review, and posting one would mean a second call per finding.
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -217,10 +218,18 @@ class IssuePayloads:
     issues: list[IssuePayload]
 
 
+# Where a finding's first sentence ends. A terminator with no whitespace after it sits inside a
+# token — a file name, a version number — rather than closing a sentence, so the title runs on
+# past it.
+SENTENCE_END: Final = re.compile(r"[.!?](?=\s)")
+
+
 def issue_title(finding: Finding) -> str:
     """A GitHub issue title naming the finding rather than only its location."""
-    summary, end, _ = " ".join(finding.body.split()).partition(". ")
-    summary += end.rstrip()
+    summary = " ".join(finding.body.split())
+    end = SENTENCE_END.search(summary)
+    if end is not None:
+        summary = summary[: end.end()]
     return summary[:256]
 
 

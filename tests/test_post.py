@@ -262,6 +262,29 @@ def test_an_issue_title_stays_on_one_line() -> None:
     assert issue_title(finding) == "The first line."
 
 
+def test_an_issue_title_ends_at_an_exclamation_mark_or_a_question_mark() -> None:
+    for body, title in (
+        (
+            "The parser crashes! Every caller is left with an unusable repository.",
+            "The parser crashes!",
+        ),
+        (
+            "Does the parser drop the token? It does, on every empty line.",
+            "Does the parser drop the token?",
+        ),
+    ):
+        assert issue_title(finding_at(FileAnchor(kind="file", path="a.py"), body)) == title
+
+
+def test_an_issue_title_reads_past_a_period_inside_a_word() -> None:
+    # A file name, a version, and an abbreviation all carry a period that ends no sentence.
+    finding = finding_at(
+        FileAnchor(kind="file", path="a.py"),
+        "`coral/spend.py` rejects 1.4 and later. It should not.",
+    )
+    assert issue_title(finding) == "`coral/spend.py` rejects 1.4 and later."
+
+
 def test_an_issue_carries_corals_label_and_its_severity() -> None:
     for severity in ("low", "medium", "high"):
         review = review_of(finding_at(line(7), severity=severity))

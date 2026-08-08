@@ -198,6 +198,12 @@ def test_an_initial_main_commit_stops_before_a_key_is_minted() -> None:
     )
 
 
+def test_deleting_main_stops_before_a_key_is_minted() -> None:
+    assert push_decline(Push(sha="0" * 40, base=OTHER_COMMIT, ref="refs/heads/main")) == (
+        "main has no pushed commit"
+    )
+
+
 def test_an_inert_command_stops_the_run() -> None:
     stop = declined(asked(body="Ask with `/coral`."), subject(), reviewed(), writers())
     assert stop is not None

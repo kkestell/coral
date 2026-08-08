@@ -1,10 +1,10 @@
 """Tests of `coral.publish`.
 
-Nothing here posts, and `publish()` itself has no unit test: its judgment is `owed` and an
-`exists()` call, and its prose is `failure_comment` and `submitted`. What the module decides on
-its own is whether a comment is owed and what that comment reads like. Each case writes an event
-payload into `tmp_path` and points `RUNNER_TEMP` at it, which is the runner's own protocol rather
-than a fake of Coral's code.
+Nothing here posts. Most of `publish()` has no unit test of its own: its judgment is `owed` and an
+`exists()` call, and its prose is `failure_comment` and `submitted`. The main-push branch is the
+exception, because whether it provisions labels is a decision made nowhere else. Each case writes
+an event payload into `tmp_path` and points `RUNNER_TEMP` at it, which is the runner's own protocol
+rather than a fake of Coral's code.
 """
 
 import json
@@ -16,10 +16,19 @@ import pytest
 from coral import runner
 from coral.command import Access
 from coral.github.client import GitHub
-from coral.publish import REASON_LIMIT, described, failure_comment, moved_comment, owed
+from coral.github.post import IssuePayload, IssuePayloads, write_issue_payloads
+from coral.publish import (
+    REASON_LIMIT,
+    described,
+    failure_comment,
+    moved_comment,
+    owed,
+    publish,
+)
 
 RUN_URL = "https://github.com/kkestell/coral-test/actions/runs/17"
 COMMIT = "9f3a1c2b4d5e6f708192a3b4c5d6e7f809a1b2c3"
+PRIOR_COMMIT = "1a2b3c4d5e6f708192a3b4c5d6e7f809a1b2c3d4"
 
 
 def access(permission: str) -> Access:
@@ -121,3 +130,36 @@ def test_a_branch_that_moved_under_the_review_gets_the_reason_and_a_way_back() -
     comment = moved_comment(COMMIT)
     assert COMMIT in comment
     assert "/coral" in comment
+
+
+def published(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, issues: list[IssuePayload]
+) -> list[str]:
+    """What `publish()` calls for a main push whose review left these issues, in order."""
+    deliver(
+        monkeypatch,
+        tmp_path,
+        "push",
+        {"after": COMMIT, "before": PRIOR_COMMIT, "ref": "refs/heads/main"},
+    )
+    monkeypatch.setenv("GITHUB_TOKEN", "not a real token")
+    write_issue_payloads(runner.issues_path(), IssuePayloads(issues=issues))
+    calls: list[str] = []
+    monkeypatch.setattr("coral.publish.create_labels", lambda *_: calls.append("labels"))
+    monkeypatch.setattr("coral.publish.post_issue", lambda *_: calls.append("issue"))
+    publish()
+    return calls
+
+
+def test_an_empty_main_review_provisions_no_labels(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Review writes the artifact for every main push, so an empty one reaches here too.
+    assert published(monkeypatch, tmp_path, []) == []
+
+
+def test_a_main_review_with_a_finding_provisions_labels_before_filing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    issue = IssuePayload(title="The parser drops the last token.", body="body", labels=["coral"])
+    assert published(monkeypatch, tmp_path, [issue]) == ["labels", "issue"]

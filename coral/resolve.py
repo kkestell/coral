@@ -178,6 +178,11 @@ def push_decline(push: runner.Push) -> str | None:
     """Why a main-push run stops, or `None` when it has a reviewable main-branch diff."""
     if push.ref != "refs/heads/main":
         return "it is not a push to main"
+    # GitHub reports deleting a branch as a push whose `after` is the zero SHA, and there is no
+    # commit for the review job to check out. Declined here rather than left to that checkout,
+    # because a key is minted in between and a deletion would pay for a review that cannot run.
+    if push.sha == "0" * 40:
+        return "main has no pushed commit"
     if push.base == "0" * 40:
         return "main has no prior commit"
     return None
