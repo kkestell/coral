@@ -42,12 +42,12 @@ def test_an_issue_comment_reacts_through_the_issues_namespace(
         "issue_comment",
         {
             "issue": {"number": 7},
-            "comment": {"id": 42, "body": "/coral", "author_association": "OWNER"},
+            "comment": {"id": 42, "body": "/coral", "user": {"login": "kestell"}},
         },
     )
     event = runner.event()
     assert event.number == 7
-    assert event.comment == Comment(id=42, namespace="issues", body="/coral", association="OWNER")
+    assert event.comment == Comment(id=42, namespace="issues", body="/coral", author="kestell")
 
 
 def test_a_review_comment_reacts_through_the_pulls_namespace(
@@ -59,12 +59,26 @@ def test_a_review_comment_reacts_through_the_pulls_namespace(
         "pull_request_review_comment",
         {
             "pull_request": {"number": 7},
-            "comment": {"id": 42, "body": "/coral", "author_association": "MEMBER"},
+            "comment": {"id": 42, "body": "/coral", "user": {"login": "kestell"}},
         },
     )
     event = runner.event()
     assert event.number == 7
-    assert event.comment == Comment(id=42, namespace="pulls", body="/coral", association="MEMBER")
+    assert event.comment == Comment(id=42, namespace="pulls", body="/coral", author="kestell")
+
+
+def test_a_comment_whose_author_is_gone_reduces_rather_than_crashing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A deleted account arrives as a null `user`, the same absence the conversation reads off a
+    # null `author`. Crashing here would fail the run before the access check could refuse it.
+    deliver(
+        monkeypatch,
+        tmp_path,
+        "issue_comment",
+        {"issue": {"number": 7}, "comment": {"id": 42, "body": "/coral", "user": None}},
+    )
+    assert runner.event().comment == Comment(id=42, namespace="issues", body="/coral", author=None)
 
 
 def test_an_event_coral_does_not_handle_is_a_broken_workflow_file(

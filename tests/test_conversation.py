@@ -18,6 +18,7 @@ from typing import Any
 
 from coral.github.conversation import (
     EYES,
+    MAX_BODY_CHARACTERS,
     MAX_CHARACTERS,
     MAX_COMMENTS,
     MAX_PAGES,
@@ -27,6 +28,7 @@ from coral.github.conversation import (
     parse_reviews,
     parse_threads,
     read_conversation,
+    read_page,
     reviewed_commits,
     wants_another_page,
     write_conversation,
@@ -280,6 +282,47 @@ def fetched_from(
         reviewed_commits=reviewed_commits(reviews),
         unfetched=unfetched,
     )
+
+
+def test_a_page_arrives_with_every_body_already_cut_to_what_coral_reads() -> None:
+    # Cut here rather than with the bound, so paging back four times over a pull request full of
+    # enormous comments does not hold them all at once.
+    enormous = "x" * (MAX_BODY_CHARACTERS + 5_000)
+    page = read_page(
+        {
+            "nodes": [comment_node("IC_1", body=enormous)],
+            "totalCount": 1,
+            "pageInfo": {"hasPreviousPage": False, "startCursor": None},
+        }
+    )
+    assert len(page.nodes[0]["body"]) == MAX_BODY_CHARACTERS
+
+
+def test_a_thread_arrives_with_its_own_comments_cut_as_well() -> None:
+    # A thread carries its comments' bodies nested inside it, which is why the cut walks the node.
+    enormous = "x" * (MAX_BODY_CHARACTERS + 5_000)
+    page = read_page(
+        {
+            "nodes": [thread_node("PRRT_1", comments=[comment_node("PRRC_1", body=enormous)])],
+            "totalCount": 1,
+            "pageInfo": {"hasPreviousPage": False, "startCursor": None},
+        }
+    )
+    assert len(page.nodes[0]["comments"]["nodes"][0]["body"]) == MAX_BODY_CHARACTERS
+
+
+def test_the_marker_survives_the_cut() -> None:
+    # `reviewed_commits` reads it off a review body, so a cut that took it would lose Coral's
+    # memory of what it has already reviewed.
+    body = f"{marker(COMMIT)}\n\n" + "x" * (MAX_BODY_CHARACTERS * 2)
+    page = read_page(
+        {
+            "nodes": [review_node("PRR_1", body=body, authored=True)],
+            "totalCount": 1,
+            "pageInfo": {"hasPreviousPage": False, "startCursor": None},
+        }
+    )
+    assert reviewed_commits(page.nodes) == [COMMIT]
 
 
 def test_parsing_a_captured_response_keeps_the_author_association() -> None:

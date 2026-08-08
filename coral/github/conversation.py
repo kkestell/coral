@@ -46,6 +46,13 @@ MAX_COMMENTS: Final = 200
 MAX_CHARACTERS: Final = 400_000
 MAX_PAGES: Final = 4
 
+# What Coral reads of any one comment, applied as each page arrives rather than with the bound
+# above, so a conversation of enormous comments is never held whole while the paging walks back.
+# GitHub takes 65,536 characters in a comment, and twenty comments at this length already fill
+# `MAX_CHARACTERS`, so a comment cut here was never going to be read whole anyway. The marker
+# survives the cut, because it opens the body.
+MAX_BODY_CHARACTERS: Final = 20_000
+
 # The reaction Coral acknowledges a request with, spelled as GraphQL spells the enum. The REST
 # endpoint that leaves one takes the same name in lower case, and `coral/github/reactions.py`
 # reads it from here so the two spellings stay one fact.
@@ -453,10 +460,28 @@ def reviewed_commits(nodes: list[Any]) -> list[str]:
     return list(dict.fromkeys(commit for commit in found if commit is not None))
 
 
+def trimmed(value: Any) -> Any:
+    """One node with every comment body in it cut to what Coral will read of one.
+
+    Walks the node rather than naming the three shapes, because a thread carries its comments'
+    bodies nested inside it and a review and an issue comment carry theirs at the top.
+    """
+    if isinstance(value, dict):
+        return {
+            name: inner[:MAX_BODY_CHARACTERS]
+            if name == "body" and isinstance(inner, str)
+            else trimmed(inner)
+            for name, inner in value.items()
+        }
+    if isinstance(value, list):
+        return [trimmed(item) for item in value]
+    return value
+
+
 def read_page(connection: dict[str, Any]) -> Page:
     """Read one connection's answer out of the response."""
     return Page(
-        nodes=connection["nodes"],
+        nodes=[trimmed(node) for node in connection["nodes"]],
         total=connection["totalCount"],
         has_previous=connection["pageInfo"]["hasPreviousPage"],
         cursor=connection["pageInfo"]["startCursor"],

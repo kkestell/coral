@@ -28,7 +28,9 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
-    uses: kkestell/coral/.github/workflows/coral.yml@main
+    # A tag rather than `main`, so this repository runs the Coral you installed rather than
+    # whatever lands on Coral's default branch afterwards. Bump it to take a newer Coral.
+    uses: kkestell/coral/.github/workflows/coral.yml@v0.1.0
     # Coral's defaults, spelled out. Uncomment a line to change one; the whole block can go.
     # with:
     #   # Any OpenRouter model, named exactly as https://openrouter.ai/models has it. A `~` alias

@@ -9,7 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from coral.environment import FIXED, IMAGE_PATH, shell_environment, toolchain_path, version_key
+from coral.environment import (
+    FIXED,
+    IMAGE_PATH,
+    TOOLCACHE,
+    shell_environment,
+    toolchain_path,
+    version_key,
+)
 
 
 def toolcache(root: Path, layout: dict[str, list[str]]) -> Path:
@@ -23,21 +30,27 @@ def toolcache(root: Path, layout: dict[str, list[str]]) -> Path:
 
 def test_the_newest_version_of_each_tool_is_on_the_path(tmp_path: Path) -> None:
     path = toolchain_path(toolcache(tmp_path, {"go": ["1.24.5", "1.26.0"], "node": ["22.14.0"]}))
-    assert f"{tmp_path}/go/1.26.0/x64/bin" in path.split(":")
-    assert f"{tmp_path}/node/22.14.0/x64/bin" in path.split(":")
+    assert f"{TOOLCACHE}/go/1.26.0/x64/bin" in path.split(":")
+    assert f"{TOOLCACHE}/node/22.14.0/x64/bin" in path.split(":")
+
+
+def test_the_path_names_the_container_side_of_the_mount(tmp_path: Path) -> None:
+    # The directory being read is the host side, which in a rehearsal is somewhere else entirely.
+    path = toolchain_path(toolcache(tmp_path, {"go": ["1.26.0"]}))
+    assert str(tmp_path) not in path
 
 
 def test_only_the_newest_version_of_a_tool_is_on_the_path(tmp_path: Path) -> None:
     # Every other cached version is still reachable by absolute path, which is what a repository
     # pinned to an older toolchain needs.
     path = toolchain_path(toolcache(tmp_path, {"go": ["1.24.5", "1.26.0"]}))
-    assert f"{tmp_path}/go/1.24.5/x64/bin" not in path.split(":")
+    assert f"{TOOLCACHE}/go/1.24.5/x64/bin" not in path.split(":")
 
 
 def test_versions_are_ordered_as_numbers_rather_than_text(tmp_path: Path) -> None:
     # The case that makes this worth writing: 1.25 sorts under 1.9 as text.
     path = toolchain_path(toolcache(tmp_path, {"python": ["1.9.0", "1.25.0"]}))
-    assert f"{tmp_path}/python/1.25.0/x64/bin" in path.split(":")
+    assert f"{TOOLCACHE}/python/1.25.0/x64/bin" in path.split(":")
 
 
 def test_a_version_is_read_as_its_numbers() -> None:

@@ -130,13 +130,13 @@ class SpendHandler(BaseCallbackHandler):
             for generation in generations:
                 assert isinstance(generation, ChatGeneration), f"{type(generation).__name__}"
                 metadata = generation.message.response_metadata
-                # Every OpenRouter completion measured carries a cost, with nothing asked for. A
-                # model that stops carrying one says so in the log rather than ending a review; the
-                # minted key's own cap is what the run is still under.
+                # Every OpenRouter completion measured carries a cost, with nothing asked for. One
+                # that does not is counted rather than passed over: `SpendMiddleware` stops the run
+                # at the next check, because a review whose spending Coral cannot measure is one
+                # the caller's cap does not hold.
                 if "cost" not in metadata:
-                    log.warning(
-                        "A response from %s carried no cost; counting it as $0.", self.model
-                    )
+                    log.warning("A response from %s carried no cost.", self.model)
+                    self.ledger.unpriced += 1
                     continue
                 self.ledger.add(float(metadata["cost"]))
 
@@ -149,6 +149,14 @@ class SpendMiddleware(AgentMiddleware[Any, Any]):
         self.ledger = ledger
 
     def before_model(self, state: Any, runtime: Runtime[Any]) -> dict[str, Any] | None:
+        # A cap Coral cannot measure against is not a cap, so this stops the run too. Only the
+        # minted key's own limit would have caught the spending, and a passed-through key has none.
+        if self.ledger.unpriced:
+            raise RuntimeError(
+                f"{self.ledger.unpriced} of this run's responses carried no cost, so Coral cannot "
+                f"hold it to its cap of ${self.ledger.cap:.6f}. It had counted "
+                f"${self.ledger.spent:.6f} of that."
+            )
         # Raised for the same reason `DeadlineMiddleware` raises, and checked in the same place:
         # between steps, so the overshoot past a passing check is one in-flight model request. Six
         # decimal places because a cap of a fraction of a cent has to be legible.

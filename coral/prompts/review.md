@@ -19,6 +19,10 @@ The hosted runner's toolchains are mounted read-only at `/opt/hostedtoolcache`, 
 each is already on `PATH`; a repository pinned to an older one reaches it by absolute path under
 there.
 
+The toolchain a repository needs may be missing from that mount. Install it and carry on. An
+environment you have not finished setting up is never a reason to leave a question unanswered or
+a test unrun, and a review that says it could not run something is a review that stopped early.
+
 ## What Is A Finding
 
 Three things, and nothing else: correctness, security, and performance.

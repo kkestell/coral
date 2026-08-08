@@ -241,6 +241,19 @@ def post_review(
         return github.post(path, submitted(commit, payloads.demoted))
 
 
-def is_open(github: GitHub, owner: str, repo: str, number: int) -> bool:
-    """Whether the pull request is still open, read at the last moment before posting."""
-    return bool(github.get(f"/repos/{owner}/{repo}/pulls/{number}")["state"] == "open")
+@dataclass(frozen=True)
+class State:
+    """The pull request as it is at the last moment before posting.
+
+    Both fields come off one fetch, because the publishing job asks the same two questions of it:
+    is this still worth saying, and is it still about the code on the branch.
+    """
+
+    open: bool
+    head_sha: str
+
+
+def state_of(github: GitHub, owner: str, repo: str, number: int) -> State:
+    """Read the pull request's state and head commit as they are now."""
+    pull_request = github.get(f"/repos/{owner}/{repo}/pulls/{number}")
+    return State(open=pull_request["state"] == "open", head_sha=str(pull_request["head"]["sha"]))

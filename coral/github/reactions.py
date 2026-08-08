@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass
 from typing import Literal
 
-from coral.command import is_request
+from coral.command import Access, is_request
 from coral.github.client import ApiError, GitHub
 from coral.github.conversation import EYES, Comment, Conversation
 
@@ -27,12 +27,12 @@ class Request:
     namespace: Literal["issues", "pulls"]
 
 
-def owed(comment: Comment) -> bool:
+def owed(comment: Comment, access: Access) -> bool:
     """Whether a comment is a request that nobody has acknowledged yet."""
-    return not comment.reacted and is_request(comment.body, comment.association)
+    return not comment.reacted and is_request(comment.body, comment.author, access)
 
 
-def requests_in(conversation: Conversation) -> list[Request]:
+def requests_in(conversation: Conversation, access: Access) -> list[Request]:
     """Every request the conversation offers that does not already carry Coral's reaction.
 
     Not only the request that started this run. The concurrency group cancels a pending run, so
@@ -42,13 +42,13 @@ def requests_in(conversation: Conversation) -> list[Request]:
         *(
             Request(id=comment.database_id, namespace="issues")
             for comment in conversation.comments
-            if owed(comment)
+            if owed(comment, access)
         ),
         *(
             Request(id=comment.database_id, namespace="pulls")
             for thread in conversation.threads
             for comment in thread.comments
-            if owed(comment)
+            if owed(comment, access)
         ),
     ]
 

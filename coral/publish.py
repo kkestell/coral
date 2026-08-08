@@ -16,9 +16,9 @@ import os
 from typing import Any, Final
 
 from coral import runner
-from coral.command import is_request
+from coral.command import Access, is_request
 from coral.github.client import GitHub
-from coral.github.post import is_open, post_comment, post_review, read_payloads
+from coral.github.post import post_comment, post_review, read_payloads, state_of
 from coral.runner import Event
 
 log = logging.getLogger(__name__)
@@ -55,16 +55,31 @@ def failure_comment(reason: str | None, run_url: str) -> str:
     )
 
 
-def owed(event: Event) -> bool:
+def moved_comment(commit: str) -> str:
+    """What Coral says when the branch moved out from under a finished review."""
+    return "\n".join(
+        [
+            f"Coral reviewed `{commit}`, which is no longer the head of this pull request. The "
+            "findings are about code the branch no longer carries, so Coral has not posted them.",
+            "",
+            "Comment `/coral` to ask for a review of the current head.",
+        ]
+    )
+
+
+def owed(event: Event, access: Access) -> bool:
     """Whether this run owes the pull request a comment about failing.
 
-    The question costs no API call, which matters: the failure being reported is often the API
-    refusing to answer.
+    Deciding it costs a permission lookup on the comment paths, and a lookup GitHub refuses
+    answers no. Silence is the right way to be wrong here: a comment nobody asked for is Coral
+    made to speak by a stranger, and posting the comment needs the same API anyway.
     """
     # The job-level condition is coarse, so a comment merely mentioning `/coral` mid-sentence
     # allocates a runner, and a run that fails there was asked for nothing. A `pull_request`
     # delivery always asks, the condition having already excluded drafts and bots.
-    if event.comment is not None and not is_request(event.comment.body, event.comment.association):
+    if event.comment is not None and not is_request(
+        event.comment.body, event.comment.author, access
+    ):
         log.info("The comment that started this run does not ask for a review.")
         return False
 
@@ -92,16 +107,32 @@ def publish() -> None:
     fields the publishing job does not take on trust.
     """
     event = runner.event()
+    github = GitHub(token=os.environ["GITHUB_TOKEN"])
 
     if runner.payloads_path().exists():
-        github = GitHub(token=os.environ["GITHUB_TOKEN"])
-        # Resolve's check was minutes and two agent runs ago, and a review landing after the
-        # merge is advice nobody can act on.
-        if not is_open(github, event.owner, event.repo, event.number):
-            log.info("Pull request %d is no longer open; posting nothing.", event.number)
-            return
         commit = pinned_commit()
         assert commit is not None, "The review crossed without resolve's pull request."
+        # Resolve's reading was minutes and two agent runs ago.
+        state = state_of(github, event.owner, event.repo, event.number)
+        # A review landing after the merge is advice nobody can act on.
+        if not state.open:
+            log.info("Pull request %d is no longer open; posting nothing.", event.number)
+            return
+        # A force-push during the review leaves findings about code the branch no longer carries,
+        # and GitHub takes them anyway whenever the reviewed commit is still somewhere in the new
+        # history. Said on the pull request rather than passed over: nothing re-triggers Coral
+        # after a push, so silence leaves the asker waiting for a review that is not coming.
+        if state.head_sha != commit:
+            log.info(
+                "Pull request %d moved from %s to %s; posting no review.",
+                event.number,
+                commit,
+                state.head_sha,
+            )
+            post_comment(
+                github, event.owner, event.repo, event.number, commit, moved_comment(commit)
+            )
+            return
         post_review(
             github,
             event.owner,
@@ -112,11 +143,10 @@ def publish() -> None:
         )
         return
 
-    if not owed(event):
+    if not owed(event, Access(github=github, owner=event.owner, repo=event.repo)):
         return
 
     reason = runner.reason_path().read_text() if runner.reason_path().exists() else None
-    github = GitHub(token=os.environ["GITHUB_TOKEN"])
     log.info("Reporting on pull request %d that the run failed.", event.number)
     post_comment(
         github,

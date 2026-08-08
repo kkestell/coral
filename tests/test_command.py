@@ -4,10 +4,36 @@ Every way a `/coral` can be inert gets a case of its own rather than a row in a 
 failure names the form that broke.
 """
 
-from coral.command import asks_for_review, is_request
+from typing import Any
+
+from coral.command import Access, asks_for_review, is_request
+from coral.github.client import ApiError, GitHub
 from coral.github.marker import marker
 
 COMMIT = "9f3a1c2b4d5e6f708192a3b4c5d6e7f809a1b2c3"
+
+
+def access(permissions: dict[str, str], refuses: bool = False) -> Access:
+    """An `Access` over a GitHub answering the permission endpoint from a table.
+
+    The shape is a real answer's, trimmed: `GET /repos/kkestell/coral-test/collaborators/kkestell/
+    permission` on 2026-08-07 answered `{"permission": "admin", "user": {...}, "role_name":
+    "admin"}`. A login the table does not name is a stranger, which the endpoint reports as `none`
+    rather than refusing.
+    """
+
+    class Answering(GitHub):
+        def get(self, path: str) -> Any:
+            if refuses:
+                raise ApiError("GET", path, 403, "Resource not accessible by integration")
+            login = path.split("/")[-2]
+            return {"permission": permissions[login] if login in permissions else "none"}
+
+    return Access(github=Answering(token="not a real token"), owner="kkestell", repo="coral-test")
+
+
+def maintainer() -> Access:
+    return access({"kestell": "admin"})
 
 
 def test_a_comment_that_is_only_the_command() -> None:
@@ -112,29 +138,49 @@ def test_prose_asking_for_something_specific_is_still_a_request() -> None:
     assert asks_for_review("/coral\n\nPlease look hardest at the migration.") is True
 
 
-def test_write_access_is_who_may_ask() -> None:
-    assert is_request("/coral", "OWNER") is True
-    assert is_request("/coral", "MEMBER") is True
-    assert is_request("/coral", "COLLABORATOR") is True
+def test_push_access_is_who_may_ask() -> None:
+    for permission in ["admin", "maintain", "write"]:
+        assert is_request("/coral", "kestell", access({"kestell": permission})) is True
 
 
 def test_everybody_else_asks_for_nothing() -> None:
-    assert is_request("/coral", "CONTRIBUTOR") is False
-    assert is_request("/coral", "FIRST_TIME_CONTRIBUTOR") is False
-    assert is_request("/coral", "NONE") is False
+    # `read` is the case `author_association` cannot see: an organization member with read-only
+    # access is a `MEMBER`, and a triage-only collaborator is a `COLLABORATOR`.
+    assert is_request("/coral", "kestell", access({"kestell": "read"})) is False
+    assert is_request("/coral", "kestell", access({"kestell": "triage"})) is False
+    assert is_request("/coral", "stranger", access({})) is False
 
 
-def test_an_association_github_adds_later_is_not_write_access() -> None:
-    assert is_request("/coral", "SPONSOR") is False
+def test_a_comment_whose_author_is_gone_asks_for_nothing() -> None:
+    assert is_request("/coral", None, access({})) is False
+
+
+def test_a_permission_github_will_not_report_is_not_write_access() -> None:
+    # Failing closed. A permission Coral could not read is not one it may act on.
+    assert is_request("/coral", "kestell", access({"kestell": "admin"}, refuses=True)) is False
+
+
+def test_one_login_costs_one_lookup_however_many_comments_it_wrote() -> None:
+    permitting = access({"kestell": "admin"})
+    assert is_request("/coral", "kestell", permitting) is True
+    assert is_request("/coral", "kestell", permitting) is True
+    assert permitting.known == {"kestell": True}
+
+
+def test_a_comment_that_does_not_ask_costs_no_lookup() -> None:
+    # The body decides first, so a conversation full of prose makes no call at all.
+    permitting = access({"kestell": "admin"})
+    assert is_request("Ask with `/coral`.", "kestell", permitting) is False
+    assert permitting.known == {}
 
 
 def test_a_comment_carrying_corals_marker_is_never_a_request() -> None:
     # Free today, because an event created with the job's own token starts no run. Here for the
     # day Coral has an identity of its own.
-    assert is_request(f"{marker(COMMIT)}\n\n/coral", "OWNER") is False
+    assert is_request(f"{marker(COMMIT)}\n\n/coral", "kestell", maintainer()) is False
 
 
 def test_a_comment_carrying_a_marker_naming_no_commit_is_never_a_request() -> None:
     # The self-exclusion the marker's optional commit could have broken: a failure comment posted
     # before anything pinned a commit is still Coral's own.
-    assert is_request(f"{marker(None)}\n\n/coral", "OWNER") is False
+    assert is_request(f"{marker(None)}\n\n/coral", "kestell", maintainer()) is False
