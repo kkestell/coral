@@ -12,8 +12,8 @@ What Coral does, as behavior someone could watch happen. These requirements are 
 - The command counts only when `/coral` stands alone on its own line, lowercase, matched exactly. Quoting (including GitHub's quote-reply), mid-sentence mention, and code fences are all inert. Otherwise every conversation about Coral starts a review.
 - Coral never reads its own comments as a request — its findings arrive as the same kind of comment a person asks with, and a bot that can trigger itself will.
 - Only someone with write access can ask. A review costs a full agent run; a stranger should not be able to spend one.
-- Coral acknowledges a request it will act on with the `eyes` reaction on the comment, as soon as the request is accepted rather than when the review posts — until then the asker has no sign Coral heard. When several requests produce one review between them, each gets its own reaction. A request declined for lack of write access gets no reaction and no review; that a stranger cannot tell refusal from outage is accepted, because answering would let a stranger make Coral speak.
-- Coral reviews whatever the head commit is when the review starts, read at the start of the run rather than from the triggering event.
+- Coral acknowledges a request it will act on with the `eyes` reaction on the comment, when the request is accepted rather than when the review posts — until then the asker has no sign Coral heard. When several requests produce one review between them, each gets its own reaction. A request declined for lack of write access gets no reaction and no review; that a stranger cannot tell refusal from outage is accepted, because answering would let a stranger make Coral speak.
+- Coral reviews the head commit as it is at the start of the run, rather than the one the triggering event named.
 
 ## What Coral Reviews
 
@@ -31,7 +31,7 @@ Coral decides which of these to use, in what order, how many times.
 - Run shell commands inside the checkout.
 - Run individual tests it chooses, never the full suite — CI already does that, and a pull request is assumed to arrive passing. Coral runs a test to answer a question it formed.
 - Write scratch test files into the checkout. Never committed, never pushed; they disappear with the checkout.
-- Never write to the repository on GitHub: no commits, no branches, nothing outside the checkout. Everything Coral posts comes from the deterministic code that composes it, and the agent holds no credential that reaches GitHub.
+- Never write to the repository on GitHub: no commits, no branches, nothing outside the checkout. Everything Coral posts comes from deterministic code, and the agent holds no credential that reaches GitHub.
 
 ## Output
 
@@ -45,6 +45,7 @@ Coral decides which of these to use, in what order, how many times.
 - A confirmed finding that cannot anchor still appears, in the summary, naming its intended file and line.
 - One review per run, not a comment per finding. A pull request reviewed several times carries several reviews.
 - Every review names the commit it reviewed — readers need to know which state of the branch each review is about, and it is how Coral recognizes its own past work.
+- Every review ends with what the run spent.
 - Every review says it is Coral's; the posting account belongs to the repository's automation, not to Coral.
 - Earlier reviews are left alone: never edited, deleted, or resolved. GitHub marks comments outdated itself.
 - When there is nothing to report, the review says which of two things happened: nothing to find, or everything already said still stands. Without the distinction, a second "nothing found" reads as retracting the first review.

@@ -6,7 +6,7 @@ Where the tests live, how to run them, and the live checks.
 
 - `tests/` at the repository root, one `test_<module>.py` per module under test.
 - A unit test is one module, real input, no network, no credentials, no container, and no model call; the deadline and the cap have tests of their arithmetic alone. A failure the test is about uses `pytest.raises`.
-- No fixture directory, and no test imports another. A test writes its input inline as JSON-shaped dictionaries validated through `pydantic.TypeAdapter`, with schema payloads from the helpers in `tests/test_schema.py`. A real API response is trimmed to a few nodes of each kind, commented with where it came from and when.
+- No fixture directory, and no test imports another. A test writes its input inline as JSON-shaped dictionaries validated through `pydantic.TypeAdapter`, with schema payloads from the helpers in `tests/test_schema.py`. A real API response is trimmed to a few nodes of each kind, commented with its source and date.
 - A new test prefers edge cases to another happy path, and asserts what the contract promises.
 
 ## Running A Subset
@@ -40,7 +40,7 @@ One real run in `kkestell/coral-test`, started by hand, in order within a group,
 
 1. Open a pull request with a planted defect. The review carries a finding at a sensible severity, its regression test in a collapsed block that renders as one on GitHub, and the log shows the verifier's confirming verdict.
 2. Edit `coral/prompts/verify.md` to reject every finding, push, then open a pull request with a fresh defect — one already reviewed produces no findings to reject. Expect a summary standing alone, and the log naming each drop and its reason. Revert.
-3. Comment `/coral` with no new commits, on that pull request and on the clean one below. Neither second review repeats the first, and the clean one says everything is already said rather than that there was nothing to find.
+3. Comment `/coral` with no new commits, on that pull request and on the clean one below. Neither second review repeats the first, and the clean one says everything is already said rather than nothing found.
 4. Open a pull request with a trivially clean change. No findings, and the review says there was nothing to find.
 
 **Posting**
@@ -50,14 +50,14 @@ One real run in `kkestell/coral-test`, started by hand, in order within a group,
 
 **Failure**
 
-1. Set the caller's `time_budget_minutes` to 1 and ask for a review of a change big enough to outlast it. Expect exactly one comment naming the elapsed seconds and the budget inside a fence, the same `RuntimeError` in the review step's log, and a red run.
+1. Set the caller's `time_budget_minutes` to 1 and ask for a review of a change big enough to outlast it. Expect one comment naming the elapsed seconds and the budget inside a fence, the same `RuntimeError` in the review step's log, and a red run.
 2. Put a `raise RuntimeError("live check")` at the top of `resolve()`, push, and comment `/coral`. Expect a red run and one comment saying the run failed with no reason, linking the run. In the same state, a mid-sentence mention of `/coral`: red run, no comment. Revert.
 3. Set the test repository's `OPENROUTER_API_KEY` secret to a broken value and ask for a review. Expect one comment carrying the provider's own error inside the fence.
 4. A run that succeeds posts its review and nothing else. The control for the three above.
 
 **Shrink what a compromised agent gets**
 
-1. Open a pull request that gives Coral something to find. Three jobs run, the review appears as before, and the review job's "GITHUB_TOKEN Permissions" log block lists `Contents: read` and nothing else.
+1. Open a pull request that gives Coral something to find. Three jobs run, the review appears as before, and the review job's "GITHUB_TOKEN Permissions" log block lists `Contents: read` alone.
 2. Add a step to the review job that posts a comment with `${{ github.token }}`, push, and ask for a review. Expect 403 and a red run; remove the step.
 3. Replace the review job's `timeout-minutes` expression with 1, push, and ask for a review. GitHub kills the job mid-agent, no reason file crosses, and the publishing job's comment says the run failed with no reason. Revert.
 4. Edit `attachable` in `coral/diff.py` to shift every line anchor past its file's end, push, and review a change with a line finding. Expect the 422: one review carrying every finding in its summary, no inline comments, and the warning in the publishing log. Revert.
@@ -99,3 +99,7 @@ The knobs swap in the caller file.
 1. Pass-through mode, `spend_cap_dollars: "0.0005"` in the caller file, on a change big enough to take several steps. Red run, one comment naming what the review spent against the cap, and the same `RuntimeError` in the review step's log.
 2. Minting mode, same cap. Red run, one comment — Coral's own total against the cap, or OpenRouter's refusal of the key if its accounting caught up first. `GET /api/v1/keys` shows the key minted at `0.0005`.
 3. Remove the line. A review posts, nothing beside it, and the log carries the run's total.
+
+**What a review cost**
+
+1. Open a pull request on `kkestell/coral`. Its review's last line names what it cost, matching the review step's logged total.

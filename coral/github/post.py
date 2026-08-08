@@ -104,7 +104,18 @@ def nothing_to_report(review: Review) -> str:
     return "Coral found nothing to report on this change."
 
 
-def review_payload(commit: str, review: Review, added: set[AddedLine]) -> dict[str, Any]:
+def cost(spent: float) -> str:
+    """What the run spent, as the review reports it.
+
+    Four decimal places rather than two: every review measured so far has cost a fraction of a
+    cent, and cents would print `$0.00` on all of them.
+    """
+    return f"*This review cost ${spent:.4f}.*"
+
+
+def review_payload(
+    commit: str, review: Review, added: set[AddedLine], spent: float
+) -> dict[str, Any]:
     """The create-review body: what attaches as a comment, and what the summary carries instead."""
     comments: list[dict[str, Any]] = []
     demoted: list[str] = []
@@ -146,6 +157,7 @@ def review_payload(commit: str, review: Review, added: set[AddedLine]) -> dict[s
         lines += ["", "Findings not anchored to a line:", "", *(bullet(entry) for entry in demoted)]
     if not review.findings:
         lines += ["", nothing_to_report(review)]
+    lines += ["", cost(spent)]
 
     # Neither `commit_id` nor `event` is here: both are stamped by `submitted` in the job that
     # posts, so neither is a field the job that composed this body gets a say in.
@@ -163,7 +175,7 @@ class Payloads:
     demoted: dict[str, Any]
 
 
-def payloads(commit: str, review: Review, added: set[AddedLine]) -> Payloads:
+def payloads(commit: str, review: Review, added: set[AddedLine], spent: float) -> Payloads:
     """Both bodies: the one whose findings attach, and the one where every finding is demoted.
 
     Both are built here, where the diff is: each needs the added-line set the anchors were checked
@@ -173,8 +185,8 @@ def payloads(commit: str, review: Review, added: set[AddedLine]) -> Payloads:
     body is the same composition rather than a second path through it.
     """
     return Payloads(
-        anchored=review_payload(commit, review, added),
-        demoted=review_payload(commit, review, set()),
+        anchored=review_payload(commit, review, added, spent),
+        demoted=review_payload(commit, review, set(), spent),
     )
 
 
