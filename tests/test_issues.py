@@ -134,6 +134,44 @@ def test_search_cuts_the_query_at_its_fixed_limit(monkeypatch: pytest.MonkeyPatc
     assert len(parse_qs(urlsplit(paths[0]).query)["q"][0]) == MAX_QUERY_CHARACTERS
 
 
+def test_a_search_with_no_matches_is_a_completed_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A readable answer holding nothing is what "no open issue covers this" looks like, so the
+    # finding may be filed.
+    evidence, _ = reader(monkeypatch, {"items": []})
+
+    assert (
+        evidence.search_open_issues(0, "a defect")
+        == "No open issue candidates matched these terms."
+    )
+    assert evidence.searched_findings == {0}
+
+
+def test_a_failed_search_leaves_the_finding_unchecked(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `coral/schema.py` publishes a main-push finding only when it is in this set, so a request
+    # that never reached GitHub must not put it there. Otherwise Coral files an issue for a
+    # finding it never checked against the open ones.
+    def failed(github: GitHub, path: str) -> Any:
+        raise ApiError("GET", path, 503, "Service Unavailable")
+
+    monkeypatch.setattr(GitHub, "get", failed)
+    evidence = IssueEvidence(GitHub(token="not-a-token"), "owner", "repo", 1)
+
+    assert evidence.search_open_issues(0, "a defect") == "Unable to search open issues."
+    assert evidence.searched_findings == set()
+
+
+def test_an_unreadable_search_answer_leaves_the_finding_unchecked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evidence, _ = reader(monkeypatch, {"items": "not a list"})
+
+    assert (
+        evidence.search_open_issues(0, "a defect")
+        == "GitHub returned no readable issue candidates."
+    )
+    assert evidence.searched_findings == set()
+
+
 def test_view_reads_only_a_search_candidate_and_records_an_open_issue(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

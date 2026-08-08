@@ -57,7 +57,6 @@ class IssueEvidence:
             return "The open-issue search limit is exhausted."
 
         self.searches += 1
-        self.searched_findings.add(finding)
         query = f"repo:{self.owner}/{self.repo} is:issue is:open {terms}"[:MAX_QUERY_CHARACTERS]
         answer = self._get(
             "/search/issues?"
@@ -77,6 +76,11 @@ class IssueEvidence:
         entries = answer.get("items") if isinstance(answer, dict) else None
         if not isinstance(entries, list):
             return "GitHub returned no readable issue candidates."
+        # Recorded only once a search has come back readable, because this set is what permits an
+        # issue to be filed. A request that failed or answered with nothing Coral can read checked
+        # no open issue, and the finding it was for must not be published. A readable answer with
+        # no candidates in it is a completed check.
+        self.searched_findings.add(finding)
         candidates = [
             candidate for candidate in entries[:MAX_CANDIDATES] if self._open_issue(candidate)
         ]

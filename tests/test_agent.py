@@ -119,19 +119,26 @@ def test_a_response_carrying_no_cost_is_counted_rather_than_treated_as_free() ->
     assert ledger.unpriced == 1
 
 
+@pytest.mark.parametrize("cost", [float("nan"), float("inf"), -0.01, "free", None])
+def test_a_cost_the_ledger_cannot_hold_a_cap_against_is_counted_as_unpriced(cost: Any) -> None:
+    # The provider reports this field, so a run is not held to its cap by trusting it. A NaN
+    # ledger never reaches the cap and a negative cost pays for later spending; both stop the run
+    # instead, which is what an unreported cost already does.
+    ledger = Ledger(cap=CAP)
+    SpendHandler(ledger, "openai/gpt-5.6-luna").on_llm_end(answered({"cost": cost}), run_id=None)
+    assert ledger.spent == 0.0
+    assert ledger.unpriced == 1
+
+
 def test_a_ledger_under_its_cap_lets_the_model_be_called() -> None:
     middleware = SpendMiddleware(Ledger(cap=CAP, spent=0.5))
     assert middleware.before_model(state={}, runtime=None) is None  # type: ignore[arg-type]
 
 
-def test_a_ledger_at_its_cap_stops_the_run_and_says_what_it_spent() -> None:
-    # Both numbers to six decimal places, because a cap of a fraction of a cent has to be legible
-    # in the comment this message becomes.
+def test_a_ledger_at_its_cap_stops_the_run() -> None:
     middleware = SpendMiddleware(Ledger(cap=0.0005, spent=0.000512))
-    with pytest.raises(RuntimeError) as raised:
+    with pytest.raises(RuntimeError, match="ran out of money"):
         middleware.before_model(state={}, runtime=None)  # type: ignore[arg-type]
-    assert "$0.000512" in str(raised.value)
-    assert "$0.000500" in str(raised.value)
 
 
 def test_a_run_coral_cannot_price_is_stopped_however_little_it_has_counted() -> None:
@@ -270,6 +277,8 @@ def run_against(
     effort: str = "",
     facts: ModelFacts = LUNA,
     extra_tools: list[Any] | None = None,
+    deadline: Deadline | None = None,
+    ledger: Ledger | None = None,
 ) -> tuple[Any, dict[str, Any], dict[str, Any]]:
     """Run the reviewer with the agent's construction intercepted, and return what it was built of.
 
@@ -292,13 +301,38 @@ def run_against(
         tmp_path,
         "coral-reviewer",
         "review this",
-        Deadline(started=time.monotonic(), budget=BUDGET),
-        Ledger(cap=CAP),
+        deadline or Deadline(started=time.monotonic(), budget=BUDGET),
+        ledger or Ledger(cap=CAP),
         review_prompt(),
         Review,
         extra_tools,
     )
     return built[0][0], built[0][1], built[0][2].config
+
+
+def test_a_run_that_ended_past_its_budget_fails_rather_than_answering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The middleware checks before each model call, so the request that produced the answer is
+    # checked nowhere else. Without this the reviewer's empty review, or the verifier's last
+    # verdicts, would be posted after a request that ran past the whole budget.
+    spent = Deadline(started=time.monotonic() - (BUDGET + 1), budget=BUDGET)
+    with pytest.raises(RuntimeError, match="ran out of time"):
+        run_against(tmp_path, monkeypatch, deadline=spent)
+
+
+def test_a_run_that_ended_over_its_cap_fails_rather_than_answering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(RuntimeError, match="ran out of money"):
+        run_against(tmp_path, monkeypatch, ledger=Ledger(cap=CAP, spent=CAP))
+
+
+def test_a_run_whose_spending_was_never_measured_fails_rather_than_answering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(RuntimeError, match="carried no cost"):
+        run_against(tmp_path, monkeypatch, ledger=Ledger(cap=CAP, unpriced=1))
 
 
 def test_every_run_installs_one_progress_callback(

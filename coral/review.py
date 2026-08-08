@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Final
 
 from coral import container, runner
-from coral.deadline import budget_seconds, reviewer_budget, start
+from coral.deadline import budget_seconds, reviewer_budget, start, stop_if_expired
 from coral.diff import added_lines, diff_text, merge_base
 from coral.github.client import GitHub
 from coral.github.conversation import Comment, Conversation, Thread, read_conversation
@@ -22,7 +22,7 @@ from coral.handoff import review_key
 from coral.openrouter import model_facts
 from coral.publish import described
 from coral.schema import Review, confirmed, where
-from coral.spend import Ledger, cap_dollars
+from coral.spend import Ledger, cap_dollars, stop_if_over_cap
 
 log = logging.getLogger(__name__)
 
@@ -387,6 +387,11 @@ def review() -> None:
                 review = confirmed(review, verification)
 
         log.info("The review spent $%.6f of its $%.6f cap.", ledger.spent, ledger.cap)
+        # Nothing is published that a limit should have stopped. Both agent runs check their own
+        # limits as they end, and this is the same check over the whole step's budget and the
+        # ledger both runs shared, made where a payload is about to be written.
+        stop_if_expired(deadline)
+        stop_if_over_cap(ledger)
         # The ledger is final here: both agent runs are over, and nothing the publishing job does
         # costs anything. What the body reports and what the line above logs are the same number.
         if main_push:

@@ -486,8 +486,13 @@ def reviewed_commits(nodes: list[Any]) -> list[str]:
     function of how much other people talked. Read from review bodies only: an inline finding
     carries a marker naming a commit too, and so will the failure comment, and neither of those
     means the commit was reviewed.
+
+    A review counts only when it is Coral's on both halves. The Actions token is shared with every
+    other workflow in the repository, so a review another one submitted quoting a marker after its
+    own prose would otherwise record that commit as reviewed and silently suppress the automatic
+    review of it.
     """
-    found = (reviewed_commit(node["body"]) for node in nodes if node["viewerDidAuthor"])
+    found = (reviewed_commit(node["body"]) for node in nodes if wrote_it(node))
     return list(dict.fromkeys(commit for commit in found if commit is not None))
 
 

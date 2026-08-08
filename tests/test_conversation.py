@@ -500,6 +500,17 @@ def test_a_marker_somebody_else_typed_is_not_a_commit_coral_reviewed() -> None:
     assert reviewed_commits(reviews) == [OTHER_COMMIT]
 
 
+def test_a_marker_another_workflow_quoted_is_not_a_commit_coral_reviewed() -> None:
+    # The Actions token is shared with everything else the repository's automation posts, so
+    # `viewerDidAuthor` alone does not make a review Coral's. A workflow that quotes a marker
+    # after its own prose would otherwise record that commit as reviewed, and the automatic
+    # review of it would be skipped in silence.
+    quoted = review_node(
+        "PRR_1", body=f"Deploy finished. Coral said:\n\n> {marker(COMMIT)}", authored=True
+    )
+    assert reviewed_commits([quoted]) == []
+
+
 def test_the_bound_takes_the_most_recent_across_all_three_connections() -> None:
     # Not 200 from each. The three connections are interleaved in time here so that a bound
     # applied per connection would keep a different set.

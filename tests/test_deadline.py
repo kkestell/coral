@@ -16,6 +16,7 @@ from coral.deadline import (
     job_timeout_minutes,
     reviewer_budget,
     start,
+    stop_if_expired,
 )
 
 # The `time_budget_minutes` input's default, declared in `.github/workflows/coral.yml`. Every
@@ -30,6 +31,18 @@ def test_a_fresh_deadline_has_not_expired() -> None:
 def test_a_deadline_whose_budget_is_spent_has_expired() -> None:
     budget = budget_seconds(DEFAULT)
     assert Deadline(started=time.monotonic() - (budget + 1), budget=budget).expired()
+
+
+def test_a_live_deadline_passes_the_check() -> None:
+    stop_if_expired(start(budget_seconds(DEFAULT)))
+
+
+def test_the_check_stops_a_spent_budget_and_says_how_long_it_ran() -> None:
+    budget = budget_seconds(DEFAULT)
+    with pytest.raises(RuntimeError) as raised:
+        stop_if_expired(Deadline(started=time.monotonic() - (budget + 1), budget=budget))
+    assert "ran out of time after 1201 seconds" in str(raised.value)
+    assert "budget of 1200" in str(raised.value)
 
 
 def test_elapsed_grows_with_the_gap_to_the_starting_reading() -> None:

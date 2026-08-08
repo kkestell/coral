@@ -1,12 +1,15 @@
 """Tests of `coral.spend`.
 
-The validation and the accumulation are the whole of what this module decides. What a response
-actually costs is OpenRouter's, and reading it off one is `coral/agent.py`'s.
+The validation, the accumulation, and the check that stops a run are the whole of what this module
+decides. What a response actually costs is OpenRouter's, and reading it off one is
+`coral/agent.py`'s.
 """
+
+import math
 
 import pytest
 
-from coral.spend import Ledger, cap_dollars
+from coral.spend import Ledger, cap_dollars, priced, stop_if_over_cap
 
 # The `spend_cap_dollars` input's default, declared in `.github/workflows/coral.yml`.
 DEFAULT = "2.00"
@@ -82,3 +85,49 @@ def test_a_response_with_no_cost_is_counted_apart_from_the_total() -> None:
     ledger.unpriced += 1
     assert ledger.spent == 0.0
     assert not ledger.exceeded()
+
+
+def test_an_ordinary_reported_cost_is_the_amount_to_add() -> None:
+    assert priced(2.015e-05) == 2.015e-05
+    assert priced("0.5") == 0.5
+    assert priced(0) == 0.0
+
+
+def test_a_cost_that_is_not_a_number_is_not_priced() -> None:
+    assert priced(None) is None
+    assert priced("free") is None
+    assert priced({"amount": 1}) is None
+
+
+def test_a_cost_of_nan_is_not_priced() -> None:
+    # `float` takes the word, and a ledger holding NaN never reaches its cap however much follows.
+    assert priced("nan") is None
+    assert priced(math.nan) is None
+
+
+def test_an_infinite_cost_is_not_priced() -> None:
+    assert priced(math.inf) is None
+    assert priced(-math.inf) is None
+
+
+def test_a_negative_cost_is_not_priced() -> None:
+    # It would pay for later spending, which is a cap the run can talk its way back under.
+    assert priced(-0.5) is None
+
+
+def test_a_ledger_under_its_cap_passes_the_check() -> None:
+    stop_if_over_cap(Ledger(cap=1.0, spent=0.5))
+
+
+def test_the_check_stops_a_ledger_at_its_cap_and_says_what_it_spent() -> None:
+    # Both numbers to six decimal places, because a cap of a fraction of a cent has to be legible
+    # in the comment this message becomes.
+    with pytest.raises(RuntimeError) as raised:
+        stop_if_over_cap(Ledger(cap=0.0005, spent=0.000512))
+    assert "$0.000512" in str(raised.value)
+    assert "$0.000500" in str(raised.value)
+
+
+def test_the_check_stops_a_run_coral_cannot_price_however_little_it_counted() -> None:
+    with pytest.raises(RuntimeError, match="carried no cost"):
+        stop_if_over_cap(Ledger(cap=1.0, spent=0.0, unpriced=1))

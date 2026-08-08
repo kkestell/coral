@@ -71,7 +71,7 @@ Coral decides which of these to use, in what order, how many times.
 - A review whose commit is no longer the head is not posted; Coral says the branch moved, because nothing re-triggers it afterwards.
 - A review that dies partway does not block later reviews.
 - A review that does not finish is discarded: Coral says it ran out of time and posts nothing else, because a partial review is indistinguishable from a complete one.
-- A review that spends past its cap is stopped the same way, saying what it spent against the cap. So is one whose spending Coral cannot measure: a response reporting no cost leaves the cap unenforceable.
+- A review that spends past its cap is stopped the same way, saying what it spent against the cap. So is one whose spending Coral cannot measure: a response reporting no usable cost leaves the cap unenforceable.
 - A pull request too large is not reviewed: Coral says it exceeds what it will read and posts nothing else. A backstop, not an expected case. A `main` push has no size backstop.
 - A `main` review that proposes more than ten findings creates no issue and fails. Coral checks each confirmed finding against the open issues, and it will not create an issue for a finding it did not check.
 

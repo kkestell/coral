@@ -35,11 +35,11 @@ from langgraph.runtime import Runtime
 from pydantic import SecretStr
 
 from coral import container
-from coral.deadline import Deadline
+from coral.deadline import Deadline, stop_if_expired
 from coral.github.issues import IssueEvidence
 from coral.openrouter import ModelFacts
 from coral.schema import Review, Verification, review_from_result, verification_from_result
-from coral.spend import Ledger
+from coral.spend import Ledger, priced, stop_if_over_cap
 
 log = logging.getLogger(__name__)
 
@@ -114,15 +114,7 @@ class DeadlineMiddleware(AgentMiddleware[Any, Any]):
         self.deadline = deadline
 
     def before_model(self, state: Any, runtime: Runtime[Any]) -> dict[str, Any] | None:
-        # Raised rather than ended gracefully. A fired deadline is a failure, and a graceful end
-        # would arrive as "the agent returned no structured review" with the reason lost. The
-        # exception propagates out of `invoke`, where the review step turns it into a comment; the
-        # message is the whole of what that comment says the reason was.
-        if self.deadline.expired():
-            raise RuntimeError(
-                f"Coral ran out of time after {self.deadline.elapsed():.0f} seconds, against a "
-                f"budget of {self.deadline.budget:.0f}."
-            )
+        stop_if_expired(self.deadline)
         return None
 
 
@@ -145,15 +137,20 @@ class SpendHandler(BaseCallbackHandler):
             for generation in generations:
                 assert isinstance(generation, ChatGeneration), f"{type(generation).__name__}"
                 metadata = generation.message.response_metadata
-                # Every OpenRouter completion measured carries a cost, with nothing asked for. One
-                # that does not is counted rather than passed over: `SpendMiddleware` stops the run
-                # at the next check, because a review whose spending Coral cannot measure is one
-                # the caller's cap does not hold.
-                if "cost" not in metadata:
-                    log.warning("A response from %s carried no cost.", self.model)
+                # Every OpenRouter completion measured carries a usable cost, with nothing asked
+                # for. One that does not is counted rather than passed over: the next limit check
+                # stops the run, because a review whose spending Coral cannot measure is one the
+                # caller's cap does not hold.
+                cost = priced(metadata.get("cost"))
+                if cost is None:
+                    log.warning(
+                        "A response from %s carried no cost Coral can add: %r.",
+                        self.model,
+                        metadata.get("cost"),
+                    )
                     self.ledger.unpriced += 1
                     continue
-                self.ledger.add(float(metadata["cost"]))
+                self.ledger.add(cost)
 
 
 def _escaped_repr(value: object) -> str:
@@ -220,22 +217,7 @@ class SpendMiddleware(AgentMiddleware[Any, Any]):
         self.ledger = ledger
 
     def before_model(self, state: Any, runtime: Runtime[Any]) -> dict[str, Any] | None:
-        # A cap Coral cannot measure against is not a cap, so this stops the run too. Only the
-        # minted key's own limit would have caught the spending, and a passed-through key has none.
-        if self.ledger.unpriced:
-            raise RuntimeError(
-                f"{self.ledger.unpriced} of this run's responses carried no cost, so Coral cannot "
-                f"hold it to its cap of ${self.ledger.cap:.6f}. It had counted "
-                f"${self.ledger.spent:.6f} of that."
-            )
-        # Raised for the same reason `DeadlineMiddleware` raises, and checked in the same place:
-        # between steps, so the overshoot past a passing check is one in-flight model request. Six
-        # decimal places because a cap of a fraction of a cent has to be legible.
-        if self.ledger.exceeded():
-            raise RuntimeError(
-                f"Coral ran out of money after ${self.ledger.spent:.6f}, against a cap of "
-                f"${self.ledger.cap:.6f}."
-            )
+        stop_if_over_cap(self.ledger)
         return None
 
 
@@ -395,6 +377,11 @@ def _run(
         deadline.elapsed(),
         len(result["messages"]),
     )
+    # The middleware checks before each model call, so the last response of a run has passed no
+    # check at all: a final request can run past the budget or over the cap and still return an
+    # answer. Checked once more here, that answer fails the run rather than being reviewed on.
+    stop_if_expired(deadline)
+    stop_if_over_cap(ledger)
     return result
 
 

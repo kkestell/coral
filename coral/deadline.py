@@ -1,9 +1,10 @@
 """Coral's own time budget for a review, and the job timeout derived from it.
 
-Arithmetic over one `time.monotonic()` reading, and nothing else. This module imports only the
-standard library so the budget stays testable without a fake clock and without paying for the
-agent framework's import: the middleware that turns a deadline into a hook lives in
-`coral/agent.py`, next to the framework it hooks into.
+Arithmetic over one `time.monotonic()` reading, and nothing else, including the check that fails a
+run the budget should have stopped. This module imports only the standard library so the budget
+stays testable without a fake clock and without paying for the agent framework's import: the
+middleware that runs the check before each model call lives in `coral/agent.py`, next to the
+framework it hooks into.
 """
 
 import time
@@ -49,6 +50,21 @@ class Deadline:
 def start(budget: float) -> Deadline:
     """Begin a budget, now."""
     return Deadline(started=time.monotonic(), budget=budget)
+
+
+def stop_if_expired(deadline: Deadline) -> None:
+    """Fail the run when the budget is spent.
+
+    Raised rather than ended gracefully. A fired deadline is a failure, and a graceful end would
+    arrive as "the agent returned no structured review" with the reason lost. The exception
+    propagates out of `invoke`, where the review step turns it into a comment; the message is the
+    whole of what that comment says the reason was.
+    """
+    if deadline.expired():
+        raise RuntimeError(
+            f"Coral ran out of time after {deadline.elapsed():.0f} seconds, against a budget of "
+            f"{deadline.budget:.0f}."
+        )
 
 
 def budget_minutes(value: str) -> int:
