@@ -88,12 +88,14 @@ def test_nothing_is_read_out_of_the_process_environment(
     # review job holds has no business in there at all.
     monkeypatch.setenv("PATH", "/the/runners/own/path")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-x")
+    monkeypatch.setenv("GITHUB_TOKEN", "a GitHub token")
     monkeypatch.setenv("CORAL_KEY_ENCRYPTION_KEY", "a Fernet key")
     monkeypatch.setenv("ENCRYPTED_OPENROUTER_API_KEY", "a Fernet token")
     monkeypatch.setenv("VIRTUAL_ENV", "/tmp/coral/.venv")
     environment = shell_environment(toolcache(tmp_path, {"go": ["1.26.0"]}))
     assert "/the/runners/own/path" not in environment["PATH"]
     assert "sk-x" not in str(environment)
+    assert "a GitHub token" not in str(environment)
     assert "a Fernet key" not in str(environment)
     assert "a Fernet token" not in str(environment)
     assert set(environment) == {"CI", "HOME", "LANG", "PATH"}

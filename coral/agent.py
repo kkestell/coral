@@ -35,6 +35,7 @@ from pydantic import SecretStr
 
 from coral import container
 from coral.deadline import Deadline
+from coral.github.issues import IssueEvidence
 from coral.openrouter import ModelFacts
 from coral.schema import Review, Verification, review_from_result, verification_from_result
 from coral.spend import Ledger
@@ -246,6 +247,7 @@ def _run(
     ledger: Ledger,
     system_prompt: str,
     response_format: type,
+    extra_tools: list[Callable[..., str]] | None = None,
 ) -> dict[str, Any]:
     """Build an agent over its copy of the checkout, run it, and return its result state.
 
@@ -297,6 +299,7 @@ def _run(
             SpendMiddleware(ledger),
         ],
         backend=backend,
+        tools=extra_tools,
         # Named rather than left to the framework's auto-detection, which asks for the provider's
         # own structured output whenever the model's profile carries `structured_output` or its
         # name matches a table of GPT, Claude, and Grok names kept upstream. That request makes the
@@ -364,6 +367,7 @@ def verify_findings(
     request: str,
     deadline: Deadline,
     ledger: Ledger,
+    issue_evidence: IssueEvidence | None = None,
 ) -> Verification:
     """Run the verifier over its own fresh copy of the checkout and return its verdicts, or fail."""
     return verification_from_result(
@@ -379,5 +383,10 @@ def verify_findings(
             ledger,
             verify_prompt(),
             Verification,
+            (
+                [issue_evidence.search_open_issues, issue_evidence.view_issue]
+                if issue_evidence is not None
+                else None
+            ),
         )
     )

@@ -46,7 +46,8 @@ Coral decides which of these to use, in what order, how many times.
 - Line and span findings anchor to their code. Whole-file and pull-request findings appear in the summary, the file named — "this file has no tests" and "this change has no tests" must read differently.
 - A confirmed finding that cannot anchor still appears, in the summary, naming its intended file and line.
 - One review per run, not a comment per finding. A pull request reviewed several times carries several reviews.
-- On `main`, Coral creates one issue per confirmed finding. An empty review creates no issue.
+- On `main`, Coral creates one issue per confirmed finding that no open issue already describes. An
+  empty review creates no issue.
 - Every pull-request review names the commit it reviewed — readers need to know which state of the branch each review is about, and it is how Coral recognizes its own past work.
 - Every review ends with what the run spent.
 - Every review says it is Coral's; the posting account belongs to the repository's automation, not to Coral.

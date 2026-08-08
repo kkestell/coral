@@ -22,7 +22,7 @@ How the code is organized and how it runs on GitHub Actions.
 Three jobs in fixed order — resolve, review, publish — each on its own runner with its own `permissions`.
 
 - Resolve holds `contents: read`, `issues: write`, and `pull-requests: write`. It fetches the pull request and conversation, acknowledges requests, and decides whether a pull-request review runs. On a `main` push it pins the event's commit and prior main tip, without a pull-request call. It derives the review timeout and mints, masks, and encrypts a capped key after the gates pass.
-- Review runs the agent and holds `contents: read`; its review step makes no API call and its environment carries no token. Its `timeout-minutes` is resolve's derived output. Each agent run gets a fresh checkout copy and container. It verifies findings, then writes two create-review bodies for a pull request or one issue body per main-push finding. The review object never crosses; the review bodies need the added-line set checked here.
+- Review holds `contents: read` and `issues: read`. On a `main` push it gives the verifier two bounded issue-reading tools; it receives the job token only for that path and removes it before either container starts. Its `timeout-minutes` is resolve's derived output. Each agent run gets a fresh checkout copy and container. It verifies findings, then writes two create-review bodies for a pull request or one issue body per main-push finding. The review object never crosses; the review bodies need the added-line set checked here.
 - The checkout takes the pinned head SHA, full history, and no persisted credentials.
 - Publish holds resolve's three scopes and is the only job that posts: a pull-request review, a failure comment, or main-push issues. It stamps `commit_id` and `event` on a pull-request review; the agent's job gets no say in either.
 - Each job builds Coral's virtual environment under the runner's temporary directory — outside the workspace and off `PATH`, every step invoking the console script by absolute path.
@@ -50,6 +50,7 @@ One console script. `coral resolve`, `coral review`, and `coral publish` are eac
 - `coral/spend.py` — the spend cap and the run's total against it.
 - `coral/diff.py` — the merge-base diff and which anchors may attach.
 - `coral/github/client.py` — the one authenticated transport.
+- `coral/github/issues.py` — the bounded open-issue search and view evidence for a main-push verifier.
 - `coral/github/conversation.py` — the GraphQL query, the bound, the conversation's file.
 - `coral/github/marker.py` — the sentinel: writing and reading it.
 - `coral/github/reactions.py` — which comments get the reaction, through both namespaces.

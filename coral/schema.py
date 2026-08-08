@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, StrictInt
 
 
 @dataclass(frozen=True)
@@ -136,6 +136,16 @@ class Verdict:
     reason: Annotated[
         str, Field(description="A sentence or two on what you did and what it showed.")
     ]
+    duplicate_issue: Annotated[
+        StrictInt | None,
+        Field(
+            ge=1,
+            description=(
+                "The open issue you viewed that describes this confirmed finding, or null when "
+                "none does."
+            ),
+        ),
+    ]
 
 
 @dataclass(frozen=True)
@@ -145,16 +155,29 @@ class Verification:
     verdicts: list[Verdict]
 
 
-def confirmed(review: Review, verification: Verification) -> Review:
-    """The review that survives: findings some verdict confirms and no verdict rejects.
+def confirmed(
+    review: Review,
+    verification: Verification,
+    searched_findings: set[int] | None = None,
+    viewed_issues: set[int] | None = None,
+) -> Review:
+    """The review that survives confirmation and, for main pushes, duplicate checks.
 
     A finding no verdict names is dropped. The verifier is told to rule on every finding, so
-    silence about one is a run that went wrong rather than an endorsement.
+    silence about one is a run that went wrong rather than an endorsement. Main-push evidence is
+    supplied together or not at all: without a search a finding cannot be published, and only a
+    common issue number the reader viewed can suppress a confirmed finding.
     """
+    assert (searched_findings is None) == (viewed_issues is None)
     kept = []
     for index, finding in enumerate(review.findings):
         verdicts = [verdict for verdict in verification.verdicts if verdict.finding == index]
-        if verdicts and all(verdict.confirmed for verdict in verdicts):
+        duplicates = {verdict.duplicate_issue for verdict in verdicts}
+        duplicate = duplicates.pop() if len(duplicates) == 1 else None
+        code_confirmed = verdicts and all(verdict.confirmed for verdict in verdicts)
+        checked = searched_findings is None or index in searched_findings
+        matched = duplicate is not None and viewed_issues is not None and duplicate in viewed_issues
+        if code_confirmed and checked and not matched:
             kept.append(finding)
     return replace(review, findings=kept)
 

@@ -5,6 +5,9 @@ inputs:
   coral-bin:
     description: The directory holding the `coral` console script.
     required: true
+  github-token:
+    description: The review job's token for bounded main-push duplicate checks.
+    required: false
   openrouter-api-key:
     description: The caller's model-provider credential in plain-key mode.
     required: false
@@ -32,10 +35,11 @@ runs:
   steps:
     - shell: bash
       # The inputs reach the shell as environment variables rather than being interpolated into
-      # the script, so nothing in an input is ever parsed as shell. No `github-token` input: the
-      # review step makes no API call, and the step's environment holds no token to leak.
+      # the script, so nothing in an input is ever parsed as shell. GitHub's token is supplied
+      # only for main pushes and `coral review` removes it before either agent container starts.
       env:
         CORAL_BIN: ${{ inputs.coral-bin }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
         OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
         ENCRYPTED_OPENROUTER_API_KEY: ${{ inputs.encrypted-openrouter-api-key }}
         CORAL_KEY_ENCRYPTION_KEY: ${{ inputs.coral-key-encryption-key }}

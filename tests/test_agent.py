@@ -31,8 +31,10 @@ from coral.agent import (
     verify_prompt,
 )
 from coral.deadline import Deadline, budget_seconds
+from coral.github.client import GitHub
+from coral.github.issues import IssueEvidence
 from coral.openrouter import ModelFacts
-from coral.schema import Review
+from coral.schema import Review, Verification
 from coral.spend import Ledger, cap_dollars
 
 BUDGET = budget_seconds("20")
@@ -70,7 +72,11 @@ def test_the_prompt_comes_out_of_the_installed_package() -> None:
 
 
 def test_the_verifier_prompt_comes_out_of_the_installed_package() -> None:
-    assert "Coral" in verify_prompt()
+    prompt = verify_prompt()
+    assert "Coral" in prompt
+    assert "search_open_issues" in prompt
+    assert "duplicate_issue" in prompt
+    assert "untrusted evidence" in prompt
 
 
 def test_a_live_deadline_lets_the_model_be_called() -> None:
@@ -192,7 +198,11 @@ class Built:
 
 
 def run_against(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, effort: str = "", facts: ModelFacts = LUNA
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    effort: str = "",
+    facts: ModelFacts = LUNA,
+    extra_tools: list[Any] | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     """Run the reviewer with the agent's construction intercepted, and return what it was built of.
 
@@ -218,6 +228,7 @@ def run_against(
         Ledger(cap=CAP),
         review_prompt(),
         Review,
+        extra_tools,
     )
     return built[0]
 
@@ -232,6 +243,47 @@ def test_the_structured_output_strategy_is_named_rather_than_detected(
     strategy = run_against(tmp_path, monkeypatch)[1]["response_format"]
     assert isinstance(strategy, ToolStrategy)
     assert strategy.schema is Review
+
+
+def test_only_the_verifier_receives_bounded_issue_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    evidence = IssueEvidence(GitHub(token="not-a-token"), "owner", "repo", 1)
+    reviewer_tools = run_against(tmp_path, monkeypatch)[1]["tools"]
+    verifier_tools = run_against(
+        tmp_path,
+        monkeypatch,
+        extra_tools=[evidence.search_open_issues, evidence.view_issue],
+    )[1]["tools"]
+    assert reviewer_tools is None
+    assert verifier_tools == [evidence.search_open_issues, evidence.view_issue]
+    assert not any(isinstance(tool, GitHub) for tool in verifier_tools)
+
+
+def test_verify_findings_passes_only_issue_evidence_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[Any, ...]] = []
+
+    def run(*arguments: Any) -> dict[str, Any]:
+        calls.append(arguments)
+        return {"structured_response": Verification(verdicts=[])}
+
+    evidence = IssueEvidence(GitHub(token="not-a-token"), "owner", "repo", 1)
+    monkeypatch.setattr(coral.agent, "_run", run)
+    coral.agent.verify_findings(
+        "not-a-key",
+        "openai/gpt-5.6-luna",
+        "",
+        LUNA,
+        tmp_path,
+        "coral-verifier",
+        "verify this",
+        Deadline(started=time.monotonic(), budget=BUDGET),
+        Ledger(cap=CAP),
+        evidence,
+    )
+    assert calls[0][-1] == [evidence.search_open_issues, evidence.view_issue]
 
 
 def test_the_default_models_profile_is_the_one_coral_used_to_carry_by_hand() -> None:

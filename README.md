@@ -1,6 +1,6 @@
 # 🪸 Coral
 
-A code review agent that runs as a GitHub Actions workflow. Coral reviews pull requests and comments on them. It also reviews each commit pushed to `main` and creates an issue for every confirmed finding.
+A code review agent that runs as a GitHub Actions workflow. Coral reviews pull requests and comments on them. It also reviews each commit pushed to `main` and creates an issue for every confirmed finding that no open issue already describes.
 
 Coral is a proof of concept and is early.
 
@@ -74,7 +74,7 @@ Anyone with write access can ask. Coral only comments: it never pushes, approves
 
 ## Reviewing main
 
-The caller file above reviews every commit pushed to `main`. Coral compares that commit with the prior main commit. It creates one issue for each finding its verifier confirms. A main-push review with no confirmed findings creates no issue. A failed main-push review is visible in Actions and creates no issue.
+The caller file above reviews every commit pushed to `main`. Coral compares that commit with the prior main commit. It creates one issue for each finding its verifier confirms when no open issue already describes that defect. A main-push review with no confirmed findings creates no issue. A failed main-push review is visible in Actions and creates no issue.
 
 ## Risks
 
@@ -85,7 +85,7 @@ The measures below limit the damage. None of them stop a determined attacker fro
 - Never reviews a fork, and ignores `/coral` from anyone without push access — read off your repository's collaborator permissions, so a read-only member of your organization cannot spend a review. Every change it runs is code somebody with push access could have pushed anyway.
 - Runs the agent's shell in an unprivileged container: no added capabilities, no Docker socket, and a cap on the memory, processors, and processes it can take of the runner.
 - Puts no credential in that container: no OpenRouter key, no GitHub token, none of the runner's variables. It gets a copy of the checkout and the toolcache read-only.
-- Limits the agent's job to `contents: read`. The write scopes live in the jobs that post, which never run agent code.
+- Limits the agent's job to read-only `contents` and `issues` scopes. The write scopes live in the jobs that post, which never run agent code.
 - Never pushes, approves, or requests changes. A bad review costs a comment, not a merge.
 - Mints a per-run API key from a management key, so a leak expires on its own.
 

@@ -320,6 +320,9 @@ def test_a_main_push_verification_request_has_no_pull_request_context() -> None:
     assert f"# Main commit {COMMIT}" in rendered
     assert "This commit was pushed directly to main." in rendered
     assert "The conversation" not in rendered
+    assert "Search open issues exactly once for every numbered finding" in rendered
+    assert "duplicate_issue" in rendered
+    assert "untrusted evidence" in rendered
 
 
 def checkout(root: Path) -> Path:
