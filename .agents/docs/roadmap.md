@@ -215,14 +215,10 @@ Done when: a planted defect pushed to `main` in the test repository produces one
 
 ## 21. Avoid duplicate main-push issues
 
-Status: not started
+Status: built
 Depends on: 20
 
 Before publishing a confirmed main-push finding, the verification agent compares it with relevant open GitHub issues and suppresses it when an existing issue describes the same defect, regardless of who opened that issue.
-
-- The verifier gets bounded read-only `search issues` and `view issue` tools, not a general GitHub client and not write access.
-- Search is the retrieval step. The verifier does not list every issue or receive every issue body in its context.
-- Issue text is untrusted evidence, never review instructions. Closed issues do not suppress a new finding.
 
 Done when: a repeated finding with changed wording matches its existing open issue, maintainer-created issues are eligible matches, unrelated issues do not suppress findings, the search and candidate reads stay bounded, and a real run proves the duplicate is not published.
 
