@@ -14,6 +14,7 @@ from coral.diff import AddedLine
 from coral.github.marker import marker
 from coral.github.post import (
     bullet,
+    cost,
     count,
     demotion,
     nothing_to_report,
@@ -133,8 +134,11 @@ def review_of(*findings: Finding, already_said: bool = False) -> Review:
     )
 
 
+SPENT = 0.0042
+
+
 def payload_of(*findings: Finding) -> dict[str, Any]:
-    return review_payload(COMMIT, review_of(*findings), ADDED)
+    return review_payload(COMMIT, review_of(*findings), ADDED, SPENT)
 
 
 def test_a_line_finding_becomes_one_anchored_comment() -> None:
@@ -179,7 +183,7 @@ def test_submitted_stamps_the_commit_and_the_comment_event() -> None:
 
 def test_the_pair_holds_the_anchored_body_and_the_demoted_one() -> None:
     anchored_finding = finding_at(line(7))
-    pair = payloads(COMMIT, review_of(anchored_finding), ADDED)
+    pair = payloads(COMMIT, review_of(anchored_finding), ADDED, SPENT)
     assert len(pair.anchored["comments"]) == 1
     assert pair.demoted["comments"] == []
     assert "a.py" in pair.demoted["body"]
@@ -189,7 +193,7 @@ def test_the_pair_holds_the_anchored_body_and_the_demoted_one() -> None:
 
 
 def test_the_pair_round_trips_through_a_file(tmp_path: Path) -> None:
-    pair = payloads(COMMIT, mixed(), ADDED)
+    pair = payloads(COMMIT, mixed(), ADDED, SPENT)
     write_payloads(tmp_path / "review-payloads.json", pair)
     assert read_payloads(tmp_path / "review-payloads.json") == pair
 
@@ -199,6 +203,24 @@ def test_the_body_carries_the_marker_the_commit_and_the_summary() -> None:
     assert body.startswith(marker(COMMIT))
     assert f"Coral reviewed `{COMMIT}`." in body
     assert "What the change does." in body
+
+
+def test_the_body_ends_with_what_the_run_cost() -> None:
+    # Last, so it is read after the findings rather than ahead of the summary.
+    assert payload_of(finding_at(line(7)))["body"].endswith(cost(SPENT))
+
+
+def test_a_cost_under_a_cent_survives_its_formatting() -> None:
+    # What every review measured so far cost. Two decimal places would print all of them `$0.00`.
+    assert cost(0.0042) == "*This review cost $0.0042.*"
+    assert cost(1.5) == "*This review cost $1.5000.*"
+
+
+def test_both_bodies_report_the_same_cost() -> None:
+    # The demoted body is what the retry posts, and a review that lost its anchors cost the same.
+    pair = payloads(COMMIT, review_of(finding_at(line(99))), ADDED, SPENT)
+    assert cost(SPENT) in pair.anchored["body"]
+    assert cost(SPENT) in pair.demoted["body"]
 
 
 def test_an_unattachable_line_finding_names_its_file_and_its_line() -> None:
@@ -256,7 +278,7 @@ def test_no_finding_is_lost() -> None:
     # The done condition, asserted directly: every finding that survived verification is on the
     # pull request exactly once, wherever it landed.
     review = mixed()
-    payload = review_payload(COMMIT, review, ADDED)
+    payload = review_payload(COMMIT, review, ADDED, SPENT)
     assert len(payload["comments"]) == 2
     for finding in review.findings:
         assert appearances(payload, finding.body) == 1
@@ -265,7 +287,7 @@ def test_no_finding_is_lost() -> None:
 def test_no_finding_is_lost_when_nothing_attaches() -> None:
     # The payload the retry posts. Everything lands in the summary and nothing is anchored.
     review = mixed()
-    payload = review_payload(COMMIT, review, set())
+    payload = review_payload(COMMIT, review, set(), SPENT)
     assert payload["comments"] == []
     for finding in review.findings:
         assert appearances(payload, finding.body) == 1
@@ -274,10 +296,12 @@ def test_no_finding_is_lost_when_nothing_attaches() -> None:
 def test_the_two_empty_outcomes_read_differently() -> None:
     # A second "nothing found" that reads as retracting the first review is what this prevents.
     assert nothing_to_report(review_of(already_said=True)) != nothing_to_report(review_of())
-    assert nothing_to_report(review_of()) in review_payload(COMMIT, review_of(), ADDED)["body"]
+    assert (
+        nothing_to_report(review_of()) in review_payload(COMMIT, review_of(), ADDED, SPENT)["body"]
+    )
     assert (
         nothing_to_report(review_of(already_said=True))
-        in review_payload(COMMIT, review_of(already_said=True), ADDED)["body"]
+        in review_payload(COMMIT, review_of(already_said=True), ADDED, SPENT)["body"]
     )
 
 

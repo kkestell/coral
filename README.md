@@ -60,7 +60,7 @@ Coral is configured in that workflow file and nowhere else, so a pull request ca
 - `model` — any model on [OpenRouter](https://openrouter.ai/models), named exactly as it appears there. A `~` alias is refused, so the model a review ran on is always knowable from this file. Coral fetches the model's context window from OpenRouter at run time; a model it does not list stops the run and says so.
 - `reasoning_effort` — passed to the provider as given. Empty asks for no reasoning block, leaving the provider its own default. What values a model accepts is the provider's rule, and its refusal is what you will read on the pull request.
 - `time_budget_minutes` — how long Coral gets to review. The job's own timeout is ten minutes more than this, so the largest budget is 350.
-- `spend_cap_dollars` — what one review may spend. A review that reaches it stops, and says what it spent on the pull request. With a management key it is also the limit the run's own key is minted with, so the provider refuses the spending too.
+- `spend_cap_dollars` — what one review may spend. A review that reaches it stops, and says what it spent on the pull request. With a management key it is also the limit the run's own key is minted with, so the provider refuses the spending too. Every review ends with what it cost, whether or not it came near the cap.
 
 ## Asking for a review
 

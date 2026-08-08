@@ -156,6 +156,18 @@ Coral stops a review that has spent more than the caller's cap, in both key mode
 
 Done when: a review capped at a fraction of a cent stops and posts one comment naming what it spent against the cap, in each key mode, and a review under its cap posts its review and nothing beside it.
 
+## 16. What a review cost
+
+Status: built
+Depends on: 15
+
+Every review ends with what the run spent, read off the ledger item 15 built. Coral is installed on its own repository, so this is the first item checked by a pull request on `kkestell/coral` rather than on the test repository.
+
+- The figure is Coral's own accounting rather than the model's, composed where the payloads are, so a compromised agent cannot understate what it spent.
+- Four decimal places. Every review measured so far cost a fraction of a cent, which cents would print as `$0.00`.
+
+Done when: a pull request on `kkestell/coral` carries a review whose last line names what it cost, matching the total in the review step's log.
+
 ## Not On This Roadmap
 
 Named so nobody has to guess. Everything under "Out Of Scope" in `.agents/docs/functional-requirements.md` also applies.

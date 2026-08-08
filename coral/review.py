@@ -286,7 +286,9 @@ def review() -> None:
             review = confirmed(review, verification)
 
         log.info("The review spent $%.6f of its $%.6f cap.", ledger.spent, ledger.cap)
-        write_payloads(runner.payloads_path(), payloads(head, review, added))
+        # The ledger is final here: both agent runs are over, and nothing the publishing job does
+        # costs anything. What the body reports and what the line above logs are the same number.
+        write_payloads(runner.payloads_path(), payloads(head, review, added, ledger.spent))
     except Exception as error:
         log.exception("The review failed; the publishing job will report it.")
         runner.reason_path().write_text(described(error))
