@@ -226,7 +226,7 @@ def test_each_main_push_finding_becomes_one_issue_with_the_commit_and_cost() -> 
     review = review_of(finding_at(line(7)), finding_at(FileAnchor(kind="file", path="a.py")))
     issues = issue_payloads(COMMIT, review, SPENT).issues
     assert len(issues) == 2
-    assert issues[0].title == "[Coral] Medium finding: `a.py`, line 7"
+    assert issues[0].title == "[Coral] Medium: The parser drops the last token."
     assert marker(COMMIT) in issues[0].body
     assert f"main commit `{COMMIT}`" in issues[0].body
     assert "The parser drops the last token." in issues[0].body
@@ -237,17 +237,23 @@ def test_an_empty_main_push_review_creates_no_issue() -> None:
     assert issue_payloads(COMMIT, review_of(), SPENT).issues == []
 
 
-def test_a_whole_change_issue_does_not_name_a_pull_request() -> None:
+def test_an_issue_title_names_the_defect_not_its_location() -> None:
     issue = issue_payloads(
         COMMIT, review_of(finding_at(PullRequestAnchor(kind="pull_request"))), SPENT
     ).issues[0]
-    assert "the change as a whole" in issue.title
+    assert issue.title == "[Coral] Medium: The parser drops the last token."
+    assert "the change as a whole" in issue.body
     assert "the pull request" not in issue.body
 
 
+def test_an_issue_title_stays_on_one_line() -> None:
+    finding = finding_at(FileAnchor(kind="file", path="a.py"), "The first line.\n\nThe detail.")
+    assert issue_title(finding) == "[Coral] Medium: The first line."
+
+
 def test_an_issue_title_stays_within_githubs_limit() -> None:
-    long_path = "a" * 300
-    assert len(issue_title(finding_at(FileAnchor(kind="file", path=long_path)))) == 256
+    long_finding = finding_at(FileAnchor(kind="file", path="a.py"), "a" * 300)
+    assert len(issue_title(long_finding)) == 256
 
 
 def test_main_push_issue_payloads_round_trip_through_a_file(tmp_path: Path) -> None:

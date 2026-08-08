@@ -206,8 +206,10 @@ class IssuePayloads:
 
 
 def issue_title(finding: Finding) -> str:
-    """A GitHub issue title naming the finding's severity and location."""
-    return f"[Coral] {finding.severity.capitalize()} finding: {issue_where(finding)}"[:256]
+    """A GitHub issue title naming the finding rather than only its location."""
+    summary, end, _ = " ".join(finding.body.split()).partition(". ")
+    summary += end.rstrip()
+    return f"[Coral] {finding.severity.capitalize()}: {summary}"[:256]
 
 
 def issue_where(finding: Finding) -> str:

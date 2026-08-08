@@ -70,8 +70,10 @@ discarded when the run ends.
 
 ## The Review You Return
 
-When the investigation is done, and not before, return the structured review. Each finding names
-the place it concerns, in the words of the author of the change rather than about them.
+When the investigation is done, and not before, return the structured review. Begin each finding
+with one short sentence that names the defect. Coral uses that sentence as the title of an issue
+from a main-branch review. Each finding names the place it concerns, in the words of the author of
+the change rather than about them.
 
 The summary stands alone. It says what the change does and how it looks overall, and it never
 enumerates the findings or refers to them by count — findings are checked after you write it, and
