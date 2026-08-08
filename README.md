@@ -6,7 +6,7 @@ Coral is a proof of concept and is early.
 
 ## Adding Coral to your repository
 
-**1. Add the workflow.** Copy [`examples/coral.yml`](examples/coral.yml) to `.github/workflows/coral.yml` on your **default branch**. GitHub reads the file from there when a comment triggers a run, so a copy that lives only on a feature branch never runs.
+**1. Add the workflow.** Copy [`examples/coral.yml`](examples/coral.yml) to `.github/workflows/coral.yml` on your **default branch**. GitHub reads the file from there when a comment triggers a run, so a copy that lives only on a feature branch never runs. The `@v0.1.0` on the `uses:` line is what pins the Coral you installed; bump it to take a newer one.
 
 ```yaml
 name: Coral
@@ -29,7 +29,7 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
-    uses: kkestell/coral/.github/workflows/coral.yml@main
+    uses: kkestell/coral/.github/workflows/coral.yml@v0.1.0
     secrets:
       openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
       # openrouter_management_key: ${{ secrets.OPENROUTER_MANAGEMENT_KEY }}
@@ -49,7 +49,7 @@ Prefer the management key if your account balance would hurt to lose. The workfl
 Coral is configured in that workflow file and nowhere else, so a pull request cannot change how it is reviewed. Add a `with:` block to the job to change any of these; leave it out and you get the defaults.
 
 ```yaml
-    uses: kkestell/coral/.github/workflows/coral.yml@main
+    uses: kkestell/coral/.github/workflows/coral.yml@v0.1.0
     with:
       model: openai/gpt-5.6-luna
       reasoning_effort: ""
@@ -74,8 +74,8 @@ The measures below limit the damage. None of them stop a determined attacker fro
 
 ### Mitigations
 
-- Never reviews a fork, and ignores `/coral` from anyone below collaborator. Every change it runs is code somebody with push access could have pushed anyway.
-- Runs the agent's shell in an unprivileged container: no added capabilities, no Docker socket.
+- Never reviews a fork, and ignores `/coral` from anyone without push access — read off your repository's collaborator permissions, so a read-only member of your organization cannot spend a review. Every change it runs is code somebody with push access could have pushed anyway.
+- Runs the agent's shell in an unprivileged container: no added capabilities, no Docker socket, and a cap on the memory, processors, and processes it can take of the runner.
 - Puts no credential in that container: no OpenRouter key, no GitHub token, none of the runner's variables. It gets a copy of the checkout and the toolcache read-only.
 - Limits the agent's job to `contents: read`. The write scopes live in the jobs that post, which never run agent code.
 - Never pushes, approves, or requests changes. A bad review costs a comment, not a merge.

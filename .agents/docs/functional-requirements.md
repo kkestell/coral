@@ -4,13 +4,13 @@ What Coral does, as behavior someone could watch happen. These requirements are 
 
 ## Trigger
 
-- Coral reviews a pull request when it is opened and when a draft is marked ready for review, in any repository where Coral is installed. Nobody has to ask for that first review.
+- Coral reviews a pull request when it is opened and when a draft is marked ready for review. Nobody has to ask for that first review.
 - A draft gets no automatic review — it is not finished being written. A bot-opened pull request gets no automatic review — dependency bots open more pull requests than people do. Both can still be reviewed on request.
-- Coral reviews only pull requests whose head branch lives in the same repository as the base. Coral checks rather than assumes — a fork's branch is code nobody with write access vouched for.
+- Coral reviews only pull requests whose head branch lives in the same repository as the base — a fork's branch is code nobody with write access vouched for.
 - After the automatic review, Coral reviews again only when someone asks. A bot that reviews every push teaches people to ignore it.
 - Asking is a comment containing `/coral`, on the pull request as a whole or in a reply on the diff; it means the same thing in both places. The body of a submitted review is not a place to ask — GitHub offers no way to react to a review, so no way to acknowledge.
 - The command counts only when `/coral` stands alone on its own line, lowercase, matched exactly. Quoting (including GitHub's quote-reply), mid-sentence mention, and code fences are all inert. Otherwise every conversation about Coral starts a review.
-- Coral never reads its own comments as a request — its findings arrive as the same kind of comment a person asks with, and a bot that can trigger itself will.
+- Coral never reads its own comments as a request; a bot that can trigger itself will.
 - Only someone with write access can ask. A review costs a full agent run; a stranger should not be able to spend one.
 - Coral acknowledges a request it will act on with the `eyes` reaction on the comment, when the request is accepted rather than when the review posts — until then the asker has no sign Coral heard. When several requests produce one review between them, each gets its own reaction. A request declined for lack of write access gets no reaction and no review; that a stranger cannot tell refusal from outage is accepted, because answering would let a stranger make Coral speak.
 - Coral reviews the head commit as it is at the start of the run, rather than the one the triggering event named.
@@ -57,9 +57,10 @@ Coral decides which of these to use, in what order, how many times.
 - Each automatic review happens once; a request is honored once. Asking again gets another review even when nothing changed — a person who asks again means it.
 - Two reviews of one pull request never run at once. A request arriving mid-review is neither dropped nor run immediately; it is honored after the running review posts. Several such requests cost one further review between them, each still acknowledged.
 - A closed or merged pull request is not reviewed, checked at the start and again before posting. A merge landing in the last seconds still wins the race; accepted.
+- A review whose commit is no longer the head is not posted; Coral says the branch moved, because nothing re-triggers it afterwards.
 - A review that dies partway does not block later reviews.
-- A review that does not finish is discarded: Coral says it ran out of time and posts nothing else, because a partial review is indistinguishable from a complete one. Distinct from an unanchorable finding, which survives into a completed review.
-- A review that spends past its cap is stopped the same way, saying what it spent against the cap.
+- A review that does not finish is discarded: Coral says it ran out of time and posts nothing else, because a partial review is indistinguishable from a complete one.
+- A review that spends past its cap is stopped the same way, saying what it spent against the cap. So is one whose spending Coral cannot measure: a response reporting no cost leaves the cap unenforceable.
 - A change too large is not reviewed: Coral says it exceeds what it will read and posts nothing else. A backstop, not an expected case.
 
 ## Out Of Scope

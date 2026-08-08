@@ -73,3 +73,12 @@ def test_a_ledger_one_response_short_of_its_cap_is_not() -> None:
     ledger = Ledger(cap=0.5)
     ledger.add(0.4)
     assert not ledger.exceeded()
+
+
+def test_a_response_with_no_cost_is_counted_apart_from_the_total() -> None:
+    # A separate count rather than a guessed amount: what stops the run is that the cap cannot be
+    # measured against, and `coral/agent.py` is where that is decided.
+    ledger = Ledger(cap=1.0)
+    ledger.unpriced += 1
+    assert ledger.spent == 0.0
+    assert not ledger.exceeded()

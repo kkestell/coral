@@ -21,6 +21,10 @@ class Ledger:
 
     cap: float
     spent: float = 0.0
+    # Responses OpenRouter reported no cost for. Counted rather than treated as free: a review
+    # whose spending Coral cannot measure is one the cap does not hold, and in pass-through mode
+    # no provider-side limit holds it either.
+    unpriced: int = 0
 
     def add(self, cost: float) -> None:
         """Count what one response cost."""

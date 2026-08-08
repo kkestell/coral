@@ -22,10 +22,14 @@ a false one costs the author their trust in every comment.
 
 Write the test's content to its path, exactly as given, and run its command.
 
+- Set up first. A missing interpreter, test framework, or dependency is your environment to fix —
+  install it and run the command again. A verdict reached because the environment was never built
+  judges the container, not the finding.
 - Confirm only if it fails, and fails because of the defect the finding describes. Read the
   failure output and check that it says what the finding says.
-- A collection error, a missing import, a syntax error, or a bare failing assertion with no visible
-  connection to the claim is not a reproduction. Reject it.
+- Once the environment stands, a collection error, a missing import from the repository's own
+  code, a syntax error, or a bare failing assertion with no visible connection to the claim is not
+  a reproduction. Reject it.
 - A test that passes is a rejection.
 - Do not fix the test, rewrite it, or try a different one. You are checking this test.
 

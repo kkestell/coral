@@ -11,6 +11,10 @@ from typing import Final
 # `ubuntu:24.04`'s own `PATH`, which is where everything `apt-get` installs lands.
 IMAGE_PATH: Final = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
+# Where the toolcache sits inside the container, whatever host directory it came from. The path
+# the prompt names, and the prefix the cached interpreters were built against.
+TOOLCACHE: Final = "/opt/hostedtoolcache"
+
 # `CI` is the one extra variable a real test suite reads. `HOME` because the toolchains write
 # caches under it, and `LANG` because a C locale makes some test output unreadable.
 FIXED: Final = {"CI": "true", "HOME": "/root", "LANG": "C.UTF-8"}
@@ -41,9 +45,17 @@ def toolchain_path(toolcache: Path) -> str:
     Only the newest of each, so a `go` or a `node` on `PATH` is one version rather than an
     accident of ordering. Every other cached version is still reachable by absolute path under the
     toolcache, which a repository pinned to an older toolchain needs and the prompt says so.
+
+    The entries name paths under `TOOLCACHE`, where the container mounts the directory being read
+    here — the same path on a runner, and not in a rehearsal.
     """
     found = [newest(tool) for tool in sorted(toolcache.iterdir()) if tool.is_dir()]
-    return ":".join([*(str(binaries) for binaries in found if binaries is not None), IMAGE_PATH])
+    rebased = (
+        Path(TOOLCACHE, *binaries.relative_to(toolcache).parts)
+        for binaries in found
+        if binaries is not None
+    )
+    return ":".join([*(str(binaries) for binaries in rebased), IMAGE_PATH])
 
 
 def shell_environment(toolcache: Path) -> dict[str, str]:

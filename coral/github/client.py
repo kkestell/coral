@@ -1,5 +1,6 @@
 """The one authenticated transport. Every call Coral makes to GitHub goes through here."""
 
+import json
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -8,6 +9,13 @@ import httpx
 BASE_URL: Final = "https://api.github.com"
 API_VERSION: Final = "2022-11-28"
 TIMEOUT: Final = 30.0
+
+# What one answer may weigh before Coral gives up on it, read off the stream so an answer past it
+# is never held whole. GitHub takes 65,536 characters in a comment and the conversation query asks
+# for thousands of comments at once, so a pull request somebody filled with enormous comments can
+# answer with more than the runner has memory for. Two orders of magnitude above every answer
+# measured, `cli/cli` 10513 included.
+MAX_RESPONSE_BYTES: Final = 16 * 1024 * 1024
 
 
 class ApiError(RuntimeError):
@@ -35,6 +43,25 @@ def data_of(answer: dict[str, Any]) -> Any:
     return answer["data"]
 
 
+def body_of(response: httpx.Response, method: str, path: str) -> bytes:
+    """One answer's bytes, refusing an answer larger than Coral will hold.
+
+    The refusal has to happen while the answer is still arriving. Reading it and then measuring it
+    is the memory this exists to not spend.
+    """
+    chunks: list[bytes] = []
+    weight = 0
+    for chunk in response.iter_bytes():
+        weight += len(chunk)
+        if weight > MAX_RESPONSE_BYTES:
+            raise RuntimeError(
+                f"{method} {path} answered with more than {MAX_RESPONSE_BYTES} bytes, which is "
+                "more than Coral will read of one answer."
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 @dataclass(frozen=True)
 class GitHub:
     """The GitHub API, holding the job's token."""
@@ -51,7 +78,7 @@ class GitHub:
         return data_of(self._request("POST", "/graphql", {"query": query, "variables": variables}))
 
     def _request(self, method: str, path: str, body: dict[str, Any] | None) -> Any:
-        response = httpx.request(
+        with httpx.stream(
             method,
             f"{BASE_URL}{path}",
             json=body,
@@ -61,9 +88,10 @@ class GitHub:
                 "X-GitHub-Api-Version": API_VERSION,
                 "Authorization": f"Bearer {self.token}",
             },
-        )
+        ) as response:
+            answer = body_of(response, method, path)
         # Not `raise_for_status()`, which drops the body. The body is the whole of what a 422 from
         # the create-review endpoint has to say, and it is what a failure comment reports.
         if response.is_success:
-            return response.json()
-        raise ApiError(method, path, response.status_code, response.text)
+            return json.loads(answer)
+        raise ApiError(method, path, response.status_code, answer.decode(errors="replace"))

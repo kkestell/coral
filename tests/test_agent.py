@@ -103,12 +103,12 @@ def test_a_responses_cost_reaches_the_ledger() -> None:
     assert ledger.spent == 2.015e-05
 
 
-def test_a_response_carrying_no_cost_leaves_the_total_alone() -> None:
-    # Counted as zero rather than refused: every OpenRouter completion measured carries a cost, and
-    # a model that stops carrying one should not end a review. The minted key's cap still holds.
+def test_a_response_carrying_no_cost_is_counted_rather_than_treated_as_free() -> None:
+    # There is no amount to add, so what the ledger records is that it could not price this one.
     ledger = Ledger(cap=CAP)
     SpendHandler(ledger, "openai/gpt-5.6-luna").on_llm_end(answered({}), run_id=None)
     assert ledger.spent == 0.0
+    assert ledger.unpriced == 1
 
 
 def test_a_ledger_under_its_cap_lets_the_model_be_called() -> None:
@@ -124,6 +124,14 @@ def test_a_ledger_at_its_cap_stops_the_run_and_says_what_it_spent() -> None:
         middleware.before_model(state={}, runtime=None)  # type: ignore[arg-type]
     assert "$0.000512" in str(raised.value)
     assert "$0.000500" in str(raised.value)
+
+
+def test_a_run_coral_cannot_price_is_stopped_however_little_it_has_counted() -> None:
+    # A cap Coral cannot measure against is not a cap, and a passed-through key has no
+    # provider-side limit behind it.
+    middleware = SpendMiddleware(Ledger(cap=CAP, spent=0.0, unpriced=1))
+    with pytest.raises(RuntimeError, match="carried no cost"):
+        middleware.before_model(state={}, runtime=None)  # type: ignore[arg-type]
 
 
 def test_a_failing_tool_answers_with_its_error() -> None:

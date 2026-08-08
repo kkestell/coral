@@ -70,8 +70,9 @@ jobs:
       pull-requests: write
     # Coarse by necessity: Actions expressions have no regular expressions and no way to work
     # line by line, so whether `/coral` really stands alone on its own line is decided in the
-    # resolve step. What this does is keep runners from being allocated for a delivery that is
-    # certainly not a trigger.
+    # resolve step, and so is whether its author may ask — `author_association` names people
+    # with read-only access as `MEMBER` and `COLLABORATOR`. What this does is keep runners from
+    # being allocated for a delivery that is certainly not a trigger.
     # Every line of this expression sits at one indentation. A line indented deeper than the
     # first is "more indented" in a YAML folded scalar, which keeps its line break instead of
     # folding it to a space.

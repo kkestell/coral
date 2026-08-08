@@ -6,25 +6,34 @@ pin is the arguments Coral builds — the mounts, the absences, the ceiling — 
 command's output, which is the whole of what the model reads back.
 """
 
+import io
 from pathlib import Path
 
 from coral.container import (
     CHECKOUT,
+    CPUS,
     IMAGE,
+    MEMORY,
     OUTPUT_CAP_BYTES,
-    TOOLCACHE,
+    PIDS,
+    Stream,
+    drained,
     exec_arguments,
     run_arguments,
     shaped,
     timed_out,
 )
+from coral.environment import TOOLCACHE
 
 COPY = Path("/tmp/coral/coral-reviewer")
+
+# The runner's own toolcache, which is also the default mount source.
+SOURCE = Path(TOOLCACHE)
 
 
 def test_the_container_comes_up_detached_with_a_reaping_init() -> None:
     # `--init` because test runners orphan children and `sleep` reaps nothing.
-    arguments = run_arguments("coral-reviewer", COPY, {})
+    arguments = run_arguments("coral-reviewer", COPY, {}, SOURCE)
     assert arguments[0] == "run"
     assert "--detach" in arguments
     assert "--init" in arguments
@@ -34,28 +43,51 @@ def test_the_container_comes_up_detached_with_a_reaping_init() -> None:
 def test_the_image_is_pinned_by_digest() -> None:
     # A tag moves under whoever reads it; the same reasoning as the workflow's SHA-pinned actions.
     assert IMAGE.startswith("ubuntu@sha256:")
-    assert run_arguments("coral-reviewer", COPY, {}).count(IMAGE) == 1
+    assert run_arguments("coral-reviewer", COPY, {}, SOURCE).count(IMAGE) == 1
 
 
 def test_the_copy_is_mounted_writable_and_the_toolcache_is_not() -> None:
-    arguments = run_arguments("coral-reviewer", COPY, {})
+    arguments = run_arguments("coral-reviewer", COPY, {}, SOURCE)
     assert f"{COPY}:{CHECKOUT}" in arguments
     assert f"{TOOLCACHE}:{TOOLCACHE}:ro" in arguments
+
+
+def test_any_toolcache_source_is_mounted_at_the_container_path() -> None:
+    # What lets a rehearsal mount its own seeded toolcache where the prompt and the cached
+    # interpreters' built-in prefixes expect one.
+    arguments = run_arguments("coral-reviewer", COPY, {}, Path("/home/dev/.cache/coral/toolcache"))
+    assert f"/home/dev/.cache/coral/toolcache:{TOOLCACHE}:ro" in arguments
 
 
 def test_the_container_gets_no_route_back_to_the_host() -> None:
     # Every one of these is host root or a hole in the namespace boundary the item exists to
     # build. Their absence is the whole point of the run arguments.
-    joined = " ".join(run_arguments("coral-reviewer", COPY, {"PATH": "/usr/bin"}))
-    assert "--privileged" not in joined
-    assert "--cap-add" not in joined
-    assert "docker.sock" not in joined
-    assert "--pid" not in joined
-    assert "--network" not in joined
+    arguments = run_arguments("coral-reviewer", COPY, {"PATH": "/usr/bin"}, SOURCE)
+    assert "--privileged" not in arguments
+    assert "--cap-add" not in arguments
+    assert "--pid" not in arguments
+    assert "--network" not in arguments
+    assert "docker.sock" not in " ".join(arguments)
+
+
+def test_the_container_is_bounded_in_memory_processors_and_processes() -> None:
+    # A command the model wrote can otherwise take the whole runner, and the command ceiling does
+    # not help: the damage is done well inside it.
+    arguments = run_arguments("coral-reviewer", COPY, {}, SOURCE)
+    assert arguments[arguments.index("--memory") + 1] == MEMORY
+    assert arguments[arguments.index("--cpus") + 1] == CPUS
+    assert arguments[arguments.index("--pids-limit") + 1] == PIDS
+
+
+def test_swap_does_not_hand_back_what_the_memory_limit_took() -> None:
+    # The daemon otherwise allows twice the memory limit in swap, and a swapping container is one
+    # that took the runner's disk instead of its memory.
+    arguments = run_arguments("coral-reviewer", COPY, {}, SOURCE)
+    assert arguments[arguments.index("--memory-swap") + 1] == MEMORY
 
 
 def test_the_environment_is_baked_in_name_by_name() -> None:
-    arguments = run_arguments("coral-reviewer", COPY, {"CI": "true", "HOME": "/root"})
+    arguments = run_arguments("coral-reviewer", COPY, {"CI": "true", "HOME": "/root"}, SOURCE)
     assert arguments.count("--env") == 2
     assert "CI=true" in arguments
     assert "HOME=/root" in arguments
@@ -130,3 +162,27 @@ def test_a_timeout_reads_as_one_and_reports_124() -> None:
     result = timed_out(300)
     assert result.exit_code == 124
     assert "timed out after 300 seconds" in result.output
+
+
+def test_a_stream_under_the_limit_arrives_whole() -> None:
+    assert drained(io.StringIO("hello\n"), 100) == Stream(text="hello\n", dropped=False)
+
+
+def test_a_stream_past_the_limit_keeps_the_front_and_says_it_dropped_the_rest() -> None:
+    # The reader keeps `limit` characters however much the command writes, which is what stops a
+    # `yes` in the container from costing the runner its memory.
+    kept = drained(io.StringIO("x" * 500_000), 1_000)
+    assert kept.text == "x" * 1_000
+    assert kept.dropped is True
+
+
+def test_a_stream_exactly_at_the_limit_dropped_nothing() -> None:
+    assert drained(io.StringIO("x" * 1_000), 1_000).dropped is False
+
+
+def test_output_the_reader_already_dropped_still_says_it_was_cut() -> None:
+    # The shaping sees only what was kept, so whether anything was thrown away has to travel with
+    # it. Without this a command that wrote a gigabyte reads as one that wrote a hundred kilobytes.
+    result = shaped("x" * 10, "", 0, dropped=True)
+    assert result.truncated
+    assert "truncated" in result.output

@@ -16,14 +16,14 @@ from typing import Any, Literal
 class Comment:
     """The comment that triggered this run, and the namespace its reaction endpoint lives in.
 
-    The body and the association come along because this comment is not always in the fetched
+    The body and the author come along because this comment is not always in the fetched
     conversation, and the payload is the only place they can be read without another call.
     """
 
     id: int
     namespace: Literal["issues", "pulls"]
     body: str
-    association: str
+    author: str
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,7 @@ def commented(payload: dict[str, Any], namespace: Literal["issues", "pulls"]) ->
         id=comment["id"],
         namespace=namespace,
         body=comment["body"],
-        association=comment["author_association"],
+        author=comment["user"]["login"],
     )
 
 

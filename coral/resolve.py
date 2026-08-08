@@ -14,7 +14,7 @@ from functools import partial
 from typing import Any, Final
 
 from coral import runner
-from coral.command import is_request
+from coral.command import Access, is_request
 from coral.deadline import job_timeout_minutes
 from coral.github.client import GitHub
 from coral.github.conversation import Conversation, bound, fetch_conversation, write_conversation
@@ -104,7 +104,7 @@ def reported[T](work: Callable[[], T]) -> T:
         raise
 
 
-def acknowledgments(event: Event, conversation: Conversation) -> list[Request]:
+def acknowledgments(event: Event, conversation: Conversation, access: Access) -> list[Request]:
     """Every request waiting on this run: the conversation's, and the one on the payload.
 
     The triggering comment is read off the payload rather than out of the conversation. It is
@@ -113,14 +113,16 @@ def acknowledgments(event: Event, conversation: Conversation) -> list[Request]:
     a busy pull request can be one the fetch did not offer. It is dropped from the conversation's
     list when the conversation produced it as well.
     """
-    requests = requests_in(conversation)
-    if event.comment is None or not is_request(event.comment.body, event.comment.association):
+    requests = requests_in(conversation, access)
+    if event.comment is None or not is_request(event.comment.body, event.comment.author, access):
         return requests
     triggering = Request(id=event.comment.id, namespace=event.comment.namespace)
     return [triggering, *(request for request in requests if request != triggering)]
 
 
-def declined(event: Event, subject: Subject, conversation: Conversation) -> Decline | None:
+def declined(
+    event: Event, subject: Subject, conversation: Conversation, access: Access
+) -> Decline | None:
     """The reason this run stops, or `None` when there is a review to do.
 
     The order is what decides which reason a person is given when more than one applies. A
@@ -129,7 +131,9 @@ def declined(event: Event, subject: Subject, conversation: Conversation) -> Decl
     """
     # Comment paths only. There was no request, so there was nothing to acknowledge either, and
     # the reaction pass skipped this comment for the same reason.
-    if event.comment is not None and not is_request(event.comment.body, event.comment.association):
+    if event.comment is not None and not is_request(
+        event.comment.body, event.comment.author, access
+    ):
         return Decline(reason="the comment does not ask for a review", comment=None)
 
     # A review that lands after the merge is advice nobody can act on.
@@ -166,18 +170,9 @@ def declined(event: Event, subject: Subject, conversation: Conversation) -> Decl
 
 def resolve() -> None:
     """Pin the commits Coral will review, or stop the run."""
-    # Checked before the fetch, so a misconfigured install is loud on every triggered run rather
-    # than only on the ones that reach a review. The plain key's value never comes here; the
-    # review job reads that secret itself, and all resolve is told is whether it exists.
-    management = reported(
-        lambda: management_key(
-            os.environ["OPENROUTER_MANAGEMENT_KEY"],
-            os.environ["OPENROUTER_API_KEY_PRESENT"] == "true",
-        )
-    )
-
-    # Beside the key-mode check for the same reason, and here rather than in the review job because
-    # this is where the number the review job's `timeout-minutes` reads is derived from it.
+    # Checked before the fetch, so a budget the caller got wrong is loud on every triggered run
+    # rather than only on the ones that reach a review, and here rather than in the review job
+    # because this is where the number the review job's `timeout-minutes` reads is derived from it.
     timeout = reported(lambda: job_timeout_minutes(os.environ["CORAL_TIME_BUDGET_MINUTES"]))
     log.info(
         "A budget of %s minutes, so the review job gets a timeout of %d.",
@@ -192,6 +187,7 @@ def resolve() -> None:
 
     event = runner.event()
     github = GitHub(token=os.environ["GITHUB_TOKEN"])
+    access = Access(github=github, owner=event.owner, repo=event.repo)
     pull_request = github.get(f"/repos/{event.owner}/{event.repo}/pulls/{event.number}")
 
     # Verbatim, because the review step reads the head SHA, the base SHA, the number, and the
@@ -215,12 +211,12 @@ def resolve() -> None:
     # conversation is owed one. It comes before every gate because somebody whose request Coral
     # is about to decline still deserves to be told it was heard, and a comment-triggered run
     # gives them no other sign.
-    requests = acknowledgments(event, conversation)
+    requests = acknowledgments(event, conversation, access)
     log.info("Acknowledging %d requests.", len(requests))
     react(github, event.owner, event.repo, requests)
 
     subject = subject_of(pull_request)
-    decline = declined(event, subject, conversation)
+    decline = declined(event, subject, conversation, access)
     if decline is not None:
         log.info("Not reviewing pull request %d: %s.", event.number, decline.reason)
         if decline.comment is not None:
@@ -234,6 +230,18 @@ def resolve() -> None:
             )
         runner.write_output("proceed", "false")
         return
+
+    # After the gates rather than before the fetch, because a fork's pull request arrives with no
+    # secrets at all: GitHub withholds every secret but `GITHUB_TOKEN` from a fork-triggered run,
+    # so checking here would refuse a run Coral was going to decline anyway, and refuse it with a
+    # comment the fork's read-only token cannot post. The plain key's value never comes here; the
+    # review job reads that secret itself, and all resolve is told is whether it exists.
+    management = reported(
+        lambda: management_key(
+            os.environ["OPENROUTER_MANAGEMENT_KEY"],
+            os.environ["OPENROUTER_API_KEY_PRESENT"] == "true",
+        )
+    )
 
     # After the gates, so a declined run mints nothing, and before the outputs, so a mint that
     # fails leaves no `proceed=true` behind it. The key is named for the run, which is what ties

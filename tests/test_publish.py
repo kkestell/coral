@@ -14,9 +14,22 @@ from typing import Any
 import pytest
 
 from coral import runner
-from coral.publish import REASON_LIMIT, described, failure_comment, owed
+from coral.command import Access
+from coral.github.client import GitHub
+from coral.publish import REASON_LIMIT, described, failure_comment, moved_comment, owed
 
 RUN_URL = "https://github.com/kkestell/coral-test/actions/runs/17"
+COMMIT = "9f3a1c2b4d5e6f708192a3b4c5d6e7f809a1b2c3"
+
+
+def access(permission: str) -> Access:
+    """An `Access` over a GitHub answering the permission endpoint with one verdict."""
+
+    class Answering(GitHub):
+        def get(self, path: str) -> Any:
+            return {"permission": permission}
+
+    return Access(github=Answering(token="not a real token"), owner="kkestell", repo="coral-test")
 
 
 def deliver(
@@ -37,7 +50,7 @@ def commented(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, body: str) -> Non
         "issue_comment",
         {
             "issue": {"number": 7},
-            "comment": {"id": 42, "body": body, "author_association": "OWNER"},
+            "comment": {"id": 42, "body": body, "user": {"login": "kestell"}},
         },
     )
 
@@ -78,18 +91,33 @@ def test_nothing_is_owed_for_a_comment_that_only_mentions_the_command(
     # The job-level condition let this delivery allocate a runner. It asked for nothing, so a run
     # that fails on it owes nobody a comment.
     commented(monkeypatch, tmp_path, "You can ask for another look with /coral.")
-    assert owed(runner.event()) is False
+    assert owed(runner.event(), access("admin")) is False
 
 
 def test_a_request_that_failed_is_owed_a_comment(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     commented(monkeypatch, tmp_path, "/coral")
-    assert owed(runner.event()) is True
+    assert owed(runner.event(), access("admin")) is True
+
+
+def test_a_request_from_somebody_without_write_access_is_owed_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A stranger cannot make Coral speak, on the failure path either.
+    commented(monkeypatch, tmp_path, "/coral")
+    assert owed(runner.event(), access("read")) is False
 
 
 def test_a_pull_request_delivery_that_failed_is_owed_a_comment(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     deliver(monkeypatch, tmp_path, "pull_request", {"pull_request": {"number": 7}})
-    assert owed(runner.event()) is True
+    assert owed(runner.event(), access("admin")) is True
+
+
+def test_a_branch_that_moved_under_the_review_gets_the_reason_and_a_way_back() -> None:
+    # Nothing re-triggers Coral after a push, so this comment is the only sign the asker gets.
+    comment = moved_comment(COMMIT)
+    assert COMMIT in comment
+    assert "/coral" in comment

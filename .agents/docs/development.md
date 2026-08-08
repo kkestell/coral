@@ -23,6 +23,12 @@ There is no build step. Coral is a console script over one package, and `uv sync
 - Format: `uv run ruff format`
 - Type-check: `uv run mypy`
 
+### Rehearsing A Review Locally
+
+`uv run coral rehearse <sha>` runs the review step over one commit of a local clone with no pull request and no GitHub call: it stages what the resolve job would have left — the clone, a stub pull request, an empty conversation — runs both agents, and prints the review body and every inline comment. This is how a change to `coral/prompts/review.md` is judged. `--base`, `--repo`, `--model`, `--effort`, `--budget`, and `--cap` override what the run uses; each rehearsal leaves its files under `.rehearsals/<sha>`, which is gitignored.
+
+The only prerequisites are Docker up and the OpenRouter key in `.env`. The one divergence from a real run: the runner's toolcache is preloaded with interpreters and a rehearsal's is empty, so the agent spends a minute of its budget on `apt-get` before it can run a test. The prompt already tells it to.
+
 ### Driving A Live Check
 
 What to type to set a live check up and follow it. Which checks to run is in `.agents/docs/testing.md`.
@@ -63,6 +69,6 @@ Both are deliberately kept out of the agent's environment. `coral review` delete
 - Add and upgrade dependencies with `uv add`, so the resolver writes the version. A version typed into `pyproject.toml` by hand is a version nothing resolved.
 - The composite actions run the console script by absolute path, out of a virtual environment under `RUNNER_TEMP`, and nothing activates it or puts it on `PATH`. A step that ran `coral` bare rather than as `"$CORAL_BIN/coral"` would have to change that, and "The Run" in `.agents/docs/architecture.md` says what it would cost.
 - The unit tests need no Docker: `coral/container.py`'s argument builders and output shaping are pure functions, and nothing under `tests/` runs a container. A real run does, and so does rehearsing that module by hand from a Python prompt.
-- Running the agent from a developer machine needs Docker up and `/opt/hostedtoolcache` to exist — `sudo mkdir -p /opt/hostedtoolcache` once. `coral/container.py` mounts it and `coral/environment.py` lists it, and empty is fine: the container gets the image's own `PATH` plus whatever `apt-get` installs.
+- Nothing local touches `/opt/hostedtoolcache`: a rehearsal mounts an empty directory at that container path by setting `CORAL_TOOLCACHE`, which only `coral rehearse` sets and only `coral/container.py` reads.
 - Coral is installed on this repository by `.github/workflows/review.yml`, which calls the workflow beside it rather than a pinned reference. A pull request is reviewed by the Coral it changes; a `/coral` comment is reviewed by the default branch's, because GitHub reads the caller from there on the comment paths.
 - `ruff format` reformats Python inside Markdown fences, which would rewrite the example code in the documents under `.agents/docs/`. `extend-exclude` in `pyproject.toml` keeps it away from Markdown; leave that setting in place.
