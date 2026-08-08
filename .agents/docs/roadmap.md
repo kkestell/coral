@@ -222,6 +222,19 @@ Before publishing a confirmed main-push finding, the verification agent compares
 
 Done when: a repeated finding with changed wording matches its existing open issue, maintainer-created issues are eligible matches, unrelated issues do not suppress findings, the search and candidate reads stay bounded, and a real run proves the duplicate is not published.
 
+## 22. Readable agent progress
+
+Status: not started
+Depends on: 21
+
+The review stream names each agent tool call and its arguments in the tool's public vocabulary.
+It suppresses model-provider HTTP diagnostics and DeepAgents implementation names, so a person can
+follow the reviewer's work.
+
+Done when: a real review's review-job stream identifies each tool and its useful arguments,
+contains no `sync_` implementation name or HTTP request diagnostic, and still posts its normal
+review.
+
 ## Not On This Roadmap
 
 Named so nobody has to guess. Everything under "Out Of Scope" in `.agents/docs/functional-requirements.md` also applies.

@@ -10,8 +10,14 @@ from coral.resolve import resolve
 from coral.review import review
 
 
-def main() -> int:
+def configure_logging() -> None:
+    """Send Coral progress to stderr without HTTP request diagnostics."""
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+def main() -> int:
+    configure_logging()
 
     parser = argparse.ArgumentParser(prog="coral", description="Review a pull request.")
     subcommands = parser.add_subparsers(required=True)

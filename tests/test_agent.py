@@ -23,9 +23,11 @@ from coral.agent import (
     DeadlineMiddleware,
     SpendHandler,
     SpendMiddleware,
+    ToolProgressHandler,
     _run,
     caught,
     forgiving,
+    format_tool_arguments,
     profile_of,
     review_prompt,
     verify_prompt,
@@ -140,21 +142,82 @@ def test_a_run_coral_cannot_price_is_stopped_however_little_it_has_counted() -> 
         middleware.before_model(state={}, runtime=None)  # type: ignore[arg-type]
 
 
-def test_a_failing_tool_answers_with_its_error() -> None:
+def test_a_failing_tool_answers_with_its_error(caplog: pytest.LogCaptureFixture) -> None:
     # A bad path is the model's to correct on its next step, not a reason to end a review with
     # most of its budget unspent. Observed on a real run, where the first `read_file` call used
     # `..` and the `ValueError` propagated out of `invoke`.
     def refuse(path: str) -> str:
         raise ValueError("Path traversal not allowed")
 
-    assert caught(refuse)("../etc/passwd") == "ValueError: Path traversal not allowed"
+    with caplog.at_level("INFO", logger="coral.agent"):
+        assert (
+            caught("read_file", refuse)("../etc/passwd") == "ValueError: Path traversal not allowed"
+        )
+    assert any(
+        message.startswith("read_file failed; handing the error back to the model")
+        for message in caplog.messages
+    )
+    assert not any("refuse" in message for message in caplog.messages)
 
 
 def test_a_wrapped_tool_keeps_the_signature_langchain_injects_against() -> None:
     def read(file_path: str, runtime: int, offset: int = 0) -> str:
         return file_path
 
-    assert list(signature(caught(read)).parameters) == ["file_path", "runtime", "offset"]
+    assert list(signature(caught("read_file", read)).parameters) == [
+        "file_path",
+        "runtime",
+        "offset",
+    ]
+
+
+def test_tool_progress_uses_the_public_name_and_model_arguments(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def read(file_path: str, offset: int, runtime: object | None = None) -> str:
+        """Read a file."""
+        return file_path
+
+    tool = StructuredTool.from_function(read, name="read_file")
+    with caplog.at_level("INFO", logger="coral.agent"):
+        assert (
+            tool.invoke(
+                {"file_path": "coral/agent.py", "offset": 0, "runtime": object()},
+                config={"callbacks": [ToolProgressHandler()]},
+            )
+            == "coral/agent.py"
+        )
+
+    assert "Calling read_file(file_path='coral/agent.py', offset=0)." in caplog.messages
+    assert any(message.startswith("read_file finished in ") for message in caplog.messages)
+    assert not any("runtime" in message or "sync_" in message for message in caplog.messages)
+
+
+def test_tool_progress_clears_a_failed_calls_timer(caplog: pytest.LogCaptureFixture) -> None:
+    def fail(file_path: str) -> str:
+        """Fail to read a file."""
+        raise RuntimeError("unavailable")
+
+    handler = ToolProgressHandler()
+    tool = StructuredTool.from_function(fail, name="read_file")
+    with caplog.at_level("INFO", logger="coral.agent"):
+        with pytest.raises(RuntimeError, match="unavailable"):
+            tool.invoke({"file_path": "coral/agent.py"}, config={"callbacks": [handler]})
+
+    assert handler.calls == {}
+    assert any(
+        message.startswith("read_file failed in ") and "unavailable" in message
+        for message in caplog.messages
+    )
+
+
+def test_tool_progress_bounds_and_escapes_long_arguments() -> None:
+    content = "first line\n" + "x" * 200
+    rendered = format_tool_arguments("write_file", {"content": content, "file_path": "scratch.py"})
+    assert rendered.startswith("file_path='scratch.py', content='first line\\n")
+    assert f"({len(content)} characters)" in rendered
+    assert content not in rendered
+    assert "\n" not in rendered
 
 
 def test_every_filesystem_tool_is_wrapped(tmp_path: Path) -> None:
@@ -190,7 +253,11 @@ def test_the_container_backend_is_still_offered_a_shell(tmp_path: Path) -> None:
 class Built:
     """Stands in for the agent: the run reaches `invoke` and gets an empty message list."""
 
+    def __init__(self) -> None:
+        self.config: dict[str, Any] = {}
+
     def with_config(self, config: dict[str, Any]) -> Built:
+        self.config = config
         return self
 
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
@@ -203,17 +270,18 @@ def run_against(
     effort: str = "",
     facts: ModelFacts = LUNA,
     extra_tools: list[Any] | None = None,
-) -> tuple[Any, dict[str, Any]]:
+) -> tuple[Any, dict[str, Any], dict[str, Any]]:
     """Run the reviewer with the agent's construction intercepted, and return what it was built of.
 
     The model client is real and the framework's factory is not, so everything `_run` decides is
     observable without a request being made.
     """
-    built: list[tuple[Any, dict[str, Any]]] = []
+    built: list[tuple[Any, dict[str, Any], Built]] = []
 
     def build(model: Any, **keywords: Any) -> Built:
-        built.append((model, keywords))
-        return Built()
+        agent = Built()
+        built.append((model, keywords, agent))
+        return agent
 
     monkeypatch.setattr(coral.agent, "create_deep_agent", build)
     _run(
@@ -230,7 +298,15 @@ def run_against(
         Review,
         extra_tools,
     )
-    return built[0]
+    return built[0][0], built[0][1], built[0][2].config
+
+
+def test_every_run_installs_one_progress_callback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    callbacks = run_against(tmp_path, monkeypatch)[2]["callbacks"]
+    assert sum(isinstance(callback, SpendHandler) for callback in callbacks) == 1
+    assert sum(isinstance(callback, ToolProgressHandler) for callback in callbacks) == 1
 
 
 def test_the_structured_output_strategy_is_named_rather_than_detected(

@@ -8,10 +8,11 @@ seconds of import off `coral resolve` and keeps the rest of the code testable wi
 import functools
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Final
+from uuid import UUID
 
 from deepagents import (
     FilesystemMiddleware,
@@ -66,6 +67,19 @@ SHELL_CEILING_SECONDS: Final = 300
 # fourteen minutes, past the ten minutes of headroom before the job's own timeout. One makes it
 # about eight and a half. No real run has fired a retry.
 MODEL_RETRIES: Final = 1
+ARGUMENT_PREVIEW_CHARACTERS: Final = 120
+TOOL_ARGUMENT_ORDER: Final = {
+    "ls": ("path",),
+    "read_file": ("file_path", "offset", "limit"),
+    "write_file": ("file_path", "content"),
+    "edit_file": ("file_path", "old_string", "new_string", "replace_all"),
+    "delete": ("file_path",),
+    "glob": ("pattern", "path"),
+    "grep": ("pattern", "path", "glob", "output_mode", "max_count"),
+    "execute": ("command", "timeout"),
+    "search_open_issues": ("finding", "terms"),
+    "view_issue": ("number",),
+}
 
 
 class ContainerBackend(LocalShellBackend):
@@ -142,6 +156,62 @@ class SpendHandler(BaseCallbackHandler):
                 self.ledger.add(float(metadata["cost"]))
 
 
+def _escaped_repr(value: object) -> str:
+    """Render one value without making a second log line."""
+    return repr(value).replace("\r", "\\r").replace("\n", "\\n")
+
+
+def format_tool_arguments(name: str, inputs: Mapping[str, Any]) -> str:
+    """Render the model-supplied arguments for one public tool call."""
+    allowed = {key: value for key, value in inputs.items() if key != "runtime"}
+    order = TOOL_ARGUMENT_ORDER.get(name, ())
+    keys = [key for key in order if key in allowed]
+    keys.extend(sorted(key for key in allowed if key not in order))
+    rendered = []
+    for key in keys:
+        value = allowed[key]
+        if isinstance(value, str) and len(value) > ARGUMENT_PREVIEW_CHARACTERS:
+            preview = _escaped_repr(value[:ARGUMENT_PREVIEW_CHARACTERS])
+            rendered.append(f"{key}={preview}... ({len(value)} characters)")
+        else:
+            rendered.append(f"{key}={_escaped_repr(value)}")
+    return ", ".join(rendered)
+
+
+class ToolProgressHandler(BaseCallbackHandler):
+    """Logs each agent tool call without logging its result."""
+
+    def __init__(self) -> None:
+        self.calls: dict[UUID, tuple[str, float]] = {}
+
+    def on_tool_start(
+        self,
+        serialized: dict[str, Any],
+        input_str: str,
+        *,
+        run_id: UUID,
+        inputs: dict[str, Any] | None = None,
+        **keywords: Any,
+    ) -> None:
+        name = str(serialized["name"])
+        self.calls[run_id] = (name, time.monotonic())
+        log.info("Calling %s(%s).", name, format_tool_arguments(name, inputs or {}))
+
+    def on_tool_end(self, output: Any, *, run_id: UUID, **keywords: Any) -> None:
+        call = self.calls.pop(run_id, None)
+        if call is None:
+            return
+        name, started = call
+        log.info("%s finished in %.1f seconds.", name, time.monotonic() - started)
+
+    def on_tool_error(self, error: BaseException, *, run_id: UUID, **keywords: Any) -> None:
+        call = self.calls.pop(run_id, None)
+        if call is None:
+            return
+        name, started = call
+        log.info("%s failed in %.1f seconds: %s", name, time.monotonic() - started, error)
+
+
 class SpendMiddleware(AgentMiddleware[Any, Any]):
     """Stops the run when the ledger reaches its cap, checked before each model call."""
 
@@ -200,19 +270,16 @@ def verify_prompt() -> str:
     return (files("coral") / "prompts" / "verify.md").read_text(encoding="utf-8")
 
 
-def caught(inner: Callable[..., Any]) -> Callable[..., Any]:
+def caught(name: str, inner: Callable[..., Any]) -> Callable[..., Any]:
     """A tool function that answers with its own error instead of raising it."""
 
     @functools.wraps(inner)
     def call(*arguments: Any, **keywords: Any) -> Any:
-        start = time.monotonic()
         try:
             return inner(*arguments, **keywords)
         except Exception as error:
-            log.info("A tool call failed; handing the error back to the model: %s", error)
+            log.info("%s failed; handing the error back to the model: %s", name, error)
             return f"{type(error).__name__}: {error}"
-        finally:
-            log.info("%s took %.1f seconds.", inner.__name__, time.monotonic() - start)
 
     # `functools.wraps` copies `__wrapped__`, which is what keeps `inspect.signature` seeing the
     # real parameters. LangChain reads them to decide which arguments to inject.
@@ -231,7 +298,7 @@ def forgiving(middleware: FilesystemMiddleware) -> FilesystemMiddleware:
     for tool in middleware.tools:
         assert isinstance(tool, StructuredTool), f"{tool.name} is a {type(tool).__name__}"
         assert tool.func is not None, f"{tool.name} has no sync implementation to wrap"
-        tool.func = caught(tool.func)
+        tool.func = caught(tool.name, tool.func)
     return middleware
 
 
@@ -315,7 +382,10 @@ def _run(
     # rides along here because an ambient callback reaches every model call the run makes,
     # including the summarization middleware's own.
     bounded = agent.with_config(
-        {"recursion_limit": STEP_CAP, "callbacks": [SpendHandler(ledger, name)]}
+        {
+            "recursion_limit": STEP_CAP,
+            "callbacks": [SpendHandler(ledger, name), ToolProgressHandler()],
+        }
     )
 
     log.info("Running the agent over %s with %.0f seconds of budget.", checkout, deadline.budget)
