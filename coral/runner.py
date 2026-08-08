@@ -29,14 +29,24 @@ class Comment:
 
 
 @dataclass(frozen=True)
+class Push:
+    """The commit a main-branch push asks Coral to review."""
+
+    sha: str
+    parent: str | None
+    ref: str
+
+
+@dataclass(frozen=True)
 class Event:
     """The delivery that started this run, reduced to what Coral acts on."""
 
     name: str
     owner: str
     repo: str
-    number: int
+    number: int | None
     comment: Comment | None
+    push: Push | None = None
 
 
 def commented(payload: dict[str, Any], namespace: Literal["issues", "pulls"]) -> Comment:
@@ -68,6 +78,19 @@ def event() -> Event:
         case "pull_request_review_comment":
             number = payload["pull_request"]["number"]
             comment = commented(payload, "pulls")
+        case "push":
+            return Event(
+                name=name,
+                owner=owner,
+                repo=repo,
+                number=None,
+                comment=None,
+                push=Push(
+                    sha=payload["after"],
+                    parent=((payload["head_commit"] or {}).get("parents") or [None])[0],
+                    ref=payload["ref"],
+                ),
+            )
         case _:
             raise AssertionError(f"Coral was invoked on a {name} event, which it does not handle.")
 
@@ -116,6 +139,11 @@ def conversation_path() -> Path:
     return temporary_directory() / "conversation.json"
 
 
+def push_path() -> Path:
+    """Where resolve leaves the main-branch commit for the review job to read."""
+    return temporary_directory() / "push.json"
+
+
 def payloads_path() -> Path:
     """Where the review job leaves the two create-review bodies for the publishing job to post.
 
@@ -124,6 +152,11 @@ def payloads_path() -> Path:
     produced.
     """
     return temporary_directory() / "review-payloads.json"
+
+
+def issues_path() -> Path:
+    """Where review leaves the main-push issue bodies for the publishing job to post."""
+    return temporary_directory() / "issue-payloads.json"
 
 
 def reason_path() -> Path:

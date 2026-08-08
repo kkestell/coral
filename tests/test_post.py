@@ -11,19 +11,25 @@ from pathlib import Path
 from typing import Any
 
 from coral.diff import AddedLine
+from coral.github.client import GitHub
 from coral.github.marker import marker
 from coral.github.post import (
     bullet,
     cost,
     count,
     demotion,
+    issue_payloads,
+    issue_title,
     nothing_to_report,
     payloads,
+    post_issue,
+    read_issue_payloads,
     read_payloads,
     rendered_finding,
     review_payload,
     signed,
     submitted,
+    write_issue_payloads,
     write_payloads,
 )
 from coral.schema import (
@@ -214,6 +220,58 @@ def test_a_cost_under_a_cent_survives_its_formatting() -> None:
     # What every review measured so far cost. Two decimal places would print all of them `$0.00`.
     assert cost(0.0042) == "*This review cost $0.0042.*"
     assert cost(1.5) == "*This review cost $1.5000.*"
+
+
+def test_each_main_push_finding_becomes_one_issue_with_the_commit_and_cost() -> None:
+    review = review_of(finding_at(line(7)), finding_at(FileAnchor(kind="file", path="a.py")))
+    issues = issue_payloads(COMMIT, review, SPENT).issues
+    assert len(issues) == 2
+    assert issues[0].title == "[Coral] Medium finding: `a.py`, line 7"
+    assert marker(COMMIT) in issues[0].body
+    assert f"main commit `{COMMIT}`" in issues[0].body
+    assert "The parser drops the last token." in issues[0].body
+    assert cost(SPENT) in issues[0].body
+
+
+def test_an_empty_main_push_review_creates_no_issue() -> None:
+    assert issue_payloads(COMMIT, review_of(), SPENT).issues == []
+
+
+def test_a_whole_change_issue_does_not_name_a_pull_request() -> None:
+    issue = issue_payloads(
+        COMMIT, review_of(finding_at(PullRequestAnchor(kind="pull_request"))), SPENT
+    ).issues[0]
+    assert "the change as a whole" in issue.title
+    assert "the pull request" not in issue.body
+
+
+def test_an_issue_title_stays_within_githubs_limit() -> None:
+    long_path = "a" * 300
+    assert len(issue_title(finding_at(FileAnchor(kind="file", path=long_path)))) == 256
+
+
+def test_main_push_issue_payloads_round_trip_through_a_file(tmp_path: Path) -> None:
+    issues = issue_payloads(COMMIT, review_of(finding_at(line(7))), SPENT)
+    write_issue_payloads(tmp_path / "issue-payloads.json", issues)
+    assert read_issue_payloads(tmp_path / "issue-payloads.json") == issues
+
+
+def test_posting_a_main_push_finding_uses_the_issue_endpoint() -> None:
+    sent: list[tuple[str, dict[str, Any]]] = []
+
+    class Recording(GitHub):
+        def post(self, path: str, body: dict[str, Any]) -> Any:
+            sent.append((path, body))
+            return {}
+
+    issue = issue_payloads(COMMIT, review_of(finding_at(line(7))), SPENT).issues[0]
+    post_issue(Recording(token="not a real token"), "kkestell", "coral-test", issue)
+    assert sent == [
+        (
+            "/repos/kkestell/coral-test/issues",
+            {"title": issue.title, "body": issue.body},
+        )
+    ]
 
 
 def test_both_bodies_report_the_same_cost() -> None:

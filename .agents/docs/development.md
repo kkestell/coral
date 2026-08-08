@@ -35,6 +35,7 @@ What to type to set a live check up and follow it. What makes one, and when to r
 
 - Open a pull request — `gh pr create --repo kkestell/coral-test --base main --head <branch> --title <title> --body <body>`
 - Ask for a review — `gh pr comment --repo kkestell/coral-test <number> --body '/coral'`
+- Review a main commit — `git push origin main`, then `gh issue list --repo kkestell/coral-test`
 - Watch the run — `gh run list --repo kkestell/coral-test`
 - Read the review — `gh pr view --repo kkestell/coral-test <number> --comments`
 
@@ -60,7 +61,7 @@ The log line the fetch writes to stderr says how many queries it took and what t
 - `OPENROUTER_MANAGEMENT_KEY` — an OpenRouter management key, which mints API keys rather than making completions. Optional locally, where it is what mints a key by hand; source it out of `.env` the same way. In a run it comes from the caller's secret and reaches the resolve job alone.
 - `CORAL_KEY_ENCRYPTION_KEY` — a Fernet key that encrypts a locally minted API key for review. Required with `OPENROUTER_MANAGEMENT_KEY`, ignored in plain-key mode, and never passed into an agent container. Generate one with `python -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`.
 - `CORAL_MODEL`, `CORAL_REASONING_EFFORT`, `CORAL_TIME_BUDGET_MINUTES`, `CORAL_SPEND_CAP_DOLLARS` — the model id, the reasoning effort, the review step's time budget, and what one review may spend. All four are required by `coral review`; `coral resolve` reads the budget and the cap. In a run each comes from the matching `workflow_call` input, which is where its default is; locally, set them on the command line. An empty effort sends no reasoning block.
-- `GITHUB_TOKEN` — authorizes the API calls that read the pull request and post the review. Required by `coral resolve` and `coral publish`; it never reaches the review step, whose job holds a `contents: read` token that only the checkout uses. Each job's token is scoped by that job's `permissions` block in the reusable workflow and expires when the job ends. Locally, `gh auth token` supplies one.
+- `GITHUB_TOKEN` — authorizes pull-request reads, review comments, and main-push issues. Required by `coral resolve` and `coral publish`; it never reaches the review step, whose job holds a `contents: read` token that only the checkout uses. Each job's token is scoped by that job's `permissions` block in the reusable workflow and expires when the job ends. Locally, `gh auth token` supplies one.
 
 Both are deliberately kept out of the agent's environment. `coral review` deletes `OPENROUTER_API_KEY` — the one credential its own process has — before it does anything else, so a later reader finds nothing. No tracked file in the repository records either value.
 

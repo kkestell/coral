@@ -4,7 +4,7 @@ How the code is organized and how it runs on GitHub Actions.
 
 ## The Platform
 
-- A GitHub Actions workflow. No cloud account, no standing service; GitHub supplies the trigger, compute, checkout, and credential.
+- A GitHub Actions workflow. No cloud account or standing service; GitHub supplies the trigger, compute, checkout, and credential.
 - Python, built with `uv` against a committed lockfile; nothing resolves at run time.
 - The agent is DeepAgents. Models are reached only through OpenRouter, via `langchain-openrouter`'s `ChatOpenRouter`.
 - The model, the reasoning effort, the review's time budget, and the spend cap are `workflow_call` inputs, defaulted in the reusable workflow and nowhere else. The model is named exactly and a `~` alias is refused, so the concrete model cannot change under a review; its profile is fetched from OpenRouter's model listing at run time.
@@ -21,10 +21,10 @@ How the code is organized and how it runs on GitHub Actions.
 
 Three jobs in fixed order — resolve, review, publish — each on its own runner with its own `permissions`.
 
-- Resolve holds `contents: read`, `issues: write`, and `pull-requests: write`. The gatekeeper fetches the pull request and conversation, acknowledges requests, and decides whether a review runs. Both commits are pinned here and never re-read. It derives the review job's `timeout-minutes` from the time budget, because Actions expressions have no arithmetic. It alone receives the management key, then mints, masks, and encrypts the capped key after the gates pass.
-- Review runs the agent and holds `contents: read`; its review step makes no API call and its environment carries no token. Its `timeout-minutes` is resolve's derived output. Each agent run gets a fresh copy of the checkout and a container of its own, so no agent writes the workspace. It verifies the findings with a second run and writes the two create-review bodies: the anchored one and the one with every finding demoted. The review object never crosses: both bodies need the added-line set the anchors were checked against, which exists only here.
+- Resolve holds `contents: read`, `issues: write`, and `pull-requests: write`. It fetches the pull request and conversation, acknowledges requests, and decides whether a pull-request review runs. On a `main` push it pins the event's commit and first parent, without a pull-request call. It derives the review timeout and mints, masks, and encrypts a capped key after the gates pass.
+- Review runs the agent and holds `contents: read`; its review step makes no API call and its environment carries no token. Its `timeout-minutes` is resolve's derived output. Each agent run gets a fresh checkout copy and container. It verifies findings, then writes two create-review bodies for a pull request or one issue body per main-push finding. The review object never crosses; the review bodies need the added-line set checked here.
 - The checkout takes the pinned head SHA, full history, and no persisted credentials.
-- Publish holds resolve's three scopes and is the only job that posts: the review, or the failure comment — including for a review job that died whole and crossed no reason file. It stamps `commit_id` and `event` on whichever body it posts; the agent's job gets no say in either.
+- Publish holds resolve's three scopes and is the only job that posts: a pull-request review, a failure comment, or main-push issues. It stamps `commit_id` and `event` on a pull-request review; the agent's job gets no say in either.
 - Each job builds Coral's virtual environment under the runner's temporary directory — outside the workspace and off `PATH`, every step invoking the console script by absolute path.
 - A job boundary is a machine boundary, each side a fresh runner and filesystem. The head SHA, `proceed` flag, review timeout, and ciphertext cross as job outputs; everything else crosses as artifacts under the runner's temporary directory, outside the workspace. Review decrypts ciphertext in its runner process before either container starts.
 - A stopped run is green: `proceed=false`, reason on stderr, exit zero, later jobs skipped. Only a broken run is red; a cancelled run posts nothing.
@@ -34,10 +34,10 @@ Three jobs in fixed order — resolve, review, publish — each on its own runne
 One console script. `coral resolve`, `coral review`, and `coral publish` are each invoked by one composite action's `run:` step; `coral rehearse` is run by a person, and `.agents/docs/development.md` owns it.
 
 - `coral/cli.py` — one `argparse` parser.
-- `coral/runner.py` — the event, step outputs, the temporary directory whose files cross jobs as artifacts, the one reading of `GITHUB_WORKSPACE`.
+- `coral/runner.py` — the event, job outputs, and temporary artifact paths.
 - `coral/handoff.py` — validation, encryption, and decryption for the minted-key handoff.
-- `coral/resolve.py` — the gatekeeper: fetch the pull request and conversation, acknowledge requests, apply the gates.
-- `coral/review.py` — render each request, run both agents, filter, write the bodies that cross to publish.
+- `coral/resolve.py` — the gatekeeper for pull requests and main pushes.
+- `coral/review.py` — render each request, run both agents, filter, write publishing bodies.
 - `coral/rehearse.py` — the review step over one commit of a local clone.
 - `coral/publish.py` — the publishing step: the review, or the failure comment.
 - `coral/agent.py` — the only module that imports `deepagents`.
@@ -53,11 +53,11 @@ One console script. `coral resolve`, `coral review`, and `coral publish` are eac
 - `coral/github/conversation.py` — the GraphQL query, the bound, the conversation's file.
 - `coral/github/marker.py` — the sentinel: writing and reading it.
 - `coral/github/reactions.py` — which comments get the reaction, through both namespaces.
-- `coral/github/post.py` — the two create-review bodies that cross to publish, anchor demotion, the retry on rejection, the plain comment.
+- `coral/github/post.py` — review bodies, issue bodies, anchor demotion, and posting helpers.
 - `coral/prompts/review.md` — what Coral looks for.
 - `coral/prompts/verify.md` — how Coral checks a finding it was handed.
 - `tests/` — one `test_<module>.py` per module under test.
-- `.github/workflows/coral.yml` — the `workflow_call` workflow: the three jobs, their tokens, and what crosses between them.
+- `.github/workflows/coral.yml` — the reusable workflow's jobs, tokens, and handoffs.
 - `actions/setup/` — installs `uv`, builds Coral's virtual environment.
 - `actions/resolve/`, `actions/review/`, `actions/publish/` — one `run:` step each.
 - `examples/coral.yml` — the file a repository copies in to install Coral.

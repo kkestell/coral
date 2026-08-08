@@ -8,6 +8,8 @@
 name: Coral
 
 on:
+  push:
+    branches: [main]
   pull_request:
     types: [opened, ready_for_review]
   issue_comment:
@@ -19,7 +21,7 @@ on:
 # cancels the caller. A run already going finishes, and a newly queued run replaces whichever
 # run was waiting, which is how several requests collapse into one.
 concurrency:
-  group: coral-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: coral-${{ github.event.pull_request.number || github.event.issue.number || github.sha }}
   cancel-in-progress: false
 
 jobs:

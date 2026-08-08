@@ -204,6 +204,15 @@ An installation can run agent-chosen commands in a disposable microVM whose kern
 
 Done when: broker-backed and encrypted-handoff reviews each run Python, Node, and Go project tests inside the microVM; commands there cannot reach the runner's filesystem or process table; and an installation with no microVM configuration still runs the same checks in the container.
 
+## 20. Review main commits as issues
+
+Status: not started
+Depends on: 17
+
+Coral reviews every commit pushed to `main` against its first parent. It creates one issue for each confirmed finding instead of a pull-request review.
+
+Done when: a planted defect pushed to `main` in the test repository produces one issue per confirmed finding, no pull-request review, and an empty main-push review creates no issue.
+
 ## Not On This Roadmap
 
 Named so nobody has to guess. Everything under "Out Of Scope" in `.agents/docs/functional-requirements.md` also applies.

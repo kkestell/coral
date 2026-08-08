@@ -1,5 +1,5 @@
 name: Coral publish
-description: Post the review this run produced, or say on the pull request why there is none.
+description: Post the review or issues this run produced.
 
 inputs:
   coral-bin:

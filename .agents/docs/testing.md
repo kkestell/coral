@@ -28,6 +28,7 @@ A live check is one real run, started by hand, read off the pull request, the ru
 - Run one for every claim an item's done condition in `.agents/docs/roadmap.md` makes. Nothing is done until the run happened and its evidence was read; describing what a run would show is not a check.
 - Check as you build, not once at the end. A run takes a few minutes and costs a fraction of a cent, and a failure found against one change is a failure you can attribute.
 - Force the path you want. Editing a prompt, a constant, a step, or a secret to make a failure happen — then reverting — is how the failure paths get checked at all.
+- For the main-push mode, push a planted defect to `main` in the test repository. Read the created issues and confirm no pull-request review exists; then revert the defect and close the issues.
 - Rehearsing locally with `coral rehearse` is faster and cheaper than a run, and it is what a prompt change is judged by. It reaches no pull request and exercises no workflow, so it never stands in for a live check.
 - The one thing the test repository cannot show is the conversation fetch paging, which needs a public pull request busier than any of its own. `.agents/docs/development.md` has that command; it reads and writes nothing.
 

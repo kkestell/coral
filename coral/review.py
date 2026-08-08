@@ -15,7 +15,7 @@ from coral import container, runner
 from coral.deadline import budget_seconds, reviewer_budget, start
 from coral.diff import added_lines, diff_text, merge_base
 from coral.github.conversation import Comment, Conversation, Thread, read_conversation
-from coral.github.post import count, payloads, write_payloads
+from coral.github.post import count, issue_payloads, payloads, write_issue_payloads, write_payloads
 from coral.handoff import review_key
 from coral.openrouter import model_facts
 from coral.publish import described
@@ -132,6 +132,21 @@ def render_request(title: str, body: str | None, diff: str, conversation: Conver
     )
 
 
+def render_push_request(commit: str, diff: str) -> str:
+    """Everything the agent gets for a commit pushed directly to main."""
+    return "\n\n".join(
+        [
+            f"# Main commit {commit}",
+            "This commit was pushed directly to main. There is no pull-request description or "
+            "conversation.",
+            "# The change under review",
+            "The diff between the commit's first parent and the commit follows, whole. It is the "
+            "subject of the review; the checkout holds every file at the commit.",
+            diff,
+        ]
+    )
+
+
 def render_verification_request(title: str, body: str | None, diff: str, review: Review) -> str:
     """Everything the verifier is given: the pull request, the change, and the findings to rule on.
 
@@ -172,6 +187,14 @@ def render_verification_request(title: str, body: str | None, diff: str, review:
             "# The findings to rule on",
             *(findings or ["None."]),
         ]
+    )
+
+
+def render_push_verification_request(commit: str, diff: str, review: Review) -> str:
+    """Everything the verifier gets for findings from a main-branch commit."""
+    return render_verification_request(f"Main commit {commit}", None, diff, review).replace(
+        "The author left no description.",
+        "This commit was pushed directly to main. There is no pull-request description.",
     )
 
 
@@ -228,18 +251,32 @@ def review() -> None:
         # so.
         ledger = Ledger(cap=cap_dollars(os.environ["CORAL_SPEND_CAP_DOLLARS"]))
 
-        pull_request = json.loads(runner.pull_request_path().read_text())
-        head = pull_request["head"]["sha"]
-        base = pull_request["base"]["sha"]
-
-        conversation = read_conversation(runner.conversation_path())
         workspace = runner.workspace()
-        # The merge base is hoisted out of the diff call so the lines an anchor is checked against
-        # come from the same diff the agent read.
-        common = merge_base(workspace, base, head)
+        main_push = runner.push_path().exists()
+        if main_push:
+            push: dict[str, str] = json.loads(runner.push_path().read_text())
+            head = push["head"]
+            base = push["base"]
+            title = f"Main commit {head}"
+            body = None
+            common = base
+        else:
+            pull_request = json.loads(runner.pull_request_path().read_text())
+            head = pull_request["head"]["sha"]
+            base = pull_request["base"]["sha"]
+            title = pull_request["title"]
+            body = pull_request["body"]
+            # The merge base is hoisted out of the diff call so the lines an anchor is checked
+            # against come from the same diff the agent read.
+            common = merge_base(workspace, base, head)
         diff = diff_text(workspace, common, head)
         added = set(added_lines(workspace, common, head))
-        request = render_request(pull_request["title"], pull_request["body"], diff, conversation)
+        if main_push:
+            request = render_push_request(head, diff)
+        else:
+            request = render_request(
+                title, body, diff, read_conversation(runner.conversation_path())
+            )
         log.info("Asking the agent to review %s in %d characters.", head, len(request))
 
         # One fetch, shared by both runs: they are the same model with the same profile, and the
@@ -274,8 +311,10 @@ def review() -> None:
                 facts,
                 provision(VERIFIER, workspace),
                 VERIFIER,
-                render_verification_request(
-                    pull_request["title"], pull_request["body"], diff, review
+                (
+                    render_push_verification_request(head, diff, review)
+                    if main_push
+                    else render_verification_request(title, body, diff, review)
                 ),
                 deadline,
                 ledger,
@@ -294,7 +333,10 @@ def review() -> None:
         log.info("The review spent $%.6f of its $%.6f cap.", ledger.spent, ledger.cap)
         # The ledger is final here: both agent runs are over, and nothing the publishing job does
         # costs anything. What the body reports and what the line above logs are the same number.
-        write_payloads(runner.payloads_path(), payloads(head, review, added, ledger.spent))
+        if main_push:
+            write_issue_payloads(runner.issues_path(), issue_payloads(head, review, ledger.spent))
+        else:
+            write_payloads(runner.payloads_path(), payloads(head, review, added, ledger.spent))
     except Exception as error:
         log.exception("The review failed; the publishing job will report it.")
         runner.reason_path().write_text(described(error))

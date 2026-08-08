@@ -24,6 +24,8 @@ from coral.github.marker import marker
 from coral.review import (
     copy_checkout,
     render_conversation,
+    render_push_request,
+    render_push_verification_request,
     render_request,
     render_verification_request,
 )
@@ -228,6 +230,14 @@ def test_a_pull_request_with_no_description_says_so() -> None:
     )
 
 
+def test_a_main_push_request_has_its_commit_and_parent_diff_without_a_conversation() -> None:
+    rendered = render_push_request(COMMIT, "a parent diff")
+    assert f"# Main commit {COMMIT}" in rendered
+    assert "There is no pull-request description or conversation." in rendered
+    assert "a parent diff" in rendered
+    assert "# The conversation" not in rendered
+
+
 DIFF = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-one\n+two\n"
 
 REGRESSION = RegressionTest(
@@ -303,6 +313,13 @@ def test_a_speculative_finding_says_so() -> None:
     )
     rendered = render_verification_request("A title", None, DIFF, review)
     assert "could not reproduce this with a test; it is speculative" in rendered
+
+
+def test_a_main_push_verification_request_has_no_pull_request_context() -> None:
+    rendered = render_push_verification_request(COMMIT, DIFF, review_of())
+    assert f"# Main commit {COMMIT}" in rendered
+    assert "This commit was pushed directly to main." in rendered
+    assert "The conversation" not in rendered
 
 
 def checkout(root: Path) -> Path:

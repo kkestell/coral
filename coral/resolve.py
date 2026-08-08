@@ -174,6 +174,15 @@ def declined(
     return None
 
 
+def push_decline(push: runner.Push) -> str | None:
+    """Why a main-push run stops, or `None` when it has a reviewable parent diff."""
+    if push.ref != "refs/heads/main":
+        return "it is not a push to main"
+    if push.parent is None:
+        return "it has no parent commit"
+    return None
+
+
 def resolve() -> None:
     """Pin the commits Coral will review, or stop the run."""
     # Checked before the fetch, so a budget the caller got wrong is loud on every triggered run
@@ -192,6 +201,38 @@ def resolve() -> None:
     cap = reported(lambda: cap_dollars(os.environ["CORAL_SPEND_CAP_DOLLARS"]))
 
     event = runner.event()
+    if event.push is not None:
+        push = event.push
+        push_reason = push_decline(push)
+        if push_reason is not None:
+            log.info("Not reviewing %s: %s.", push.sha, push_reason)
+            runner.write_output("proceed", "false")
+            return
+
+        runner.push_path().write_text(json.dumps({"head": push.sha, "base": push.parent}))
+        management = reported(
+            lambda: management_key(
+                os.environ["OPENROUTER_MANAGEMENT_KEY"],
+                os.environ["OPENROUTER_API_KEY_PRESENT"] == "true",
+            )
+        )
+        encryption = reported(
+            lambda: handoff_key(management, os.environ["CORAL_KEY_ENCRYPTION_KEY"])
+        )
+        if management is not None:
+            minted = partial(mint, management, runner.run_url(), key_ttl_seconds(timeout), cap)
+            api_key = reported(minted)
+            runner.mask(api_key)
+            assert encryption is not None
+            key = encryption
+            runner.write_output("encrypted-key", reported(lambda: encrypt(key, api_key)))
+
+        runner.write_output("head-sha", push.sha)
+        runner.write_output("timeout-minutes", str(timeout))
+        runner.write_output("proceed", "true")
+        return
+
+    assert event.number is not None
     github = GitHub(token=os.environ["GITHUB_TOKEN"])
     access = Access(github=github, owner=event.owner, repo=event.repo)
     pull_request = github.get(f"/repos/{event.owner}/{event.repo}/pulls/{event.number}")

@@ -18,7 +18,14 @@ from typing import Any, Final
 from coral import runner
 from coral.command import Access, is_request
 from coral.github.client import GitHub
-from coral.github.post import post_comment, post_review, read_payloads, state_of
+from coral.github.post import (
+    post_comment,
+    post_issue,
+    post_review,
+    read_issue_payloads,
+    read_payloads,
+    state_of,
+)
 from coral.runner import Event
 
 log = logging.getLogger(__name__)
@@ -109,7 +116,14 @@ def publish() -> None:
     event = runner.event()
     github = GitHub(token=os.environ["GITHUB_TOKEN"])
 
+    if runner.issues_path().exists():
+        assert event.push is not None, "A main-push issue payload needs a push event."
+        for payload in read_issue_payloads(runner.issues_path()).issues:
+            post_issue(github, event.owner, event.repo, payload)
+        return
+
     if runner.payloads_path().exists():
+        assert event.number is not None, "A pull-request review payload needs a pull request event."
         commit = pinned_commit()
         assert commit is not None, "The review crossed without resolve's pull request."
         # Resolve's reading was minutes and two agent runs ago.
@@ -143,6 +157,11 @@ def publish() -> None:
         )
         return
 
+    if event.push is not None:
+        log.info("The main-push review produced no issues.")
+        return
+
+    assert event.number is not None
     if not owed(event, Access(github=github, owner=event.owner, repo=event.repo)):
         return
 

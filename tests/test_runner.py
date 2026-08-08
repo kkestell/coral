@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from coral import runner
-from coral.runner import Comment
+from coral.runner import Comment, Push
 
 
 def deliver(
@@ -67,6 +67,37 @@ def test_a_review_comment_reacts_through_the_pulls_namespace(
     assert event.comment == Comment(id=42, namespace="pulls", body="/coral", author="kestell")
 
 
+def test_a_main_push_carries_its_commit_and_first_parent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    deliver(
+        monkeypatch,
+        tmp_path,
+        "push",
+        {
+            "ref": "refs/heads/main",
+            "after": "b" * 40,
+            "head_commit": {"parents": ["a" * 40]},
+        },
+    )
+    event = runner.event()
+    assert event.number is None
+    assert event.comment is None
+    assert event.push == Push(sha="b" * 40, parent="a" * 40, ref="refs/heads/main")
+
+
+def test_a_root_commit_carries_no_parent_rather_than_crashing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    deliver(
+        monkeypatch,
+        tmp_path,
+        "push",
+        {"ref": "refs/heads/main", "after": "a" * 40, "head_commit": {"parents": []}},
+    )
+    assert runner.event().push == Push(sha="a" * 40, parent=None, ref="refs/heads/main")
+
+
 def test_a_comment_whose_author_is_gone_reduces_rather_than_crashing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -84,7 +115,7 @@ def test_a_comment_whose_author_is_gone_reduces_rather_than_crashing(
 def test_an_event_coral_does_not_handle_is_a_broken_workflow_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    deliver(monkeypatch, tmp_path, "push", {})
+    deliver(monkeypatch, tmp_path, "workflow_dispatch", {})
     with pytest.raises(AssertionError):
         runner.event()
 
@@ -137,6 +168,8 @@ def test_the_temporary_directory_is_made_under_the_runners_own(
     assert runner.temporary_directory() == tmp_path / "coral"
     assert runner.pull_request_path() == tmp_path / "coral" / "pull-request.json"
     assert runner.conversation_path() == tmp_path / "coral" / "conversation.json"
+    assert runner.push_path() == tmp_path / "coral" / "push.json"
     assert runner.payloads_path() == tmp_path / "coral" / "review-payloads.json"
+    assert runner.issues_path() == tmp_path / "coral" / "issue-payloads.json"
     assert runner.reason_path() == tmp_path / "coral" / "reason.txt"
     assert (tmp_path / "coral").is_dir()
