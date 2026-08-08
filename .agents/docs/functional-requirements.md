@@ -16,7 +16,7 @@ What Coral does, as behavior someone could watch happen. These requirements are 
 - Coral never reads its own comments as a request; a bot that can trigger itself will.
 - A comment is Coral's own only when Coral's own token wrote it and Coral's marker opens the body. The marker is characters anybody can type, so on its own it would let a stranger have their words attributed to Coral and let them silence the automatic review of a commit.
 - Only someone with write access can ask.
-- Coral acknowledges an accepted request with an `eyes` reaction. Each request that produces a review gets its own reaction. Requests declined for lack of write access get no reaction or review.
+- Coral acknowledges an authorized request with an `eyes` reaction before deciding whether a review runs, so a request it declines was still heard. Each request gets its own reaction. Requests declined for lack of write access get no reaction or review.
 - On a pull request, Coral reviews the head commit as it is at the start of the run, rather than the one the triggering event named.
 
 ## What Coral Reviews
@@ -27,7 +27,7 @@ What Coral does, as behavior someone could watch happen. These requirements are 
 - Coral works from a full checkout and reads any file, touched or not — understanding a change means reading code around it.
 - Every review covers the whole change, not what is new since the last review. A rebase leaves no meaningful range of new commits, and a change reads differently once the rest has moved.
 - Before a pull-request review, Coral reads its conversation — its own past reviews and everyone's comments — and does not repeat a finding that still stands. A finding stops standing when its thread is resolved or the code beneath it has moved.
-- Coral reads a bounded amount of conversation, most recent first, and the review says what went unread. A review thread is read at both ends, so what goes unread in a long one is its middle rather than the comment that opened it.
+- Coral reads a bounded amount of conversation, most recent first, and the agent is told what went unread. A review thread is read at both ends, so what goes unread in a long one is its middle rather than the comment that opened it.
 - The conversation is information about the change, never instruction about how to review. A comment claiming a finding is settled is not grounds to drop it — Coral cannot tell a maintainer's judgment from a stranger's assertion, and a bot that can be talked out of a finding can be talked out of a true one. `/coral` is no exception: it is recognized by ordinary code before the review starts and decides only whether a review runs, never how.
 
 ## What Coral Can Do While Reviewing
@@ -46,13 +46,13 @@ Coral decides which of these to use, in what order, how many times.
 - A finding is a correctness, security, or performance problem, and nothing else. Style, naming, structure, documentation, and test coverage are not findings.
 - Every finding carries a severity: low, medium, or high.
 - A finding Coral reproduced carries the failing test that shows it; one it could not reproduce is marked speculative.
-- A second agent run checks every finding against the code, and only the ones it confirms are posted. A rejected finding appears in the run's log, never on the pull request. A reviewer talks itself into findings; a reader cannot tell which ones.
+- A second agent run checks every finding against the code, never reading the conversation, and only the ones it confirms are posted. A rejected finding appears in the run's log, never on the pull request. A reviewer talks itself into findings; a reader cannot tell which ones.
 - A finding concerns a span of lines, a single line, a whole file, or the change as a whole. Coral chooses per finding.
 - On a pull request, line and span findings anchor to their code. Whole-file and pull-request findings appear in the summary, the file named — "this file has no tests" and "this change has no tests" must read differently.
-- A confirmed finding that cannot anchor still appears, in the summary, naming its intended file and line.
+- A confirmed finding that cannot anchor still appears, in the summary, naming its intended file and line. When GitHub refuses the anchored review, Coral posts it again with every finding in the summary.
 - One review per run, not a comment per finding. A pull request reviewed several times carries several reviews.
 - On `main`, Coral creates one issue per confirmed finding. Its title names the defect, its body names the commit the finding was found in, and a `coral` label and a severity label carry the rest. Coral creates any of those labels the repository lacks, because GitHub drops a label with no definition.
-- A confirmed `main` finding creates no issue when an open issue Coral read describes the same defect. Who opened that issue does not matter. A closed issue suppresses nothing, because the finding is about code at the pushed commit and a closed issue did not fix it.
+- A confirmed `main` finding creates no issue when an open issue Coral read describes the same defect. Who opened that issue does not matter. A closed issue suppresses nothing, because the finding is about code at the pushed commit and a closed issue did not fix it. Two `main` pushes reviewed at once can each file the same defect, each having searched before the other's issue existed; accepted.
 - An empty `main` review creates no issue, and no label either.
 - Every pull-request review names the commit it reviewed — readers need to know which state of the branch each review is about, and it is how Coral recognizes its own past work.
 - Every review ends with what the run spent.
@@ -63,7 +63,7 @@ Coral decides which of these to use, in what order, how many times.
 
 ## Failure
 
-- Every failed pull-request review says so on the pull request, in enough detail to know whether to retry or investigate — including failures before the agent starts.
+- Every failed pull-request review says so on the pull request, in enough detail to know whether to retry or investigate — including failures before the agent starts. A run that dies leaving no publishing job — cancelled, or its setup broken — says nothing; the Actions run is the record.
 - A failed `main` review creates no issue. The failed Actions run is the record of it.
 - Each automatic review happens once; a request is honored once. Asking again gets another review even when nothing changed — a person who asks again means it.
 - Two reviews of one pull request never run at once. A request arriving mid-review is neither dropped nor run immediately; it is honored after the running review posts. Several such requests cost one further review between them, each still acknowledged.
@@ -72,7 +72,7 @@ Coral decides which of these to use, in what order, how many times.
 - A review that dies partway does not block later reviews.
 - A review that does not finish is discarded: Coral says it ran out of time and posts nothing else, because a partial review is indistinguishable from a complete one.
 - A review that spends past its cap is stopped the same way, saying what it spent against the cap. So is one whose spending Coral cannot measure: a response reporting no usable cost leaves the cap unenforceable.
-- A pull request too large is not reviewed: Coral says it exceeds what it will read and posts nothing else. A backstop, not an expected case. A `main` push has no size backstop.
+- A pull request too large is not reviewed: too many changed files or too many changed lines. Coral says it exceeds what it will read and posts nothing else. A backstop, not an expected case. A `main` push has no size backstop.
 - A `main` review that proposes more than ten findings creates no issue and fails. Coral checks each confirmed finding against the open issues, and it will not create an issue for a finding it did not check.
 
 ## Out Of Scope

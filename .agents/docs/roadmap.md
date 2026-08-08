@@ -2,6 +2,32 @@
 
 The order the work happens in. A sequence, not a schedule: one item is one plan, one build, and one review, and those artifacts carry the item's number in their filenames.
 
+## 24. Agent file tools inside the container
+
+Status: not started
+Depends on: 12
+
+Every agent file tool runs in the container under the limits its shell already has. `read_file`, `write_file`, `edit_file`, `glob`, `grep`, and `delete` reach the checkout through `container.execute` rather than through Coral's Python on the runner.
+
+- The framework's inherited implementation reads a whole file into the runner's memory before slicing it to the requested lines, and its own size cap covers `grep` alone.
+- The tools and the shell see one filesystem: a file a tool writes is immediately runnable in the shell, and the other way around.
+- A tool's own failure still goes back to the model as an observation rather than ending the run.
+
+Done when: a real review reads, edits, searches, and runs a scratch test through the tools; a read of a file larger than the container's memory limit dies in the container rather than on the runner; and no agent tool reaches the runner's filesystem.
+
+## 25. A byte budget end to end
+
+Status: not started
+Depends on: 4
+
+One budget covers the diff Coral captures, the request it assembles, and the text it publishes. A change over the budget, or one whose request does not fit the model's context window, is declined rather than reviewed in part.
+
+- The diff's ceiling is enforced where `git` output is captured, because the pull-request gate counts files and lines and one very long line passes it.
+- A `main` push is bounded the same way a pull request is.
+- Publication ceilings live in `coral/schema.py`, where structure originates, and a review crossing one fails rather than posting a cut body.
+
+Done when: a real pull request whose diff crosses the byte budget is declined with the reason on it, a review whose text crosses a publication ceiling fails rather than posting a cut body, and a model whose context window cannot hold the assembled request stops the run before the first model call.
+
 ## 18. External credential broker (optional)
 
 Status: not started

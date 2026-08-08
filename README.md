@@ -97,6 +97,7 @@ The measures below limit the damage. None of them stop a determined attacker fro
 - A container escape reaches the review job, which holds the OpenRouter key.
 - OpenRouter and whichever provider it routes to see the diff, files the agent opens, command output, and the conversation. Do not install Coral where that is unacceptable.
 - Prompt injection works. The diff and the conversation are attacker-controlled text in the model's context, so a review can be steered into missing a finding or posting text somebody else wrote.
+- On the `pull_request` trigger, GitHub runs the workflow file from the pull request's own branch. Anyone who can push a branch to your repository can rewrite it and take the OpenRouter key and the job token. This is true of every workflow that uses secrets on that trigger, not of Coral in particular. If your `main` is protected but branch creation is not, restrict who can create branches.
 
 Prefer the management key, set a credit limit on whichever key you use, keep write access narrow, and treat Coral's comments as suggestions from an unreliable reviewer.
 
