@@ -23,7 +23,9 @@ class Comment:
     id: int
     namespace: Literal["issues", "pulls"]
     body: str
-    author: str
+    # `None` when the account that wrote it has been deleted, which is how the conversation reads
+    # an author too. Nobody is left to ask about, so the access check refuses it.
+    author: str | None
 
 
 @dataclass(frozen=True)
@@ -44,7 +46,7 @@ def commented(payload: dict[str, Any], namespace: Literal["issues", "pulls"]) ->
         id=comment["id"],
         namespace=namespace,
         body=comment["body"],
-        author=comment["user"]["login"],
+        author=comment["user"]["login"] if comment["user"] else None,
     )
 
 
