@@ -84,6 +84,12 @@ def write_output(name: str, value: str) -> None:
         output.write(f"{name}={value}\n")
 
 
+def mask(value: str) -> None:
+    """Register one dynamic value with the Actions log masker."""
+    assert "\n" not in value and "\r" not in value, f"Masked value holds a newline: {value!r}"
+    print(f"::add-mask::{value}")
+
+
 def temporary_directory() -> Path:
     """Coral's directory under the runner's temporary directory, outside the workspace."""
     directory = Path(os.environ["RUNNER_TEMP"]) / "coral"

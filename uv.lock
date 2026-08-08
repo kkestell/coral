@@ -236,6 +236,7 @@ name = "coral"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "deepagents" },
     { name = "httpx" },
     { name = "langchain-openrouter" },
@@ -251,6 +252,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=50.0.0" },
     { name = "deepagents", specifier = ">=0.7.5" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain-openrouter", specifier = ">=0.2.7" },

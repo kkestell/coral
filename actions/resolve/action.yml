@@ -11,6 +11,9 @@ inputs:
   openrouter-management-key:
     description: The management key Coral mints this run's API key with, or empty in the other mode.
     required: false
+  coral-key-encryption-key:
+    description: The Fernet key that encrypts this run's minted API key between jobs.
+    required: false
   openrouter-api-key-present:
     description: Whether the caller passed a plain API key, as the string `true` or `false`.
     required: true
@@ -31,12 +34,9 @@ outputs:
   timeout-minutes:
     description: The review job's `timeout-minutes` for the budget this run was given.
     value: ${{ steps.resolve.outputs.timeout-minutes }}
-  minted-key:
-    description: >
-      This run's own OpenRouter API key, when the caller passed a management key. Unmasked, and it
-      cannot be otherwise: the runner drops a job output its masker would alter. The job that
-      receives it masks it in its first step.
-    value: ${{ steps.resolve.outputs.minted-key }}
+  encrypted-key:
+    description: This run's Fernet-encrypted OpenRouter API key, or empty in plain-key mode.
+    value: ${{ steps.resolve.outputs.encrypted-key }}
 
 runs:
   using: composite
@@ -49,6 +49,7 @@ runs:
         CORAL_BIN: ${{ inputs.coral-bin }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         OPENROUTER_MANAGEMENT_KEY: ${{ inputs.openrouter-management-key }}
+        CORAL_KEY_ENCRYPTION_KEY: ${{ inputs.coral-key-encryption-key }}
         OPENROUTER_API_KEY_PRESENT: ${{ inputs.openrouter-api-key-present }}
         CORAL_TIME_BUDGET_MINUTES: ${{ inputs.time-budget-minutes }}
         CORAL_SPEND_CAP_DOLLARS: ${{ inputs.spend-cap-dollars }}

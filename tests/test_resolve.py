@@ -24,6 +24,7 @@ from coral.resolve import (
     Subject,
     acknowledgments,
     declined,
+    handoff_key,
     management_key,
     reported,
     subject_of,
@@ -309,6 +310,15 @@ def test_a_plain_key_alone_leaves_nothing_to_mint_with() -> None:
     # Pass-through mode. The review job reads that secret itself, so resolve is handed only the
     # fact that it exists.
     assert management_key("", api_key_present=True) is None
+
+
+def test_management_mode_requires_an_encryption_key_before_minting() -> None:
+    with pytest.raises(RuntimeError, match="CORAL_KEY_ENCRYPTION_KEY"):
+        handoff_key("sk-or-v1-management", "")
+
+
+def test_plain_mode_ignores_an_encryption_key() -> None:
+    assert handoff_key(None, "not a Fernet key") is None
 
 
 def test_neither_secret_names_both_and_says_to_pass_one() -> None:

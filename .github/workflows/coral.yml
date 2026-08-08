@@ -50,6 +50,9 @@ on:
       openrouter_management_key:
         description: An OpenRouter management key. Coral mints one API key per run with it.
         required: false
+      coral_key_encryption_key:
+        description: A Fernet key that encrypts a minted API key between resolve and review.
+        required: false
 
 # Three jobs so the agent runs in a job whose token writes nothing. Each job boundary is crossed
 # by job outputs for the values YAML reads and by artifacts for everything else, and each job
@@ -90,7 +93,7 @@ jobs:
     outputs:
       proceed: ${{ steps.resolve.outputs.proceed }}
       head-sha: ${{ steps.resolve.outputs.head-sha }}
-      minted-key: ${{ steps.resolve.outputs.minted-key }}
+      encrypted-key: ${{ steps.resolve.outputs.encrypted-key }}
       timeout-minutes: ${{ steps.resolve.outputs.timeout-minutes }}
     steps:
       - id: setup
@@ -107,6 +110,7 @@ jobs:
           # Validated here for the same reason, and the limit the minted key is created with.
           spend-cap-dollars: ${{ inputs.spend_cap_dollars }}
           openrouter-management-key: ${{ secrets.openrouter_management_key }}
+          coral-key-encryption-key: ${{ secrets.coral_key_encryption_key }}
           # Whether, never what. Resolve decides which mode this run is in and has no other use
           # for the plain key, so its value stays out of this job.
           openrouter-api-key-present: ${{ secrets.openrouter_api_key != '' }}
@@ -138,16 +142,6 @@ jobs:
     permissions:
       contents: read
     steps:
-      # First, so every later echo of the key is masked. The runner prints each step's `with:`
-      # and `env:` block before running it, and a key the caller never set is registered nowhere,
-      # so this step's own header carries it in the clear. That one line is what crossing a job
-      # boundary costs; it is why the key is capped and expires. Skipped in pass-through mode,
-      # where the caller's secret is registered and masked already.
-      - if: needs.resolve.outputs.minted-key != ''
-        env:
-          MINTED_KEY: ${{ needs.resolve.outputs.minted-key }}
-        run: echo "::add-mask::$MINTED_KEY"
-
       - id: setup
         uses: $/actions/setup
 
@@ -174,9 +168,9 @@ jobs:
           reasoning-effort: ${{ inputs.reasoning_effort }}
           time-budget-minutes: ${{ inputs.time_budget_minutes }}
           spend-cap-dollars: ${{ inputs.spend_cap_dollars }}
-          # Whichever mode the caller chose. Resolve has already refused a run that supplied both
-          # or neither, so exactly one side of this is ever set.
-          openrouter-api-key: ${{ secrets.openrouter_api_key || needs.resolve.outputs.minted-key }}
+          openrouter-api-key: ${{ secrets.openrouter_api_key }}
+          encrypted-openrouter-api-key: ${{ needs.resolve.outputs.encrypted-key }}
+          coral-key-encryption-key: ${{ secrets.coral_key_encryption_key }}
 
       # `!cancelled()` is what lets a failed review still hand its reason file on; a review that
       # died before writing anything uploads nothing, and that absence is an input the publishing

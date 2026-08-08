@@ -16,6 +16,7 @@ from coral.deadline import budget_seconds, reviewer_budget, start
 from coral.diff import added_lines, diff_text, merge_base
 from coral.github.conversation import Comment, Conversation, Thread, read_conversation
 from coral.github.post import count, payloads, write_payloads
+from coral.handoff import review_key
 from coral.openrouter import model_facts
 from coral.publish import described
 from coral.schema import Review, confirmed, where
@@ -207,9 +208,14 @@ def review() -> None:
     # way a failure here reaches the pull request, and there is no failure the file cannot carry.
     try:
         # Popped rather than read, before any other work, so no later code that assembles a child
-        # environment out of `os.environ` can pick it up by accident. The one credential this
-        # step sees: the job's token is not in its environment at all.
-        api_key = os.environ.pop("OPENROUTER_API_KEY")
+        # environment out of `os.environ` can pick them up by accident. The review job has no
+        # GitHub token, and its API key is either the caller's secret or a decrypted handoff.
+        plain_key = os.environ.pop("OPENROUTER_API_KEY")
+        encrypted_key = os.environ.pop("ENCRYPTED_OPENROUTER_API_KEY")
+        encryption = os.environ.pop("CORAL_KEY_ENCRYPTION_KEY")
+        api_key = review_key(plain_key, encrypted_key, encryption)
+        if not plain_key:
+            runner.mask(api_key)
 
         # The four the caller configured, each already defaulted by the reusable workflow. The
         # budget runs from the top of the step, so everything below is spent out of it; the resolve

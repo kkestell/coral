@@ -13,20 +13,20 @@ How the code is organized and how it runs on GitHub Actions.
 ## Installation and Packaging
 
 - Composite actions in this repository, wired by a reusable workflow, installed by one short caller file per repository.
-- The caller file must carry all five of: version pin, OpenRouter secret, `on:` block, `permissions:` block, concurrency group. A reusable workflow can declare none of them for its caller. Any configuration goes there too, and only there: a file in the repository under review would let a pull request pick the model that reviews it.
+- The caller file carries the version pin, OpenRouter secret, `on:` block, `permissions:` block, and concurrency group. A reusable workflow cannot declare them for its caller. It also owns configuration, because a file under review would let a pull request pick the model.
 - This repository is public, so callers need no access configuration.
-- One OpenRouter secret, exactly one of two kinds: a plain API key, used as it is, or a management key Coral mints one capped, expiring API key per run with. The GitHub token comes from the job.
+- A caller passes a plain API key, or a management key and generated Fernet encryption key. The management key reaches resolve alone. The encryption key has no provider authority and reaches resolve and review. The GitHub token comes from the job.
 
 ## The Run
 
 Three jobs in fixed order — resolve, review, publish — each on its own runner with its own `permissions`.
 
-- Resolve holds `contents: read`, `issues: write`, and `pull-requests: write`. The gatekeeper: it fetches the pull request and the conversation, acknowledges requests, and decides whether a review runs. Both commits are pinned here and never re-read. It derives the review job's `timeout-minutes` from the time budget, because Actions expressions have no arithmetic. It is also the only job the management key reaches, minting once the gates pass, at the caller's spend cap, and handing the key on as a job output the review job masks on receipt.
+- Resolve holds `contents: read`, `issues: write`, and `pull-requests: write`. The gatekeeper fetches the pull request and conversation, acknowledges requests, and decides whether a review runs. Both commits are pinned here and never re-read. It derives the review job's `timeout-minutes` from the time budget, because Actions expressions have no arithmetic. It alone receives the management key, then mints, masks, and encrypts the capped key after the gates pass.
 - Review runs the agent and holds `contents: read`; its review step makes no API call and its environment carries no token. Its `timeout-minutes` is resolve's derived output. Each agent run gets a fresh copy of the checkout and a container of its own, so no agent writes the workspace. It verifies the findings with a second run and writes the two create-review bodies: the anchored one and the one with every finding demoted. The review object never crosses: both bodies need the added-line set the anchors were checked against, which exists only here.
 - The checkout takes the pinned head SHA, full history, and no persisted credentials.
 - Publish holds resolve's three scopes and is the only job that posts: the review, or the failure comment — including for a review job that died whole and crossed no reason file. It stamps `commit_id` and `event` on whichever body it posts; the agent's job gets no say in either.
 - Each job builds Coral's virtual environment under the runner's temporary directory — outside the workspace and off `PATH`, every step invoking the console script by absolute path.
-- A job boundary is a machine boundary, each side a fresh runner and filesystem. The head SHA, the `proceed` flag, the review job's timeout, and the minted key cross as job outputs — the values YAML reads; everything else crosses as artifacts under the runner's temporary directory, outside the workspace.
+- A job boundary is a machine boundary, each side a fresh runner and filesystem. The head SHA, `proceed` flag, review timeout, and ciphertext cross as job outputs; everything else crosses as artifacts under the runner's temporary directory, outside the workspace. Review decrypts ciphertext in its runner process before either container starts.
 - A stopped run is green: `proceed=false`, reason on stderr, exit zero, later jobs skipped. Only a broken run is red; a cancelled run posts nothing.
 
 ## The Codebase
@@ -35,6 +35,7 @@ One console script. `coral resolve`, `coral review`, and `coral publish` are eac
 
 - `coral/cli.py` — one `argparse` parser.
 - `coral/runner.py` — the event, step outputs, the temporary directory whose files cross jobs as artifacts, the one reading of `GITHUB_WORKSPACE`.
+- `coral/handoff.py` — validation, encryption, and decryption for the minted-key handoff.
 - `coral/resolve.py` — the gatekeeper: fetch the pull request and conversation, acknowledge requests, apply the gates.
 - `coral/review.py` — render each request, run both agents, filter, write the bodies that cross to publish.
 - `coral/rehearse.py` — the review step over one commit of a local clone.
@@ -70,7 +71,6 @@ Rules:
 
 - An agent's only return value is a structured object, and deterministic code does the posting. Nothing the model produces becomes a push, an approval, or a comment Coral did not compose.
 - Every change Coral runs came from somebody with push access: it refuses a fork's pull request, and `/coral` from anybody whose collaborator permission is not push. An `author_association` decides nothing, because GitHub gives `MEMBER` and `COLLABORATOR` to read-only people.
-- On a public repository the logs are public, so the minted key's cleartext line is readable by anybody until it expires. Coral's own install passes a plain key.
 - Each agent run reaches only its own copy of the checkout, and Coral's own code reaches `git` in the workspace only through `coral/diff.py`, so the diff the agent saw and the diff the anchors are checked against are the same.
 - The agent's shell holds no credential and sees only that copy and the read-only toolcache. The runner's filesystem, its process table, and `Runner.Worker`'s memory are on the far side of a namespace boundary, and the container is capped in memory, processors, and processes. It keeps the network, because there is nothing in the container to send out.
 - Every answer Coral holds is bounded as it arrives — a GitHub response, a comment body, a command's output — so no input decides how much memory Coral spends.

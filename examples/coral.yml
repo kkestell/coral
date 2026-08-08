@@ -44,8 +44,9 @@ jobs:
     #   # What one review may spend. A review that reaches this stops and says so, and a minted
     #   # key is created with this as its limit.
     #   spend_cap_dollars: "2.00"
-    # Pass the one you created, and only that one. A management key gets each run its own key,
-    # capped and expiring; a plain API key is used as it is.
+    # Pass a plain API key, or both management-mode secrets. A management key gets each run its
+    # own capped, expiring key, encrypted between the resolve and review jobs.
     secrets:
       openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
       # openrouter_management_key: ${{ secrets.OPENROUTER_MANAGEMENT_KEY }}
+      # coral_key_encryption_key: ${{ secrets.CORAL_KEY_ENCRYPTION_KEY }}

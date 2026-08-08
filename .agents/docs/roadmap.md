@@ -168,10 +168,46 @@ Every review ends with what the run spent, read off the ledger item 15 built. Co
 
 Done when: a pull request on `kkestell/coral` carries a review whose last line names what it cost, matching the total in the review step's log.
 
+## 17. Encrypt the minted key between jobs
+
+Status: not started
+Depends on: 16
+
+The resolve job still mints the capped, expiring OpenRouter API key, but only ciphertext crosses into the review job. The management key remains confined to resolve, and neither the key nor a reversible text encoding of it appears in a job output, log, or artifact.
+
+- The plain API-key mode remains unchanged, because GitHub already registers that caller secret with the review job's masker.
+- The review process decrypts the minted key outside the agent's container and never writes its plaintext to the checkout or an artifact.
+
+Done when: a real review using a management key runs green, the complete run log contains no cleartext minted key, and the review container still carries no credential.
+
+## 18. External credential broker (optional)
+
+Status: not started
+Depends on: 17
+
+An installation can use an external broker that holds the OpenRouter management key outside GitHub Actions. The review job authenticates with its GitHub OIDC identity, and the broker grants authority for only that repository, workflow run, model, spend cap, and expiry.
+
+- This is optional hardening. An installation without a broker keeps the encrypted handoff from item 17.
+- No standing broker credential reaches GitHub Actions. Compromising one review can spend no more than that review's server-enforced cap.
+
+Done when: a broker-backed real review runs green without an OpenRouter management key in GitHub, a request with the wrong workflow identity or run parameters is refused, and the same caller still runs through the encrypted-handoff path when broker configuration is absent.
+
+## 19. MicroVM agent shell (optional)
+
+Status: not started
+Depends on: 17
+
+An installation can run agent-chosen commands in a disposable microVM whose kernel is separate from the review runner. The model client and its credential remain on the runner side of that boundary.
+
+- This is optional hardening. An installation without a microVM keeps the container path from item 12.
+- The microVM gets the checkout and toolchains it needs, but no OpenRouter credential, GitHub token, runner filesystem, runner process table, or host control socket.
+
+Done when: broker-backed and encrypted-handoff reviews each run Python, Node, and Go project tests inside the microVM; commands there cannot reach the runner's filesystem or process table; and an installation with no microVM configuration still runs the same checks in the container.
+
 ## Not On This Roadmap
 
 Named so nobody has to guess. Everything under "Out Of Scope" in `.agents/docs/functional-requirements.md` also applies.
 
-- A second forge, model provider, or compute target. The swappable backend and the single model-client construction site are as far as this goes.
+- A second forge or model provider. The swappable backend and the single model-client construction site are as far as this goes.
 - Any store of past reviews. Coral reads the pull request.
 - GitHub Enterprise Server. The `$/` reference does not exist there; supporting it means a second packaging answer, not attempted.

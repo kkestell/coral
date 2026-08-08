@@ -6,8 +6,14 @@ inputs:
     description: The directory holding the `coral` console script.
     required: true
   openrouter-api-key:
-    description: The credential for the model provider.
-    required: true
+    description: The caller's model-provider credential in plain-key mode.
+    required: false
+  encrypted-openrouter-api-key:
+    description: The encrypted model-provider credential from resolve in management-key mode.
+    required: false
+  coral-key-encryption-key:
+    description: The Fernet key that decrypts the management-mode credential.
+    required: false
   model:
     description: The OpenRouter model id, named exactly.
     required: true
@@ -31,6 +37,8 @@ runs:
       env:
         CORAL_BIN: ${{ inputs.coral-bin }}
         OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        ENCRYPTED_OPENROUTER_API_KEY: ${{ inputs.encrypted-openrouter-api-key }}
+        CORAL_KEY_ENCRYPTION_KEY: ${{ inputs.coral-key-encryption-key }}
         CORAL_MODEL: ${{ inputs.model }}
         CORAL_REASONING_EFFORT: ${{ inputs.reasoning-effort }}
         CORAL_TIME_BUDGET_MINUTES: ${{ inputs.time-budget-minutes }}

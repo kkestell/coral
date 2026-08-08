@@ -121,6 +121,8 @@ def rehearse(arguments: argparse.Namespace) -> None:
     # everything it needs from these and nothing else.
     os.environ.update(
         OPENROUTER_API_KEY=openrouter_key(repo),
+        ENCRYPTED_OPENROUTER_API_KEY="",
+        CORAL_KEY_ENCRYPTION_KEY="",
         CORAL_TOOLCACHE=str(work / "toolcache"),
         CORAL_MODEL=arguments.model,
         CORAL_REASONING_EFFORT=arguments.effort,

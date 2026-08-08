@@ -120,6 +120,16 @@ def test_write_output_refuses_a_value_holding_a_newline(
         runner.write_output("summary", "one\ntwo")
 
 
+def test_mask_writes_one_workflow_command(capsys: pytest.CaptureFixture[str]) -> None:
+    runner.mask("sk-or-v1-secret")
+    assert capsys.readouterr().out == "::add-mask::sk-or-v1-secret\n"
+
+
+def test_mask_refuses_a_value_holding_a_newline() -> None:
+    with pytest.raises(AssertionError):
+        runner.mask("one\ntwo")
+
+
 def test_the_temporary_directory_is_made_under_the_runners_own(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

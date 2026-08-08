@@ -33,16 +33,18 @@ jobs:
     secrets:
       openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
       # openrouter_management_key: ${{ secrets.OPENROUTER_MANAGEMENT_KEY }}
+      # coral_key_encryption_key: ${{ secrets.CORAL_KEY_ENCRYPTION_KEY }}
 ```
 
 **2. Add the secret.** Coral reaches its model through [OpenRouter](https://openrouter.ai), so an OpenRouter key is the only credential you supply. The GitHub token comes from the job and expires with it.
 
-Add one of these under Settings → Secrets and variables → Actions:
+Add the plain-key secret, or both management-mode secrets, under Settings → Secrets and variables → Actions:
 
 - `OPENROUTER_API_KEY` — a plain API key, used as it is. Set a credit limit on it; that limit is what bounds the damage if it leaks.
 - `OPENROUTER_MANAGEMENT_KEY` — a [provisioning key](https://openrouter.ai/settings/provisioning-keys). Coral mints a fresh API key for each run, capped at `spend_cap_dollars` and expiring within the hour. Nothing to rotate if one leaks.
+- `CORAL_KEY_ENCRYPTION_KEY` — the Fernet key that carries a minted key from resolve to review. Generate it once and save the output as this secret: `python -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`.
 
-Prefer the management key if your account balance would hurt to lose. The workflow above passes the plain key; comment that line out and uncomment the other to switch.
+Prefer the management key if your account balance would hurt to lose. The workflow above passes the plain key; comment that line out and uncomment both management-mode lines to switch. Ciphertext crosses the job boundary, and the review runner decrypts the key only in its own process.
 
 ## Configuring Coral
 
@@ -87,7 +89,6 @@ The measures below limit the damage. None of them stop a determined attacker fro
 - A container escape reaches the review job, which holds the OpenRouter key.
 - OpenRouter and whichever provider it routes to see the diff, files the agent opens, command output, and the conversation. Do not install Coral where that is unacceptable.
 - Prompt injection works. The diff and the conversation are attacker-controlled text in the model's context, so a review can be steered into missing a finding or posting text somebody else wrote.
-- Handing a minted key between jobs prints it in one log line before masking starts. Anyone who can read your Actions logs can spend it until it expires.
 
 Prefer the management key, set a credit limit on whichever key you use, keep write access narrow, and treat Coral's comments as suggestions from an unreliable reviewer.
 

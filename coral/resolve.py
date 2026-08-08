@@ -20,6 +20,7 @@ from coral.github.client import GitHub
 from coral.github.conversation import Conversation, bound, fetch_conversation, write_conversation
 from coral.github.post import count, post_comment
 from coral.github.reactions import Request, react, requests_in
+from coral.handoff import encrypt, encryption_key
 from coral.openrouter import key_ttl_seconds, mint
 from coral.publish import described
 from coral.runner import Event
@@ -88,6 +89,11 @@ def management_key(passed: str, api_key_present: bool) -> str | None:
             f"secrets, and this run was passed {held}. Pass the one you created."
         )
     return passed or None
+
+
+def handoff_key(management: str | None, passed: str) -> str | None:
+    """Validate the handoff key only when management mode will mint a credential."""
+    return encryption_key(passed) if management is not None else None
 
 
 def reported[T](work: Callable[[], T]) -> T:
@@ -242,13 +248,17 @@ def resolve() -> None:
             os.environ["OPENROUTER_API_KEY_PRESENT"] == "true",
         )
     )
+    encryption = reported(lambda: handoff_key(management, os.environ["CORAL_KEY_ENCRYPTION_KEY"]))
 
     # After the gates, so a declined run mints nothing, and before the outputs, so a mint that
     # fails leaves no `proceed=true` behind it. The key is named for the run, which is what ties
     # a key in the OpenRouter dashboard to the review that asked for it.
     if management is not None:
         minted = partial(mint, management, runner.run_url(), key_ttl_seconds(timeout), cap)
-        runner.write_output("minted-key", reported(minted))
+        api_key = reported(minted)
+        runner.mask(api_key)
+        assert encryption is not None
+        runner.write_output("encrypted-key", reported(lambda: encrypt(encryption, api_key)))
 
     runner.write_output("head-sha", subject.head_sha)
     runner.write_output("timeout-minutes", str(timeout))
