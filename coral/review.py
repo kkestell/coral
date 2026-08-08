@@ -33,8 +33,8 @@ def attribution(comment: Comment) -> str:
     """Who wrote a comment, as the agent is told.
 
     The association is the cheapest basis the model gets for weighing a comment, and Coral's own
-    comments have to be identifiable so a finding that already stands is not made twice. Coral
-    recognizes its own by the marker, never by the author login.
+    comments have to be identifiable so a finding that already stands is not made twice. Which
+    comments are Coral's is settled where the conversation is read, and never here.
     """
     if comment.mine:
         return "Coral"

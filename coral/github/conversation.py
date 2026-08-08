@@ -14,10 +14,12 @@ Every comment in that sense carries a timestamp of its own, which is what makes 
 ordering possible. Only a thread has none, and a thread does not need one: a thread is kept when
 a comment inside it is kept.
 
-Coral recognizes its own work by the marker on the comment and never by the author login, which
-belongs to the repository's automation and is shared with everything else that account posts.
-Where the marker decides something rather than labelling something, `viewerDidAuthor` narrows it
-to the comments the job's own token wrote, because the marker itself is forgeable.
+A comment is Coral's when the job's own token wrote it and the marker is on it. Neither half
+stands alone. The author login belongs to the repository's automation and is shared with
+everything else that account posts, and the marker is characters anybody with read access can
+type into a comment or a review. A marker trusted on its own would let a stranger have the next
+run's prompt attribute their words to Coral, and would let them suppress the automatic review of
+a commit silently.
 """
 
 import logging
@@ -29,7 +31,7 @@ from typing import Any, Final
 from pydantic import TypeAdapter
 
 from coral.github.client import GitHub
-from coral.github.marker import is_mine, reviewed_commit
+from coral.github.marker import has_marker, reviewed_commit
 
 log = logging.getLogger(__name__)
 
@@ -69,8 +71,8 @@ EYES: Final = "EYES"
 # asked for on reviews as well, because the review dataclass inherits the comment's fields and
 # not because a review is ever a reaction target.
 #
-# `viewerDidAuthor` is asked for on reviews only, because `reviewed_commits` is the one place a
-# marker decides something rather than labelling something.
+# `viewerDidAuthor` is asked for on all three node types, because nothing here reads a marker
+# without it.
 
 REVIEW_FIELDS: Final = """
 fragment ReviewFields on PullRequestReview {
@@ -108,6 +110,7 @@ fragment ThreadFields on PullRequestReviewThread {
       createdAt
       outdated
       originalLine
+      viewerDidAuthor
       reactionGroups { content viewerHasReacted }
     }
   }
@@ -122,6 +125,7 @@ fragment CommentFields on IssueComment {
   authorAssociation
   body
   createdAt
+  viewerDidAuthor
   reactionGroups { content viewerHasReacted }
 }
 """
@@ -362,6 +366,11 @@ def already_reacted(node: dict[str, Any]) -> bool:
     )
 
 
+def wrote_it(node: dict[str, Any]) -> bool:
+    """Whether this node is Coral's own: the job's token wrote it and the marker is on it."""
+    return node["viewerDidAuthor"] and has_marker(node["body"])
+
+
 def parse_comments(nodes: list[Any]) -> list[Comment]:
     """The issue comments, which are the comments on the pull request as a whole."""
     return [
@@ -372,7 +381,7 @@ def parse_comments(nodes: list[Any]) -> list[Comment]:
             association=node["authorAssociation"],
             body=node["body"],
             written_at=node["createdAt"],
-            mine=is_mine(node["body"]),
+            mine=wrote_it(node),
             reacted=already_reacted(node),
         )
         for node in nodes
@@ -396,7 +405,7 @@ def parse_reviews(nodes: list[Any]) -> list[PastReview]:
                 association=node["authorAssociation"],
                 body=node["body"],
                 written_at=node["submittedAt"],
-                mine=is_mine(node["body"]),
+                mine=wrote_it(node),
                 reacted=already_reacted(node),
                 state=node["state"],
                 commit=node["commit"]["oid"] if node["commit"] else None,
@@ -415,7 +424,7 @@ def parse_thread_comments(nodes: list[Any]) -> list[ThreadComment]:
             association=node["authorAssociation"],
             body=node["body"],
             written_at=node["createdAt"],
-            mine=is_mine(node["body"]),
+            mine=wrote_it(node),
             reacted=already_reacted(node),
             outdated=node["outdated"],
             original_line=node["originalLine"],
@@ -450,11 +459,6 @@ def reviewed_commits(nodes: list[Any]) -> list[str]:
     function of how much other people talked. Read from review bodies only: an inline finding
     carries a marker naming a commit too, and so will the failure comment, and neither of those
     means the commit was reviewed.
-
-    Only reviews the job's own token wrote count. The marker is characters anybody can type, and
-    anybody with read access can submit a review on a public pull request, so without
-    `viewerDidAuthor` a stranger could suppress the automatic review of a commit — silently, since
-    that gate posts nothing.
     """
     found = (reviewed_commit(node["body"]) for node in nodes if node["viewerDidAuthor"])
     return list(dict.fromkeys(commit for commit in found if commit is not None))

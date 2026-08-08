@@ -5,8 +5,10 @@ commit SHA inside it is how the next run knows which commits Coral has already l
 is the whole of Coral's memory.
 
 The commit is optional because a run can fail before it has one: the pull request was never
-fetched, and a comment payload carries no head SHA. The sentinel alone is still enough to say
-Coral wrote the comment.
+fetched, and a comment payload carries no head SHA.
+
+The marker is characters anybody can type, so a body carrying one says only that it claims to be
+Coral's. What settles that it is Coral's is `coral/github/conversation.py`.
 """
 
 import re
@@ -23,8 +25,8 @@ def marker(commit: str | None) -> str:
     return f"<!-- {SENTINEL} commit={commit} -->"
 
 
-def is_mine(body: str) -> bool:
-    """Whether Coral wrote this, which the sentinel answers whether or not a commit follows it."""
+def has_marker(body: str) -> bool:
+    """Whether a body carries the sentinel, which it does whether or not a commit follows it."""
     return PATTERN.search(body) is not None
 
 

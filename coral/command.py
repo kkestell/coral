@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from coral.github.client import ApiError, GitHub
-from coral.github.marker import is_mine
+from coral.github.marker import has_marker
 
 log = logging.getLogger(__name__)
 
@@ -119,7 +119,9 @@ def is_request(body: str, author: str | None, access: Access) -> bool:
     """
     # Coral cannot trigger itself today, because an event created with the job's own token
     # starts no workflow run at all. This is here because that property expires the moment Coral
-    # is given an identity of its own.
-    if is_mine(body) or not asks_for_review(body):
+    # is given an identity of its own. The marker is taken at face value here, unlike everywhere
+    # else, because the comment on a payload carries no `viewerDidAuthor` to check it against;
+    # forging one costs the forger the command in their own comment and nothing else.
+    if has_marker(body) or not asks_for_review(body):
         return False
     return access.writes(author)
