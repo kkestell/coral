@@ -158,7 +158,7 @@ Done when: a review capped at a fraction of a cent stops and posts one comment n
 
 ## 16. What a review cost
 
-Status: not started
+Status: built
 Depends on: 15
 
 Every review ends with what the run spent, read off the ledger item 15 built. Coral is installed on its own repository, so this is the first item checked by a pull request on `kkestell/coral` rather than on the test repository.
