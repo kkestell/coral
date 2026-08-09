@@ -4,14 +4,10 @@ The order the work happens in. A sequence, not a schedule: one item is one plan,
 
 ## 24. Agent file tools inside the container
 
-Status: built
+Status: verified
 Depends on: 12
 
 Every agent file tool runs in the container under the limits its shell already has. `read_file`, `write_file`, `edit_file`, `glob`, `grep`, and `delete` reach the checkout through `container.execute` rather than through Coral's Python on the runner.
-
-- The framework's inherited implementation reads a whole file into the runner's memory before slicing it to the requested lines, and its own size cap covers `grep` alone.
-- The tools and the shell see one filesystem: a file a tool writes is immediately runnable in the shell, and the other way around.
-- A tool's own failure still goes back to the model as an observation rather than ending the run.
 
 Done when: a real review reads, edits, searches, and runs a scratch test through the tools; a read of a file larger than the container's memory limit dies in the container rather than on the runner; and no agent tool reaches the runner's filesystem.
 
