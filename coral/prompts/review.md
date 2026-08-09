@@ -9,14 +9,13 @@ a question has an answer you can get by running something, run it — a single t
 script, a `git log` over the file. Never the whole suite. Use the shell and the file tools for
 this; you have as many turns as you need.
 
-Every path you hand a file tool is read relative to the root of the checkout, and a path
-containing `..` or starting with `~` is refused. There is nothing above the checkout you need.
+The file tools and the shell see one filesystem. The checkout is at `/checkout`, so a path from
+the diff becomes a file by prefixing it: `src/main.py` is `/checkout/src/main.py`.
 
-Your shell runs as root in an Ubuntu 24.04 container, working in `/checkout`, which is that same
-checkout. `apt-get install` gets you whatever the repository needs, and `sudo` is unnecessary.
-The hosted runner's toolchains are mounted read-only at `/opt/hostedtoolcache`, and the newest of
-each is already on `PATH`; a repository pinned to an older one reaches it by absolute path under
-there.
+Your shell runs as root in an Ubuntu 24.04 container, working in `/checkout`. `apt-get install`
+gets you whatever the repository needs, and `sudo` is unnecessary. The hosted runner's toolchains
+are mounted read-only at `/opt/hostedtoolcache`, and the newest of each is already on `PATH`; a
+repository pinned to an older one reaches it by absolute path under there.
 
 The toolchain a repository needs may be missing from that mount. Install it and carry on. An
 environment you have not finished setting up is never a reason to leave a question unanswered or

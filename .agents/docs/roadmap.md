@@ -4,7 +4,7 @@ The order the work happens in. A sequence, not a schedule: one item is one plan,
 
 ## 24. Agent file tools inside the container
 
-Status: not started
+Status: built
 Depends on: 12
 
 Every agent file tool runs in the container under the limits its shell already has. `read_file`, `write_file`, `edit_file`, `glob`, `grep`, and `delete` reach the checkout through `container.execute` rather than through Coral's Python on the runner.
@@ -68,6 +68,20 @@ closing-linked issues, its title and body, and every commit message in the revie
 - Resolve fetches the context before the review, and it crosses to review as an artifact. The agents receive no GitHub credential.
 
 Done when: a real pull-request review reads both a linked issue and one named only in a commit message, a real main-push review reads an issue named by a commit in its range, both agents receive the same context, unavailable and excess references leave an explicit bounded notice, and no agent container carries a GitHub token.
+
+## 26. Automatic pull-request review from pull_request_target
+
+Status: not started
+Depends on: 24
+
+Automatic pull-request review moves from the `pull_request` trigger to `pull_request_target`, so the workflow that receives the OpenRouter and GitHub secrets always runs from the default branch rather than from the pull request's own merge branch. A same-repository branch that edits `review.yml` no longer changes how its own pull request is reviewed.
+
+- The event's pinned head SHA is what's checked out, checked against, and posted against, the same pattern a `main` push already uses; the ref itself is never checked out.
+- Safe only once item 24 lands: `pull_request_target` still runs the pull request's diff through the review, and doing that outside the container while secrets are present would be a privileged execution path.
+- `pull_request_target` hands every secret to a fork's pull request too, unlike `pull_request`. The existing repository-id fork gate in `resolve.py`, not the current absence of secrets on a fork-triggered run, has to be what still declines a fork's pull request.
+- `/coral`'s manual-comment path is unaffected; only the automatic pull-request trigger's event type and checkout ref change.
+
+Done when: a real pull request from a same-repository branch that edits `review.yml` is reviewed under the default branch's version of it, not its own; the review still anchors against and posts against the pull request's actual head commit; and a real fork's pull request is still declined before any secret is touched.
 
 ## Not On This Roadmap
 

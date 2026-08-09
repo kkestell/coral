@@ -41,7 +41,7 @@ One console script. `coral resolve`, `coral review`, and `coral publish` are eac
 - `coral/rehearse.py` — the review step over one commit of a local clone.
 - `coral/publish.py` — the publishing step: the review, or the failure comment.
 - `coral/agent.py` — the only module that imports `deepagents`.
-- `coral/container.py` — the agent's container: the pinned image, the mounts, and the shell it runs.
+- `coral/container.py` — the agent's container: the pinned image, the mounts, the commands it runs, and the bytes a file tool moves across the boundary.
 - `coral/openrouter.py` — OpenRouter's HTTP API: minting this run's key, and the model listing the profile is built from.
 - `coral/schema.py` — the review object and its anchors, the verifier's verdicts, and the filter between them; the only place structure originates.
 - `coral/command.py` — what counts as a request: the command, who may make one, Coral's own comments.
@@ -73,7 +73,7 @@ Rules:
 - An agent's only return value is a structured object, and deterministic code does the posting. Nothing the model produces becomes a push, an approval, or a comment Coral did not compose.
 - Every change Coral runs came from somebody with push access: it refuses a fork's pull request, and `/coral` from anybody whose collaborator permission is not push. An `author_association` decides nothing, because GitHub gives `MEMBER` and `COLLABORATOR` to read-only people.
 - Each agent run reaches only its own copy of the checkout, and Coral's own code reaches `git` in the workspace only through `coral/diff.py`, so the diff the agent saw and the diff the anchors are checked against are the same.
-- The agent's shell holds no credential and sees only that copy and the read-only toolcache. The runner's filesystem, its process table, and `Runner.Worker`'s memory are on the far side of a namespace boundary, and the container is capped in memory, processors, and processes. It keeps the network, because there is nothing in the container to send out. The framework's file tools are Coral's own Python on the runner, confined to that copy and bounded by nothing else; roadmap item 24 moves them in.
+- Every tool the agent holds runs inside the container, which holds no credential and sees only that copy and the read-only toolcache. The runner's filesystem, its process table, and `Runner.Worker`'s memory are on the far side of a namespace boundary, and the container is capped in memory, processors, and processes. It keeps the network, because there is nothing in the container to send out.
 - Every answer Coral holds is bounded as it arrives — a GitHub response, a comment body, a command's output — so no input decides how much memory Coral spends. The diff is the exception; roadmap item 25 bounds it.
 - The review runner logs each public tool call with bounded arguments and its duration. It omits tool results, DeepAgents implementation names, and HTTP transport diagnostics.
 - What a compromised agent can still choose is the text of the review the publishing job posts, marker included — never `event`, `commit_id`, or any write anywhere.
@@ -84,4 +84,4 @@ Rules:
 
 - Hosted Ubuntu: 4 vCPU / 16 GB public, 2 vCPU / 8 GB private, 14 GB SSD.
 - Coral's own process runs on the runner; the agent's shell runs as root in an `ubuntu:24.04` container. Reviewing a repository means running its tests with its toolchain, so the container mounts the hosted image's toolcache read-only and has `apt-get` for the rest.
-- On the comment paths the workflow file is read from the default branch, so a pull request cannot change how it is reviewed by asking. On the `pull_request` path it comes from the head, so anybody who can push a branch rewrites the workflow and takes the OpenRouter key and the job token. Push access is trusted access here; a repository meaning otherwise restricts branch creation.
+- On the comment paths the workflow file is read from the default branch, so a pull request cannot change how it is reviewed by asking. On the `pull_request` path it comes from the head, so anybody who can push a branch rewrites the workflow and takes the OpenRouter key and the job token; roadmap item 26 moves automatic delivery to `pull_request_target` so the head can no longer do that. Push access is trusted access here; a repository meaning otherwise restricts branch creation.

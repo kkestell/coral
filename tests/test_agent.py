@@ -6,17 +6,19 @@ the construction relies on.
 """
 
 import time
+from base64 import b64encode
 from inspect import signature
-from pathlib import Path
 from typing import Any
 
 import pytest
+from deepagents.backends.protocol import ExecuteResponse
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 from langchain_core.tools import StructuredTool
 
 import coral.agent
+from coral import container
 from coral.agent import (
     SHELL_CEILING_SECONDS,
     ContainerBackend,
@@ -64,9 +66,21 @@ LUNA = ModelFacts(
 )
 
 
-def backend(tmp_path: Path) -> ContainerBackend:
-    """A backend over an empty directory. Nothing here executes, so no container is started."""
-    return ContainerBackend(tmp_path, "coral-reviewer", SHELL_CEILING_SECONDS)
+def backend() -> ContainerBackend:
+    """A backend naming a container. Nothing here executes, so none is started."""
+    return ContainerBackend("coral-reviewer", SHELL_CEILING_SECONDS)
+
+
+class Recording(ContainerBackend):
+    """A backend that answers every command with nothing and keeps what it was asked to run."""
+
+    def __init__(self) -> None:
+        super().__init__("coral-reviewer", SHELL_CEILING_SECONDS)
+        self.commands: list[str] = []
+
+    def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
+        self.commands.append(command)
+        return ExecuteResponse(output="", exit_code=0, truncated=False)
 
 
 def test_the_prompt_comes_out_of_the_installed_package() -> None:
@@ -227,34 +241,82 @@ def test_tool_progress_bounds_and_escapes_long_arguments() -> None:
     assert "\n" not in rendered
 
 
-def test_every_filesystem_tool_is_wrapped(tmp_path: Path) -> None:
+def test_every_filesystem_tool_is_wrapped() -> None:
     # `execute` included. A shell command that will not parse is the same kind of mistake.
     from deepagents import FilesystemMiddleware
 
-    middleware = forgiving(FilesystemMiddleware(backend=backend(tmp_path)))
+    middleware = forgiving(FilesystemMiddleware(backend=backend()))
     for tool in middleware.tools:
         assert isinstance(tool, StructuredTool)
         assert hasattr(tool.func, "__wrapped__"), f"{tool.name} was left raising"
 
 
-def test_the_filesystem_middleware_name_is_the_class_name(tmp_path: Path) -> None:
+def test_the_filesystem_middleware_name_is_the_class_name() -> None:
     # Recording a dependency's behavior, and the one Coral's construction rests on: middleware
     # merges by name, so an instance named `FilesystemMiddleware` replaces the framework's own
     # rather than joining it. An upstream rename would leave two middlewares each registering a
     # `read_file` tool, and the shell ceiling would be whichever one won.
     from deepagents import FilesystemMiddleware
 
-    assert FilesystemMiddleware(backend=backend(tmp_path)).name == "FilesystemMiddleware"
+    assert FilesystemMiddleware(backend=backend()).name == "FilesystemMiddleware"
 
 
-def test_the_container_backend_is_still_offered_a_shell(tmp_path: Path) -> None:
+def test_the_container_backend_carries_every_tool_the_agent_holds() -> None:
     # The framework registers `execute` only for a backend passing `isinstance` against
     # `SandboxBackendProtocol`, which is why the container is a subclass rather than a wrapper
-    # forwarding to one. Without this the agent would have file tools and no shell.
+    # forwarding to one. Without that the agent would have file tools and no shell; without the
+    # rest of the list it would have a shell and no file tools.
     from deepagents import FilesystemMiddleware
+    from deepagents.backends.protocol import SandboxBackendProtocol
 
-    middleware = FilesystemMiddleware(backend=backend(tmp_path))
-    assert "execute" in {tool.name for tool in middleware.tools}
+    assert isinstance(backend(), SandboxBackendProtocol)
+    middleware = FilesystemMiddleware(backend=backend())
+    assert {tool.name for tool in middleware.tools} == {
+        "ls",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "delete",
+        "glob",
+        "grep",
+        "execute",
+    }
+
+
+def encoded(path: str) -> str:
+    """The search root as the framework's glob script carries it, base64-encoded."""
+    return b64encode(path.encode()).decode()
+
+
+def test_a_glob_with_no_path_searches_the_checkout() -> None:
+    # The framework's own default root is `/`, and a walk from there spends the whole shell
+    # ceiling on `/proc`, `/sys`, and the toolcache mount without answering.
+    recording = Recording()
+    recording.glob("**/*.py")
+    assert encoded(container.CHECKOUT) in recording.commands[0]
+
+
+def test_a_glob_with_a_path_searches_where_the_model_said() -> None:
+    recording = Recording()
+    recording.glob("*.py", "/checkout/tests")
+    assert encoded("/checkout/tests") in recording.commands[0]
+
+
+def test_a_grep_glob_the_framework_cannot_run_is_an_error_rather_than_no_matches() -> None:
+    # That route's Python is embedded in a double-quoted shell string and truncated by a comment
+    # of its own, and the route discards stderr, so the model would read a syntax error as an
+    # answered search that found nothing.
+    recording = Recording()
+    result = recording.grep("token", glob="src/**/*.py")
+    assert result.error is not None
+    assert "'*.py'" in result.error
+    assert recording.commands == []
+
+
+def test_a_grep_glob_on_the_file_name_alone_reaches_the_framework() -> None:
+    recording = Recording()
+    recording.grep("token", glob="*.py")
+    assert recording.commands
 
 
 class Built:
@@ -272,7 +334,6 @@ class Built:
 
 
 def run_against(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     effort: str = "",
     facts: ModelFacts = LUNA,
@@ -298,7 +359,6 @@ def run_against(
         "openai/gpt-5.6-luna",
         effort,
         facts,
-        tmp_path,
         "coral-reviewer",
         "review this",
         deadline or Deadline(started=time.monotonic(), budget=BUDGET),
@@ -311,57 +371,56 @@ def run_against(
 
 
 def test_a_run_that_ended_past_its_budget_fails_rather_than_answering(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The middleware checks before each model call, so the request that produced the answer is
     # checked nowhere else. Without this the reviewer's empty review, or the verifier's last
     # verdicts, would be posted after a request that ran past the whole budget.
     spent = Deadline(started=time.monotonic() - (BUDGET + 1), budget=BUDGET)
     with pytest.raises(RuntimeError, match="ran out of time"):
-        run_against(tmp_path, monkeypatch, deadline=spent)
+        run_against(monkeypatch, deadline=spent)
 
 
 def test_a_run_that_ended_over_its_cap_fails_rather_than_answering(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with pytest.raises(RuntimeError, match="ran out of money"):
-        run_against(tmp_path, monkeypatch, ledger=Ledger(cap=CAP, spent=CAP))
+        run_against(monkeypatch, ledger=Ledger(cap=CAP, spent=CAP))
 
 
 def test_a_run_whose_spending_was_never_measured_fails_rather_than_answering(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with pytest.raises(RuntimeError, match="carried no cost"):
-        run_against(tmp_path, monkeypatch, ledger=Ledger(cap=CAP, unpriced=1))
+        run_against(monkeypatch, ledger=Ledger(cap=CAP, unpriced=1))
 
 
 def test_every_run_installs_one_progress_callback(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    callbacks = run_against(tmp_path, monkeypatch)[2]["callbacks"]
+    callbacks = run_against(monkeypatch)[2]["callbacks"]
     assert sum(isinstance(callback, SpendHandler) for callback in callbacks) == 1
     assert sum(isinstance(callback, ToolProgressHandler) for callback in callbacks) == 1
 
 
 def test_the_structured_output_strategy_is_named_rather_than_detected(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Left to the framework, the strategy is picked from the model's profile and from a table of
     # model names kept upstream, and a model either of those catches answers in the schema on its
     # first response — a review written from the diff alone. Naming the synthetic tool is what
     # holds the agent loop on every model, so a change back to detection fails here.
-    strategy = run_against(tmp_path, monkeypatch)[1]["response_format"]
+    strategy = run_against(monkeypatch)[1]["response_format"]
     assert isinstance(strategy, ToolStrategy)
     assert strategy.schema is Review
 
 
 def test_only_the_verifier_receives_bounded_issue_tools(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     evidence = IssueEvidence(GitHub(token="not-a-token"), "owner", "repo", 1)
-    reviewer_tools = run_against(tmp_path, monkeypatch)[1]["tools"]
+    reviewer_tools = run_against(monkeypatch)[1]["tools"]
     verifier_tools = run_against(
-        tmp_path,
         monkeypatch,
         extra_tools=[evidence.search_open_issues, evidence.view_issue],
     )[1]["tools"]
@@ -371,7 +430,7 @@ def test_only_the_verifier_receives_bounded_issue_tools(
 
 
 def test_verify_findings_passes_only_issue_evidence_tools(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[Any, ...]] = []
 
@@ -386,7 +445,6 @@ def test_verify_findings_passes_only_issue_evidence_tools(
         "openai/gpt-5.6-luna",
         "",
         LUNA,
-        tmp_path,
         "coral-verifier",
         "verify this",
         Deadline(started=time.monotonic(), budget=BUDGET),
@@ -425,24 +483,24 @@ def test_a_model_with_no_reported_output_ceiling_is_given_none() -> None:
 
 
 def test_no_effort_sends_no_reasoning_block(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The default input, and today's request: the provider applies its own effort.
-    assert run_against(tmp_path, monkeypatch)[0].reasoning is None
+    assert run_against(monkeypatch)[0].reasoning is None
 
 
 def test_an_effort_reaches_openrouters_reasoning_block(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Passed through unvalidated. What an effort may be is the provider's rule, and its refusal is
     # what a caller who got it wrong reads.
-    assert run_against(tmp_path, monkeypatch, effort="high")[0].reasoning == {"effort": "high"}
+    assert run_against(monkeypatch, effort="high")[0].reasoning == {"effort": "high"}
 
 
-def test_the_container_backends_execute_still_takes_the_ceiling(tmp_path: Path) -> None:
+def test_the_container_backends_execute_still_takes_the_ceiling() -> None:
     # The framework introspects `execute`'s signature before forwarding a `timeout`, so an
     # override that dropped the keyword would silently lose the model's own ceiling.
     from deepagents.backends.protocol import execute_accepts_timeout
 
     assert execute_accepts_timeout(ContainerBackend)
-    assert backend(tmp_path).ceiling == SHELL_CEILING_SECONDS
+    assert backend().ceiling == SHELL_CEILING_SECONDS

@@ -10,7 +10,6 @@ import logging
 import time
 from collections.abc import Callable, Mapping
 from importlib.resources import files
-from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
 
@@ -21,8 +20,14 @@ from deepagents import (
     create_deep_agent,
     register_harness_profile,
 )
-from deepagents.backends import LocalShellBackend
-from deepagents.backends.protocol import ExecuteResponse
+from deepagents.backends.protocol import (
+    ExecuteResponse,
+    FileDownloadResponse,
+    FileUploadResponse,
+    GlobResult,
+    GrepResult,
+)
+from deepagents.backends.sandbox import BaseSandbox
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.callbacks import BaseCallbackHandler
@@ -82,28 +87,98 @@ TOOL_ARGUMENT_ORDER: Final = {
 }
 
 
-class ContainerBackend(LocalShellBackend):
-    """The framework's local backend with its one shell method sent into the container.
+class ContainerBackend(BaseSandbox):
+    """Every tool the agent holds, run inside this run's container.
 
-    Only `execute` moves. Every file tool is inherited unchanged: they are Coral's own Python over
-    `root_dir`, resolving virtual paths under it and refusing traversal, and `root_dir` is the copy
-    the container has mounted at `/checkout`. So a scratch file written with `write_file` is
-    immediately runnable in the shell, and the other way around.
+    The framework builds each file operation as a `python3` script and hands it to `execute`, so a
+    file tool is subject to the container's memory, processor, and process limits exactly as a
+    shell command is. Coral's own process on the runner never opens a file the model named.
+
+    Paths are the container's own. The checkout is `/checkout` for a file tool and for the shell
+    alike, so a scratch file written with `write_file` is immediately runnable in the shell, and
+    the other way around.
 
     A subclass rather than a wrapper around the backend, because the middleware exposes the
     `execute` tool only to a backend passing `isinstance(backend, SandboxBackendProtocol)`.
     """
 
-    def __init__(self, checkout: Path, container_name: str, timeout: int) -> None:
-        super().__init__(checkout, timeout=timeout)
+    def __init__(self, container_name: str, timeout: int) -> None:
         self.container_name = container_name
         self.ceiling = timeout
+
+    @property
+    def id(self) -> str:
+        return self.container_name
 
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
         result = container.execute(self.container_name, command, timeout or self.ceiling)
         return ExecuteResponse(
             output=result.output, exit_code=result.exit_code, truncated=result.truncated
         )
+
+    def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
+        """Put each file's bytes in the container. `write_file` is the only caller.
+
+        One failure is reported rather than raised, which is the framework's contract here: a batch
+        answers per file.
+        """
+        responses = []
+        for path, content in files:
+            try:
+                container.upload(self.container_name, path, content)
+                responses.append(FileUploadResponse(path=path))
+            except Exception as error:
+                responses.append(FileUploadResponse(path=path, error=str(error)))
+        return responses
+
+    def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        """Take each file's bytes out of the container.
+
+        Nothing Coral runs calls this: the framework reaches it from the summarization
+        middleware's media offload and from the skills and memory middlewares, and Coral sends no
+        images and uses none of the three.
+        """
+        responses = []
+        for path in paths:
+            try:
+                responses.append(
+                    FileDownloadResponse(
+                        path=path, content=container.download(self.container_name, path)
+                    )
+                )
+            except Exception as error:
+                responses.append(FileDownloadResponse(path=path, error=str(error)))
+        return responses
+
+    def glob(self, pattern: str, path: str | None = None) -> GlobResult:
+        """Match a pattern, rooted at the checkout when the model named no path.
+
+        The framework's own default root is `/`, and a walk from there spends the whole shell
+        ceiling on `/proc`, `/sys`, and the toolcache mount without answering.
+        """
+        return super().glob(pattern, path or container.CHECKOUT)
+
+    def grep(
+        self,
+        pattern: str,
+        path: str | None = None,
+        glob: str | None = None,
+        *,
+        max_count: int | None = None,
+    ) -> GrepResult:
+        """Search, refusing the one glob shape the framework cannot run.
+
+        A glob containing `/` takes an upstream route whose Python is embedded in a double-quoted
+        shell string and truncated by a comment of its own, so the script dies on a syntax error.
+        That route discards stderr, which would leave the model reading an empty result as no
+        matches.
+        """
+        if glob is not None and "/" in glob:
+            return GrepResult(
+                error="Error: a glob containing '/' is not supported. Match on the file name "
+                "alone, as in '*.py', or narrow the search with `path`."
+            )
+        return super().grep(pattern, path, glob, max_count=max_count)
 
 
 class DeadlineMiddleware(AgentMiddleware[Any, Any]):
@@ -289,7 +364,6 @@ def _run(
     name: str,
     effort: str,
     facts: ModelFacts,
-    checkout: Path,
     container_name: str,
     request: str,
     deadline: Deadline,
@@ -298,7 +372,7 @@ def _run(
     response_format: type,
     extra_tools: list[Callable[..., str]] | None = None,
 ) -> dict[str, Any]:
-    """Build an agent over its copy of the checkout, run it, and return its result state.
+    """Build an agent over its container, run it, and return its result state.
 
     The one place the model client, the backend, and the middleware are constructed. Both runs
     share every bound here; what differs between them is the prompt and the type they return.
@@ -323,7 +397,7 @@ def _run(
     # The ceiling needs both halves. The middleware rejects a command whose own `timeout` argument
     # overshoots, telling the model the ceiling rather than clamping; the backend bounds the case
     # where the model omits the argument, which is the common one.
-    backend = ContainerBackend(checkout, container_name, SHELL_CEILING_SECONDS)
+    backend = ContainerBackend(container_name, SHELL_CEILING_SECONDS)
     agent = create_deep_agent(
         model,
         system_prompt=system_prompt,
@@ -370,7 +444,9 @@ def _run(
         }
     )
 
-    log.info("Running the agent over %s with %.0f seconds of budget.", checkout, deadline.budget)
+    log.info(
+        "Running the agent in %s with %.0f seconds of budget.", container_name, deadline.budget
+    )
     result: dict[str, Any] = bounded.invoke({"messages": [HumanMessage(request)]})
     log.info(
         "The agent finished after %.0f seconds and %d messages.",
@@ -390,7 +466,6 @@ def produce_review(
     name: str,
     effort: str,
     facts: ModelFacts,
-    checkout: Path,
     container_name: str,
     request: str,
     deadline: Deadline,
@@ -403,7 +478,6 @@ def produce_review(
             name,
             effort,
             facts,
-            checkout,
             container_name,
             request,
             deadline,
@@ -419,7 +493,6 @@ def verify_findings(
     name: str,
     effort: str,
     facts: ModelFacts,
-    checkout: Path,
     container_name: str,
     request: str,
     deadline: Deadline,
@@ -433,7 +506,6 @@ def verify_findings(
             name,
             effort,
             facts,
-            checkout,
             container_name,
             request,
             deadline,

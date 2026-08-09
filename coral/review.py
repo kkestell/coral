@@ -222,18 +222,20 @@ def copy_checkout(workspace: Path, destination: Path) -> None:
         raise RuntimeError(f"Copying the checkout failed: {result.stderr.strip() or 'no output'}")
 
 
-def provision(name: str, workspace: Path) -> Path:
+def provision(name: str, workspace: Path) -> None:
     """A fresh copy of the checkout and a container over it, for one agent run.
 
     Each run gets its own of both, so the verifier reads a checkout holding nothing the reviewer
     wrote and the workspace itself is never written by an agent at all. That makes the diff the
     agent saw and the diff the anchors are checked against the same diff by construction rather
     than by cleaning up in between.
+
+    The copy's path on the runner stays here. Every tool the agent holds addresses the container's
+    own `/checkout`, so the agent's side of the run needs the container's name and nothing else.
     """
     checkout = runner.checkout_copy_path(name)
     copy_checkout(workspace, checkout)
     container.start(name, checkout)
-    return checkout
 
 
 def review() -> None:
@@ -304,12 +306,12 @@ def review() -> None:
 
         # The reviewer gets a slice of the step rather than the whole of it, so that whatever it
         # leaves behind is time the verifier is guaranteed.
+        provision(REVIEWER, workspace)
         review = produce_review(
             api_key,
             name,
             effort,
             facts,
-            provision(REVIEWER, workspace),
             REVIEWER,
             request,
             start(reviewer_budget(deadline.budget)),
@@ -332,12 +334,12 @@ def review() -> None:
                     len(review.findings),
                 )
             log.info("Asking a second agent to verify %s.", count(len(review.findings), "finding"))
+            provision(VERIFIER, workspace)
             verification = verify_findings(
                 api_key,
                 name,
                 effort,
                 facts,
-                provision(VERIFIER, workspace),
                 VERIFIER,
                 (
                     render_push_verification_request(head, diff, review)

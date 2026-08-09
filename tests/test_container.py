@@ -9,19 +9,24 @@ command's output, which is the whole of what the model reads back.
 import io
 from pathlib import Path
 
+from deepagents.backends.sandbox import MAX_BINARY_BYTES, MAX_OUTPUT_BYTES
+
 from coral.container import (
     CHECKOUT,
     CPUS,
     IMAGE,
+    INSTALL,
     MEMORY,
     OUTPUT_CAP_BYTES,
     PIDS,
     Stream,
+    download_arguments,
     drained,
     exec_arguments,
     run_arguments,
     shaped,
     timed_out,
+    upload_arguments,
 )
 from coral.environment import TOOLCACHE
 
@@ -117,6 +122,38 @@ def test_a_command_crosses_whole_rather_than_split() -> None:
     assert exec_arguments("coral-reviewer", command, 60)[-1] == command
 
 
+def test_the_container_gets_the_interpreter_every_file_tool_is_written_in() -> None:
+    # `ubuntu:24.04` carries neither, and the framework builds each file operation as a `python3`
+    # script. Without the install the agent has file tools that cannot run.
+    assert "git" in INSTALL
+    assert "python3" in INSTALL
+
+
+def test_the_output_cap_clears_every_cap_the_frameworks_own_scripts_apply() -> None:
+    # A file tool's answer is one JSON document and a cut one does not parse, so the runner-side
+    # cap has to sit above every in-container cap. The largest is a binary read at the framework's
+    # own limit, which arrives base64-encoded and so about a third larger. An upstream raise fails
+    # here rather than in a review.
+    assert OUTPUT_CAP_BYTES > MAX_OUTPUT_BYTES
+    assert OUTPUT_CAP_BYTES > MAX_BINARY_BYTES * 4 // 3
+
+
+def test_a_file_crosses_on_stdin_with_its_path_as_an_argument() -> None:
+    # The path is the model's, so it is an argument to the script rather than text inside it. The
+    # content never appears in a command line at all.
+    arguments = upload_arguments("coral-reviewer", "/checkout/scratch test.py")
+    assert arguments[:5] == ["exec", "-i", "--workdir", CHECKOUT, "coral-reviewer"]
+    assert arguments[-1] == "/checkout/scratch test.py"
+    assert "scratch test.py" not in arguments[arguments.index("-c") + 1]
+
+
+def test_a_file_comes_back_with_its_path_as_an_argument() -> None:
+    arguments = download_arguments("coral-reviewer", "/checkout/report.json")
+    assert arguments[:4] == ["exec", "--workdir", CHECKOUT, "coral-reviewer"]
+    assert arguments[-1] == "/checkout/report.json"
+    assert "report.json" not in arguments[arguments.index("-c") + 1]
+
+
 def test_stdout_comes_back_as_itself() -> None:
     assert shaped("hello\n", "", 0).output == "hello\n"
 
@@ -148,14 +185,13 @@ def test_output_under_the_cap_is_not_truncated() -> None:
     assert "truncated" not in result.output
 
 
-def test_a_failure_carries_its_exit_code() -> None:
+def test_a_failure_carries_its_exit_code_beside_the_output_rather_than_in_it() -> None:
+    # Every file tool the agent holds is a script run through here whose answer is one JSON
+    # document, and a line appended after it does not parse. The middleware tells the model the
+    # exit code from the `Output` itself.
     result = shaped("", "boom\n", 2)
     assert result.exit_code == 2
-    assert result.output.endswith("Exit code: 2")
-
-
-def test_a_success_carries_no_exit_code_line() -> None:
-    assert "Exit code" not in shaped("fine\n", "", 0).output
+    assert result.output == "[stderr] boom"
 
 
 def test_a_timeout_reads_as_one_and_reports_124() -> None:
