@@ -51,7 +51,7 @@ READ_CHUNK: Final = 64 * 1024
 # `while true`, or a process that allocates until the kernel kills something — and the command
 # ceiling does not help, because the damage is done inside it. `--memory-swap` equal to `--memory`
 # is what turns swap off; the daemon otherwise allows twice the memory limit in swap.
-MEMORY: Final = "4g"
+MEMORY: Final = "256m"
 CPUS: Final = "2"
 PIDS: Final = "1024"
 

@@ -238,6 +238,49 @@ def provision(name: str, workspace: Path) -> None:
     container.start(name, checkout)
 
 
+def probe(name: str) -> None:
+    """TEMPORARY: item 24's live checks 2 through 5. Reverted after the run is read."""
+    from coral.agent import SHELL_CEILING_SECONDS, ContainerBackend
+
+    backend = ContainerBackend(name, SHELL_CEILING_SECONDS)
+
+    log.info(
+        "PROBE 2 setup: %r",
+        container.execute(
+            name,
+            "python3 -c \"f=open('/checkout/huge.txt','w')\n"
+            "[f.write('x'*1024*1024) for _ in range(512)]\nf.close()\" && ls -l /checkout/huge.txt",
+            300,
+        ),
+    )
+    log.info("PROBE 2 read of a file past the memory limit: %r", backend.read("/checkout/huge.txt"))
+    log.info("PROBE 2 the runner is still here: %r", os.getpid())
+
+    log.info("PROBE 3 ls /home/runner: %r", backend.ls("/home/runner"))
+    log.info(
+        "PROBE 3 read the runner's pull request: %r",
+        backend.read("/home/runner/work/_temp/coral/pull-request.json"),
+    )
+    log.info("PROBE 3 write /etc/coral-probe: %r", backend.write("/etc/coral-probe", "probe\n"))
+    log.info("PROBE 3 on the runner afterwards: %r", Path("/etc/coral-probe").exists())
+
+    log.info("PROBE 4 tool write: %r", backend.write("/checkout/probe-one.txt", "from the tool\n"))
+    log.info("PROBE 4 shell reads it: %r", container.execute(name, "cat probe-one.txt", 60))
+    log.info("PROBE 4 tool edit: %r", backend.edit("/checkout/probe-one.txt", "tool", "tool again"))
+    log.info("PROBE 4 shell reads the edit: %r", container.execute(name, "cat probe-one.txt", 60))
+    log.info(
+        "PROBE 4 shell write: %r",
+        container.execute(name, "printf 'from the shell\\n' > probe-two.txt", 60),
+    )
+    log.info("PROBE 4 tool reads it: %r", backend.read("/checkout/probe-two.txt"))
+
+    log.info("PROBE 5 read a path that is not there: %r", backend.read("/checkout/not-here.txt"))
+    log.info("PROBE 5 grep with a slash glob: %r", backend.grep("def ", glob="python-fixture/*.py"))
+    log.info("PROBE 5 grep on a name alone: %r", backend.grep("def ", glob="*.py"))
+    log.info("PROBE 5 glob with no path: %r", backend.glob("**/*.py"))
+    container.execute(name, "rm -f /checkout/huge.txt /checkout/probe-*.txt", 60)
+
+
 def review() -> None:
     """Review the checked-out change, verify what it found, and leave the result for publishing."""
     # The whole step is inside the failure path: it posts nothing, so the reason file is the only
@@ -307,6 +350,7 @@ def review() -> None:
         # The reviewer gets a slice of the step rather than the whole of it, so that whatever it
         # leaves behind is time the verifier is guaranteed.
         provision(REVIEWER, workspace)
+        probe(REVIEWER)
         review = produce_review(
             api_key,
             name,
