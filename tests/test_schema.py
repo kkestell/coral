@@ -23,6 +23,7 @@ from coral.schema import (
     Verdict,
     Verification,
     confirmed,
+    finding_dispositions,
     review_from_result,
     verification_from_result,
     where,
@@ -356,6 +357,42 @@ def test_the_summary_and_the_flag_pass_through_the_filter() -> None:
     survivors = confirmed(review, Verification(verdicts=[]))
     assert survivors.summary == "What the change does."
     assert survivors.everything_already_said is True
+
+
+@pytest.mark.parametrize(
+    ("ruling", "searched", "viewed", "reason"),
+    [
+        (None, None, None, "no verdict"),
+        (False, None, None, "rejected"),
+        (True, None, None, "confirmed"),
+        (True, set(), set(), "unchecked"),
+        (True, {0}, {17}, "duplicate"),
+    ],
+)
+def test_each_finding_disposition_names_the_filtering_decision(
+    ruling: bool | None,
+    searched: set[int] | None,
+    viewed: set[int] | None,
+    reason: str,
+) -> None:
+    verdicts = (
+        []
+        if ruling is None
+        else [
+            Verdict(
+                finding=0,
+                confirmed=ruling,
+                reason="Checked.",
+                duplicate_issue=17 if reason == "duplicate" else None,
+            )
+        ]
+    )
+    disposition = finding_dispositions(
+        review_of(finding()), Verification(verdicts), searched, viewed
+    )[0]
+    assert disposition.reason == reason
+    assert disposition.kept is (reason == "confirmed")
+    assert disposition.verdicts == tuple(verdicts)
 
 
 def test_a_main_push_finding_without_a_duplicate_survives() -> None:

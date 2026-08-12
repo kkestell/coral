@@ -162,6 +162,7 @@ class FindingDisposition:
     finding: int
     kept: bool
     reason: Literal["confirmed", "no verdict", "rejected", "unchecked", "duplicate"]
+    verdicts: tuple[Verdict, ...]
     duplicate_issue: int | None = None
 
 
@@ -175,7 +176,7 @@ def finding_dispositions(
     assert (searched_findings is None) == (viewed_issues is None)
     dispositions = []
     for index in range(len(review.findings)):
-        verdicts = [verdict for verdict in verification.verdicts if verdict.finding == index]
+        verdicts = tuple(verdict for verdict in verification.verdicts if verdict.finding == index)
         duplicates = {verdict.duplicate_issue for verdict in verdicts}
         duplicate = duplicates.pop() if len(duplicates) == 1 else None
         reason: Literal["confirmed", "no verdict", "rejected", "unchecked", "duplicate"]
@@ -194,10 +195,24 @@ def finding_dispositions(
                 finding=index,
                 kept=reason == "confirmed",
                 reason=reason,
+                verdicts=verdicts,
                 duplicate_issue=duplicate if reason == "duplicate" else None,
             )
         )
     return dispositions
+
+
+def apply_dispositions(review: Review, dispositions: list[FindingDisposition]) -> Review:
+    """Filter a review using decisions already made for each finding."""
+    assert [disposition.finding for disposition in dispositions] == list(
+        range(len(review.findings))
+    )
+    kept = [
+        finding
+        for finding, disposition in zip(review.findings, dispositions, strict=True)
+        if disposition.kept
+    ]
+    return replace(review, findings=kept)
 
 
 def confirmed(
@@ -214,12 +229,7 @@ def confirmed(
     common issue number the reader viewed can suppress a confirmed finding.
     """
     dispositions = finding_dispositions(review, verification, searched_findings, viewed_issues)
-    kept = [
-        finding
-        for finding, disposition in zip(review.findings, dispositions, strict=True)
-        if disposition.kept
-    ]
-    return replace(review, findings=kept)
+    return apply_dispositions(review, dispositions)
 
 
 # LangChain sets `structured_response` to None when the model answers with prose, and the key is

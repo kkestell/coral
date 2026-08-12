@@ -22,7 +22,7 @@ from coral.github.post import count, issue_payloads, payloads, write_issue_paylo
 from coral.handoff import review_key
 from coral.openrouter import model_facts
 from coral.publish import described
-from coral.schema import Review, confirmed, finding_dispositions, where
+from coral.schema import Review, apply_dispositions, finding_dispositions, where
 from coral.spend import Ledger, cap_dollars, stop_if_over_cap
 
 log = logging.getLogger(__name__)
@@ -390,43 +390,37 @@ def review() -> None:
                 ledger,
                 issue_evidence,
             )
+            searched = issue_evidence.searched_findings if issue_evidence is not None else None
+            viewed = issue_evidence.viewed_issues if issue_evidence is not None else None
+            dispositions = finding_dispositions(review, verification, searched, viewed)
+
             # Every verdict is logged with its reason, because the log is the only record of one: a
             # reason is never posted, and a rejected finding is never posted either.
-            for index in range(len(review.findings)):
-                rulings = [verdict for verdict in verification.verdicts if verdict.finding == index]
-                if not rulings:
-                    log.info("Finding %d dropped: no verdict named it.", index)
-                for ruling in rulings:
-                    outcome = "confirmed" if ruling.confirmed else "dropped"
-                    log.info("Finding %d %s: %s", index, outcome, ruling.reason)
+            for disposition in dispositions:
+                if disposition.reason == "no verdict":
+                    log.info("Finding %d dropped: no verdict named it.", disposition.finding)
+                for verdict in disposition.verdicts:
+                    outcome = "confirmed" if verdict.confirmed else "dropped"
+                    log.info("Finding %d %s: %s", disposition.finding, outcome, verdict.reason)
+                if disposition.reason == "unchecked":
+                    log.info(
+                        "Finding %d dropped: its duplicate check did not complete.",
+                        disposition.finding,
+                    )
+                if disposition.reason == "duplicate":
+                    assert disposition.duplicate_issue is not None
+                    log.info(
+                        "Finding %d suppressed by duplicate issue #%d.",
+                        disposition.finding,
+                        disposition.duplicate_issue,
+                    )
             if issue_evidence is not None:
                 log.info(
                     "Duplicate checks used %d searches and %d candidate views.",
                     issue_evidence.searches,
                     issue_evidence.views,
                 )
-                dispositions = finding_dispositions(
-                    review,
-                    verification,
-                    issue_evidence.searched_findings,
-                    issue_evidence.viewed_issues,
-                )
-                for disposition in dispositions:
-                    if disposition.reason == "duplicate":
-                        assert disposition.duplicate_issue is not None
-                        log.info(
-                            "Finding %d suppressed by duplicate issue #%d.",
-                            disposition.finding,
-                            disposition.duplicate_issue,
-                        )
-                review = confirmed(
-                    review,
-                    verification,
-                    issue_evidence.searched_findings,
-                    issue_evidence.viewed_issues,
-                )
-            else:
-                review = confirmed(review, verification)
+            review = apply_dispositions(review, dispositions)
 
         log.info("The review spent $%.6f of its $%.6f cap.", ledger.spent, ledger.cap)
         # Nothing is published that a limit should have stopped. Both agent runs check their own

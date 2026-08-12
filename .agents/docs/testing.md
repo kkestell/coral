@@ -19,7 +19,7 @@ The suite covers pure functions over inputs written by hand. Almost everything C
 `kkestell/coral-test` is where real runs happen. Coral is installed there as `.github/workflows/coral.yml`, pinned at `@main`, and it carries `python-fixture`, `node-fixture`, and `go-fixture` — one small project per language, each with its own test suite. Branches, pull requests, fixture code, the caller file, and the repository's Actions secrets are all yours to change.
 
 - GitHub reads the caller file from the default branch, so push to the ref it pins before checking, and the Coral that answers a `/coral` comment is always the default branch's.
-- Reviewing a pull request on `kkestell/coral` itself is the other real run available, and the only one where Coral reviews the change under test.
+- Reviewing a pull request on `kkestell/coral` itself exercises the default branch's Coral against the proposed change. Use `coral rehearse` or pin `kkestell/coral-test` to the proposed commit to exercise changed Coral code before it reaches `main`.
 
 ## Live Checks
 
