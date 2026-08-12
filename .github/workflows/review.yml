@@ -6,7 +6,7 @@ name: Coral
 on:
   push:
     branches: [main]
-  pull_request:
+  pull_request_target:
     types: [opened, ready_for_review]
   issue_comment:
     types: [created]
@@ -19,13 +19,15 @@ concurrency:
 
 jobs:
   coral:
+    if: >-
+      github.event_name != 'pull_request_target'
+      || github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id
     permissions:
       contents: read
       issues: write
       pull-requests: write
-    # A relative reference resolves in the commit this file came from, so a pull request is
-    # reviewed by the Coral it changes. GitHub reads this file from the default branch on the
-    # comment paths, so a `/coral` runs the default branch's Coral whatever the branch holds.
+    # A relative reference resolves with this default-branch caller. `pull_request_target` and the
+    # comment paths all read it from there, so a branch cannot change how its own review runs.
     uses: ./.github/workflows/coral.yml
     secrets:
       openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}

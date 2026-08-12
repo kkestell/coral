@@ -10,7 +10,7 @@ name: Coral
 on:
   push:
     branches: [main]
-  pull_request:
+  pull_request_target:
     types: [opened, ready_for_review]
   issue_comment:
     types: [created]
@@ -26,6 +26,11 @@ concurrency:
 
 jobs:
   coral:
+    # A target event has privileged default-branch credentials, so a fork stops before invoking the
+    # reusable workflow at all. Resolve repeats the repository-id check before reviewing.
+    if: >-
+      github.event_name != 'pull_request_target'
+      || github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id
     permissions:
       contents: read
       issues: write

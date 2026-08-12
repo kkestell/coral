@@ -1,6 +1,6 @@
 # Functional Requirements
 
-What Coral does, as behavior someone can observe or as a security property an installation can inspect. These requirements are the whole product; anything not listed is out of scope.
+Coral's feature-complete behavior, as something observable or as a security property an installation can inspect. The roadmap names requirements not built yet; anything not listed here is out of scope.
 
 ## Trigger
 

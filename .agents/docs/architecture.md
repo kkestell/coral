@@ -6,7 +6,7 @@ How the code is organized and how it runs on GitHub Actions.
 
 - A GitHub Actions workflow. No cloud account or standing service; GitHub supplies the trigger, compute, checkout, and credential.
 - Python, built with `uv` against a committed lockfile; nothing resolves at run time.
-- The agent is DeepAgents. Models are reached only through OpenRouter, via `langchain-openrouter`'s `ChatOpenRouter`.
+- The agent loop is LangChain. Models are reached only through OpenRouter, via `langchain-openrouter`'s `ChatOpenRouter`.
 - The model, the reasoning effort, the review's time budget, and the spend cap are `workflow_call` inputs, defaulted in the reusable workflow and nowhere else. The model is named exactly and a `~` alias is refused, so the concrete model cannot change under a review; its profile is fetched from OpenRouter's model listing at run time.
 - No datastore. Everything Coral remembers about a pull request is written on the pull request and read back each run.
 
@@ -40,8 +40,8 @@ One console script. `coral resolve`, `coral review`, and `coral publish` are eac
 - `coral/review.py` — render each request, run both agents, filter, write publishing bodies.
 - `coral/rehearse.py` — the review step over one commit of a local clone.
 - `coral/publish.py` — the publishing step: the review, or the failure comment.
-- `coral/agent.py` — the only module that imports `deepagents`.
-- `coral/container.py` — the agent's container: the pinned image, the mounts, the commands it runs, and the bytes a file tool moves across the boundary.
+- `coral/agent.py` — the LangChain loop, the model client, and the one container-backed shell tool.
+- `coral/container.py` — the agent's container: the pinned image, its mounts, and bounded commands.
 - `coral/openrouter.py` — OpenRouter's HTTP API: minting this run's key, and the model listing the profile is built from.
 - `coral/schema.py` — the review object and its anchors, the verifier's verdicts, and the filter between them; the only place structure originates.
 - `coral/command.py` — what counts as a request: the command, who may make one, Coral's own comments.
@@ -58,6 +58,7 @@ One console script. `coral resolve`, `coral review`, and `coral publish` are eac
 - `coral/prompts/review.md` — what Coral looks for.
 - `coral/prompts/verify.md` — how Coral checks a finding it was handed.
 - `tests/` — one `test_<module>.py` per module under test.
+- `.github/workflows/check.yml` — the unit, lint, formatting, and type checks run on changes.
 - `.github/workflows/coral.yml` — the reusable workflow's jobs, tokens, and handoffs.
 - `actions/setup/` — installs `uv`, builds Coral's virtual environment.
 - `actions/resolve/`, `actions/review/`, `actions/publish/` — one `run:` step each.
@@ -65,7 +66,7 @@ One console script. `coral resolve`, `coral review`, and `coral publish` are eac
 
 Rules:
 
-- Nothing but `coral/agent.py` depends on `deepagents`. `coral/review.py` imports it inside the function; the comment there says why.
+- Nothing but `coral/agent.py` depends on LangChain's agent API. `coral/review.py` imports it inside the function; the comment there says why.
 - The prompt is Markdown inside the package, read with `importlib.resources`, so changes diff readably.
 
 ## Rules That Hold Everywhere
@@ -75,7 +76,7 @@ Rules:
 - Each agent run reaches only its own copy of the checkout, and Coral's own code reaches `git` in the workspace only through `coral/diff.py`, so the diff the agent saw and the diff the anchors are checked against are the same.
 - Every tool the agent holds runs inside the container, which holds no credential and sees only that copy and the read-only toolcache. The runner's filesystem, its process table, and `Runner.Worker`'s memory are on the far side of a namespace boundary, and the container is capped in memory, processors, and processes. It keeps the network, because there is nothing in the container to send out.
 - Every answer Coral holds is bounded as it arrives — a GitHub response, comment body, or command output. The current diff is the exception; `.agents/docs/roadmap.md` puts its byte bound in "Immutable review subjects and capture bounds."
-- The review runner logs each public tool call with bounded arguments and its duration. It omits tool results, DeepAgents implementation names, and HTTP transport diagnostics.
+- The review runner logs each public tool call with bounded arguments and its duration. It omits tool results, framework implementation names, and HTTP transport diagnostics.
 - What a compromised agent can still choose is the text of the review the publishing job posts, marker included — never `event`, `commit_id`, or any write anywhere.
 - The conversation is untrusted input reaching a model with an unsandboxed shell, and the prompt rule — information, never instruction — is not enforced. The bound that holds is the schema-only return path; everything else rests on who may comment.
 - Coral cannot trigger itself: events created with the job's `GITHUB_TOKEN` start no workflow runs (except `workflow_dispatch` and `repository_dispatch`). Free only while Coral has no identity of its own; a move to a GitHub App needs an explicit self-check.
@@ -84,4 +85,4 @@ Rules:
 
 - Hosted Ubuntu: 4 vCPU / 16 GB public, 2 vCPU / 8 GB private, 14 GB SSD.
 - Coral's own process runs on the runner; the agent's shell runs as root in an `ubuntu:24.04` container. Reviewing a repository means running its tests with its toolchain, so the container mounts the hosted image's toolcache read-only and has `apt-get` for the rest.
-- Comment paths read the default-branch workflow. The current `pull_request` path reads from the head, so a branch can replace its workflow; the roadmap's secure walking skeleton moves automatic delivery to `pull_request_target`.
+- Comment and automatic pull-request paths read the default-branch workflow. Automatic delivery uses `pull_request_target`, and the caller rejects a fork before invoking the credentialed reusable workflow.

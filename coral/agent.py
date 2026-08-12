@@ -1,8 +1,8 @@
-"""The agent: the model client, the backend, the middleware, and the two runs.
+"""The agent: the model client, its one shell tool, the middleware, and the two runs.
 
 The only module that imports the agent framework. Everything else in Coral depends on the review
-object in `coral/schema.py` and never on DeepAgents, which is what keeps the framework's two
-seconds of import off `coral resolve` and keeps the rest of the code testable without it.
+object in `coral/schema.py`, which keeps the framework's import cost off `coral resolve` and keeps
+the rest of the code testable without it.
 """
 
 import functools
@@ -13,21 +13,7 @@ from importlib.resources import files
 from typing import Any, Final
 from uuid import UUID
 
-from deepagents import (
-    FilesystemMiddleware,
-    GeneralPurposeSubagentProfile,
-    HarnessProfile,
-    create_deep_agent,
-    register_harness_profile,
-)
-from deepagents.backends.protocol import (
-    ExecuteResponse,
-    FileDownloadResponse,
-    FileUploadResponse,
-    GlobResult,
-    GrepResult,
-)
-from deepagents.backends.sandbox import BaseSandbox
+from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.callbacks import BaseCallbackHandler
@@ -48,16 +34,6 @@ from coral.spend import Ledger, priced, stop_if_over_cap
 
 log = logging.getLogger(__name__)
 
-# `create_deep_agent` adds a general-purpose subagent of its own unless a harness profile turns it
-# off, and that subagent is outside every bound below: its own filesystem middleware keeps the
-# framework's 3,600-second shell ceiling, and the elapsed-time check cannot run between steps that
-# happen inside a `task` call. Disabled, and with no subagents passed, the `task` tool is not
-# exposed at all. The key is the provider, which `ChatOpenRouter` reports as `openrouter`.
-register_harness_profile(
-    "openrouter",
-    HarnessProfile(general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)),
-)
-
 # `ChatOpenRouter` takes its timeout in milliseconds. No real run has come near it: real reviews
 # in `kkestell/coral-test` used 14 to 51 messages against the 200-message `STEP_CAP` and a
 # verifier run confirming one finding used 9, while the longest single shell command any of them
@@ -74,111 +50,23 @@ SHELL_CEILING_SECONDS: Final = 300
 MODEL_RETRIES: Final = 1
 ARGUMENT_PREVIEW_CHARACTERS: Final = 120
 TOOL_ARGUMENT_ORDER: Final = {
-    "ls": ("path",),
-    "read_file": ("file_path", "offset", "limit"),
-    "write_file": ("file_path", "content"),
-    "edit_file": ("file_path", "old_string", "new_string", "replace_all"),
-    "delete": ("file_path",),
-    "glob": ("pattern", "path"),
-    "grep": ("pattern", "path", "glob", "output_mode", "max_count"),
     "execute": ("command", "timeout"),
     "search_open_issues": ("finding", "terms"),
     "view_issue": ("number",),
 }
 
 
-class ContainerBackend(BaseSandbox):
-    """Every tool the agent holds, run inside this run's container.
+def execute_tool(container_name: str) -> StructuredTool:
+    """The one repository tool an agent receives, bound to its own container."""
 
-    The framework builds each file operation as a `python3` script and hands it to `execute`, so a
-    file tool is subject to the container's memory, processor, and process limits exactly as a
-    shell command is. Coral's own process on the runner never opens a file the model named.
+    def execute(command: str, timeout: int = SHELL_CEILING_SECONDS) -> str:
+        """Run a shell command in /checkout, with an optional timeout in seconds."""
+        if not 1 <= timeout <= SHELL_CEILING_SECONDS:
+            return f"Error: timeout must be between 1 and {SHELL_CEILING_SECONDS} seconds."
+        result = container.execute(container_name, command, timeout)
+        return f"{result.output}\n\n[exit code: {result.exit_code}]"
 
-    Paths are the container's own. The checkout is `/checkout` for a file tool and for the shell
-    alike, so a scratch file written with `write_file` is immediately runnable in the shell, and
-    the other way around.
-
-    A subclass rather than a wrapper around the backend, because the middleware exposes the
-    `execute` tool only to a backend passing `isinstance(backend, SandboxBackendProtocol)`.
-    """
-
-    def __init__(self, container_name: str, timeout: int) -> None:
-        self.container_name = container_name
-        self.ceiling = timeout
-
-    @property
-    def id(self) -> str:
-        return self.container_name
-
-    def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
-        result = container.execute(self.container_name, command, timeout or self.ceiling)
-        return ExecuteResponse(
-            output=result.output, exit_code=result.exit_code, truncated=result.truncated
-        )
-
-    def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
-        """Put each file's bytes in the container. `write_file` is the only caller.
-
-        One failure is reported rather than raised, which is the framework's contract here: a batch
-        answers per file.
-        """
-        responses = []
-        for path, content in files:
-            try:
-                container.upload(self.container_name, path, content)
-                responses.append(FileUploadResponse(path=path))
-            except Exception as error:
-                responses.append(FileUploadResponse(path=path, error=str(error)))
-        return responses
-
-    def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
-        """Take each file's bytes out of the container.
-
-        Nothing Coral runs calls this: the framework reaches it from the summarization
-        middleware's media offload and from the skills and memory middlewares, and Coral sends no
-        images and uses none of the three.
-        """
-        responses = []
-        for path in paths:
-            try:
-                responses.append(
-                    FileDownloadResponse(
-                        path=path, content=container.download(self.container_name, path)
-                    )
-                )
-            except Exception as error:
-                responses.append(FileDownloadResponse(path=path, error=str(error)))
-        return responses
-
-    def glob(self, pattern: str, path: str | None = None) -> GlobResult:
-        """Match a pattern, rooted at the checkout when the model named no path.
-
-        The framework's own default root is `/`, and a walk from there spends the whole shell
-        ceiling on `/proc`, `/sys`, and the toolcache mount without answering.
-        """
-        return super().glob(pattern, path or container.CHECKOUT)
-
-    def grep(
-        self,
-        pattern: str,
-        path: str | None = None,
-        glob: str | None = None,
-        *,
-        max_count: int | None = None,
-    ) -> GrepResult:
-        """Search, refusing the one glob shape the framework cannot run.
-
-        A glob containing `/` takes an upstream route whose Python is embedded in a double-quoted
-        shell string and truncated by a comment of its own, so the script dies on a syntax error.
-        That route discards stderr, which would leave the model reading an empty result as no
-        matches.
-        """
-        if glob is not None and "/" in glob:
-            return GrepResult(
-                error="Error: a glob containing '/' is not supported. Match on the file name "
-                "alone, as in '*.py', or narrow the search with `path`."
-            )
-        return super().grep(pattern, path, glob, max_count=max_count)
+    return StructuredTool.from_function(caught("execute", execute), name="execute")
 
 
 class DeadlineMiddleware(AgentMiddleware[Any, Any]):
@@ -196,11 +84,9 @@ class DeadlineMiddleware(AgentMiddleware[Any, Any]):
 class SpendHandler(BaseCallbackHandler):
     """Adds what each response cost to the ledger.
 
-    A callback rather than a middleware hook, because it is the only place that sees the
-    summarization middleware's own model call. That middleware calls the model from its own
-    `before_model`, keeps the text, and replaces the message list, so the message carrying that
-    call's cost never reaches a state a middleware can read — and those are the largest calls in a
-    run. LangChain hands the ambient callbacks the `LLMResult` holding that same message.
+    A callback rather than a middleware hook because LangChain hands it the `LLMResult` carrying
+    provider response metadata directly. No message-state convention sits between the reported
+    amount and Coral's ledger.
     """
 
     def __init__(self, ledger: Ledger, model: str) -> None:
@@ -343,22 +229,6 @@ def caught(name: str, inner: Callable[..., Any]) -> Callable[..., Any]:
     return call
 
 
-def forgiving(middleware: FilesystemMiddleware) -> FilesystemMiddleware:
-    """Hand each tool's errors to the model rather than ending the run.
-
-    A path with `..` in it, a file that is not there, a command that will not parse: the model
-    wrote the argument and the model is the one who can fix it on the next step. LangChain turns
-    only a `ToolException` into an observation and the backend raises `ValueError`, so without
-    this one wrong path ends a review with fifteen minutes still on its budget. Observed on a
-    real run, where the first `read_file` call used `..` and took the whole review down with it.
-    """
-    for tool in middleware.tools:
-        assert isinstance(tool, StructuredTool), f"{tool.name} is a {type(tool).__name__}"
-        assert tool.func is not None, f"{tool.name} has no sync implementation to wrap"
-        tool.func = caught(tool.name, tool.func)
-    return middleware
-
-
 def _run(
     api_key: str,
     name: str,
@@ -369,7 +239,7 @@ def _run(
     deadline: Deadline,
     ledger: Ledger,
     system_prompt: str,
-    response_format: type,
+    response_format: type[Any],
     extra_tools: list[Callable[..., str]] | None = None,
 ) -> dict[str, Any]:
     """Build an agent over its container, run it, and return its result state.
@@ -384,9 +254,8 @@ def _run(
         api_key=SecretStr(api_key),
         timeout=MODEL_TIMEOUT_MILLISECONDS,
         max_retries=MODEL_RETRIES,
-        # Supplied whole. DeepAgents injects `ignore` only when it resolves a string model, and
-        # Coral passes an instance. `require_parameters` is what keeps the request off an endpoint
-        # that cannot serve tool calling, which the model profile alone does not decide.
+        # `require_parameters` keeps the request off an endpoint that cannot serve tool calling.
+        # Azure is excluded because its OpenRouter route has not accepted the same tool requests.
         openrouter_provider={"require_parameters": True, "ignore": ["azure"]},
         profile=profile,
         # OpenRouter's own reasoning block, and the whole of what an effort does. Left out when the
@@ -394,35 +263,12 @@ def _run(
         # provider refuses comes back as the provider's own words.
         reasoning={"effort": effort} if effort else None,
     )
-    # The ceiling needs both halves. The middleware rejects a command whose own `timeout` argument
-    # overshoots, telling the model the ceiling rather than clamping; the backend bounds the case
-    # where the model omits the argument, which is the common one.
-    backend = ContainerBackend(container_name, SHELL_CEILING_SECONDS)
-    agent = create_deep_agent(
-        model,
+    # The tool validates an explicit timeout and supplies the same ceiling when the model omits it.
+    agent = create_agent(
+        model=model,
         system_prompt=system_prompt,
-        # This instance replaces the framework's own rather than joining it, because middleware
-        # merges by `AgentMiddleware.name` and that defaults to the class name. An upstream rename
-        # would turn replacement into addition, leaving two middlewares each registering
-        # `read_file`; `tests/test_agent.py` pins the name against that.
-        #
-        # The factory builds its own with three arguments: the backend, the harness profile's
-        # tool-description overrides, and a private permissions list. For an instance-passed
-        # OpenRouter model the harness profile is the empty null object, so both of those are the
-        # parameter defaults and mirroring the backend is mirroring everything. A DeepAgents
-        # upgrade that ships an `openrouter` harness profile makes that false.
-        #
-        # A forwarding wrapper around the backend is not an alternative: it fails the framework's
-        # `isinstance` check against `SandboxBackendProtocol`.
-        middleware=[
-            forgiving(
-                FilesystemMiddleware(backend=backend, max_execute_timeout=SHELL_CEILING_SECONDS)
-            ),
-            DeadlineMiddleware(deadline),
-            SpendMiddleware(ledger),
-        ],
-        backend=backend,
-        tools=extra_tools,
+        middleware=[DeadlineMiddleware(deadline), SpendMiddleware(ledger)],
+        tools=[execute_tool(container_name), *(extra_tools or [])],
         # Named rather than left to the framework's auto-detection, which asks for the provider's
         # own structured output whenever the model's profile carries `structured_output` or its
         # name matches a table of GPT, Claude, and Grok names kept upstream. That request makes the
@@ -433,10 +279,8 @@ def _run(
         # model rather than on the ones a lookup happens to miss.
         response_format=ToolStrategy(response_format),
     )
-    # DeepAgents binds a recursion limit of 9,999 through `with_config`; a second `with_config`
-    # on the compiled graph overrides it. There is no constructor parameter for it. The handler
-    # rides along here because an ambient callback reaches every model call the run makes,
-    # including the summarization middleware's own.
+    # The recursion limit is the step cap because the graph has no constructor parameter for it.
+    # The callbacks ride along here so they reach every model and tool call in the run.
     bounded = agent.with_config(
         {
             "recursion_limit": STEP_CAP,

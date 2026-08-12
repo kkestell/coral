@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Coral is a proof-of-concept code review agent, kept deliberately simple. When a pull request is opened or marked ready for review, or when somebody asks, Coral clones the repository and reviews the change, running individual tests of its own choosing along the way, and leaves its findings as comments on the pull request. It runs as a GitHub Actions workflow, written in Python on DeepAgents, with models reached through OpenRouter.
+Coral is a proof-of-concept code review agent, kept deliberately simple. When a pull request is opened or marked ready for review, or when somebody asks, Coral clones the repository and reviews the change, running individual tests of its own choosing along the way, and leaves its findings as comments on the pull request. It runs as a GitHub Actions workflow, written in Python on LangChain, with models reached through OpenRouter.
 
 `kkestell/coral` and `kkestell/coral-test` are a single hobby maintainer's repositories with no other contributors and no other users. Pushing to `main`, opening a pull request on `coral-test`, and editing `coral-test`'s secrets for a live check are routine development actions here, not events that need confirmation first.
 
@@ -8,7 +8,7 @@ Coral is a proof-of-concept code review agent, kept deliberately simple. When a 
 
 Each document owns a subject and is the only place that subject is written down. Read the one covering what you are about to do. Do not infer its contents from this list.
 
-- `.agents/docs/functional-requirements.md` — what Coral does, why that behavior, and what is out of scope.
+- `.agents/docs/functional-requirements.md` — Coral's feature-complete behavior, why that behavior, and what is out of scope; the roadmap names any behavior not built yet.
 - `.agents/docs/architecture.md` — how the code is organized and how it runs on GitHub Actions: the stack, the layout, the run, the rules that hold everywhere, and the decisions still open.
 - `.agents/docs/roadmap.md` — the order the work happens in: what each item builds, what it depends on, its status, and its done condition.
 - `.agents/docs/development.md` — prerequisites, setup, commands, environment variables, and gotchas.

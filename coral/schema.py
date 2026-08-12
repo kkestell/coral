@@ -155,6 +155,51 @@ class Verification:
     verdicts: list[Verdict]
 
 
+@dataclass(frozen=True)
+class FindingDisposition:
+    """Why deterministic verification kept or dropped one proposed finding."""
+
+    finding: int
+    kept: bool
+    reason: Literal["confirmed", "no verdict", "rejected", "unchecked", "duplicate"]
+    duplicate_issue: int | None = None
+
+
+def finding_dispositions(
+    review: Review,
+    verification: Verification,
+    searched_findings: set[int] | None = None,
+    viewed_issues: set[int] | None = None,
+) -> list[FindingDisposition]:
+    """Decide each finding once, for both filtering and diagnostic logging."""
+    assert (searched_findings is None) == (viewed_issues is None)
+    dispositions = []
+    for index in range(len(review.findings)):
+        verdicts = [verdict for verdict in verification.verdicts if verdict.finding == index]
+        duplicates = {verdict.duplicate_issue for verdict in verdicts}
+        duplicate = duplicates.pop() if len(duplicates) == 1 else None
+        reason: Literal["confirmed", "no verdict", "rejected", "unchecked", "duplicate"]
+        if not verdicts:
+            reason = "no verdict"
+        elif not all(verdict.confirmed for verdict in verdicts):
+            reason = "rejected"
+        elif searched_findings is not None and index not in searched_findings:
+            reason = "unchecked"
+        elif duplicate is not None and viewed_issues is not None and duplicate in viewed_issues:
+            reason = "duplicate"
+        else:
+            reason = "confirmed"
+        dispositions.append(
+            FindingDisposition(
+                finding=index,
+                kept=reason == "confirmed",
+                reason=reason,
+                duplicate_issue=duplicate if reason == "duplicate" else None,
+            )
+        )
+    return dispositions
+
+
 def confirmed(
     review: Review,
     verification: Verification,
@@ -168,17 +213,12 @@ def confirmed(
     supplied together or not at all: without a search a finding cannot be published, and only a
     common issue number the reader viewed can suppress a confirmed finding.
     """
-    assert (searched_findings is None) == (viewed_issues is None)
-    kept = []
-    for index, finding in enumerate(review.findings):
-        verdicts = [verdict for verdict in verification.verdicts if verdict.finding == index]
-        duplicates = {verdict.duplicate_issue for verdict in verdicts}
-        duplicate = duplicates.pop() if len(duplicates) == 1 else None
-        code_confirmed = verdicts and all(verdict.confirmed for verdict in verdicts)
-        checked = searched_findings is None or index in searched_findings
-        matched = duplicate is not None and viewed_issues is not None and duplicate in viewed_issues
-        if code_confirmed and checked and not matched:
-            kept.append(finding)
+    dispositions = finding_dispositions(review, verification, searched_findings, viewed_issues)
+    kept = [
+        finding
+        for finding, disposition in zip(review.findings, dispositions, strict=True)
+        if disposition.kept
+    ]
     return replace(review, findings=kept)
 
 

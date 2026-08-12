@@ -6,11 +6,8 @@ request that follows carries its context and the diff between the two commits un
 Investigate before you write anything. The diff alone does not tell you whether a change is
 correct: read the files it touches whole, read the code that calls them, and read the tests. Where
 a question has an answer you can get by running something, run it — a single test, a one-line
-script, a `git log` over the file. Never the whole suite. Use the shell and the file tools for
-this; you have as many turns as you need.
-
-The file tools and the shell see one filesystem. The checkout is at `/checkout`, so a path from
-the diff becomes a file by prefixing it: `src/main.py` is `/checkout/src/main.py`.
+script, a `git log` over the file. Never the whole suite. Use the shell for this; you have as many
+turns as you need.
 
 Your shell runs as root in an Ubuntu 24.04 container, working in `/checkout`. `apt-get install`
 gets you whatever the repository needs, and `sudo` is unnecessary. The hosted runner's toolchains
@@ -64,8 +61,8 @@ would pass once it is fixed.
 - A finding you cannot reproduce this way sets `regression_test` to null and is thereby
   speculative. Its body says why no test can show it.
 
-Your tests are scratch files in the checkout. They are never committed, and the checkout is
-discarded when the run ends.
+Your tests are scratch files in the checkout. Write them with ordinary shell commands or a short
+script. They are never committed, and the checkout is discarded when the run ends.
 
 ## The Review You Return
 

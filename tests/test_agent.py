@@ -6,12 +6,10 @@ the construction relies on.
 """
 
 import time
-from base64 import b64encode
 from inspect import signature
 from typing import Any
 
 import pytest
-from deepagents.backends.protocol import ExecuteResponse
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
@@ -21,14 +19,13 @@ import coral.agent
 from coral import container
 from coral.agent import (
     SHELL_CEILING_SECONDS,
-    ContainerBackend,
     DeadlineMiddleware,
     SpendHandler,
     SpendMiddleware,
     ToolProgressHandler,
     _run,
     caught,
-    forgiving,
+    execute_tool,
     format_tool_arguments,
     profile_of,
     review_prompt,
@@ -64,23 +61,6 @@ LUNA = ModelFacts(
         }
     ),
 )
-
-
-def backend() -> ContainerBackend:
-    """A backend naming a container. Nothing here executes, so none is started."""
-    return ContainerBackend("coral-reviewer", SHELL_CEILING_SECONDS)
-
-
-class Recording(ContainerBackend):
-    """A backend that answers every command with nothing and keeps what it was asked to run."""
-
-    def __init__(self) -> None:
-        super().__init__("coral-reviewer", SHELL_CEILING_SECONDS)
-        self.commands: list[str] = []
-
-    def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
-        self.commands.append(command)
-        return ExecuteResponse(output="", exit_code=0, truncated=False)
 
 
 def test_the_prompt_comes_out_of_the_installed_package() -> None:
@@ -164,159 +144,98 @@ def test_a_run_coral_cannot_price_is_stopped_however_little_it_has_counted() -> 
 
 
 def test_a_failing_tool_answers_with_its_error(caplog: pytest.LogCaptureFixture) -> None:
-    # A bad path is the model's to correct on its next step, not a reason to end a review with
-    # most of its budget unspent. Observed on a real run, where the first `read_file` call used
-    # `..` and the `ValueError` propagated out of `invoke`.
-    def refuse(path: str) -> str:
-        raise ValueError("Path traversal not allowed")
+    # A bad command is the model's to correct on its next step, not a reason to end a review with
+    # most of its budget unspent.
+    def refuse(command: str) -> str:
+        raise RuntimeError("Container unavailable")
 
     with caplog.at_level("INFO", logger="coral.agent"):
-        assert (
-            caught("read_file", refuse)("../etc/passwd") == "ValueError: Path traversal not allowed"
-        )
+        assert caught("execute", refuse)("pwd") == "RuntimeError: Container unavailable"
     assert any(
-        message.startswith("read_file failed; handing the error back to the model")
+        message.startswith("execute failed; handing the error back to the model")
         for message in caplog.messages
     )
     assert not any("refuse" in message for message in caplog.messages)
 
 
 def test_a_wrapped_tool_keeps_the_signature_langchain_injects_against() -> None:
-    def read(file_path: str, runtime: int, offset: int = 0) -> str:
-        return file_path
+    def execute(command: str, runtime: int, timeout: int = 300) -> str:
+        return command
 
-    assert list(signature(caught("read_file", read)).parameters) == [
-        "file_path",
+    assert list(signature(caught("execute", execute)).parameters) == [
+        "command",
         "runtime",
-        "offset",
+        "timeout",
     ]
 
 
 def test_tool_progress_uses_the_public_name_and_model_arguments(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    def read(file_path: str, offset: int, runtime: object | None = None) -> str:
-        """Read a file."""
-        return file_path
+    def execute(command: str, timeout: int, runtime: object | None = None) -> str:
+        """Run a command."""
+        return command
 
-    tool = StructuredTool.from_function(read, name="read_file")
+    tool = StructuredTool.from_function(execute, name="execute")
     with caplog.at_level("INFO", logger="coral.agent"):
         assert (
             tool.invoke(
-                {"file_path": "coral/agent.py", "offset": 0, "runtime": object()},
+                {"command": "pwd", "timeout": 30, "runtime": object()},
                 config={"callbacks": [ToolProgressHandler()]},
             )
-            == "coral/agent.py"
+            == "pwd"
         )
 
-    assert "Calling read_file(file_path='coral/agent.py', offset=0)." in caplog.messages
-    assert any(message.startswith("read_file finished in ") for message in caplog.messages)
+    assert "Calling execute(command='pwd', timeout=30)." in caplog.messages
+    assert any(message.startswith("execute finished in ") for message in caplog.messages)
     assert not any("runtime" in message or "sync_" in message for message in caplog.messages)
 
 
 def test_tool_progress_clears_a_failed_calls_timer(caplog: pytest.LogCaptureFixture) -> None:
-    def fail(file_path: str) -> str:
-        """Fail to read a file."""
+    def fail(command: str) -> str:
+        """Fail to run a command."""
         raise RuntimeError("unavailable")
 
     handler = ToolProgressHandler()
-    tool = StructuredTool.from_function(fail, name="read_file")
+    tool = StructuredTool.from_function(fail, name="execute")
     with caplog.at_level("INFO", logger="coral.agent"):
         with pytest.raises(RuntimeError, match="unavailable"):
-            tool.invoke({"file_path": "coral/agent.py"}, config={"callbacks": [handler]})
+            tool.invoke({"command": "pwd"}, config={"callbacks": [handler]})
 
     assert handler.calls == {}
     assert any(
-        message.startswith("read_file failed in ") and "unavailable" in message
+        message.startswith("execute failed in ") and "unavailable" in message
         for message in caplog.messages
     )
 
 
 def test_tool_progress_bounds_and_escapes_long_arguments() -> None:
-    content = "first line\n" + "x" * 200
-    rendered = format_tool_arguments("write_file", {"content": content, "file_path": "scratch.py"})
-    assert rendered.startswith("file_path='scratch.py', content='first line\\n")
-    assert f"({len(content)} characters)" in rendered
-    assert content not in rendered
+    command = "first line\n" + "x" * 200
+    rendered = format_tool_arguments("execute", {"command": command, "timeout": 30})
+    assert rendered.startswith("command='first line\\n")
+    assert f"({len(command)} characters), timeout=30" in rendered
+    assert command not in rendered
     assert "\n" not in rendered
 
 
-def test_every_filesystem_tool_is_wrapped() -> None:
-    # `execute` included. A shell command that will not parse is the same kind of mistake.
-    from deepagents import FilesystemMiddleware
+def test_the_shell_tool_runs_in_its_named_container(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, str, int]] = []
 
-    middleware = forgiving(FilesystemMiddleware(backend=backend()))
-    for tool in middleware.tools:
-        assert isinstance(tool, StructuredTool)
-        assert hasattr(tool.func, "__wrapped__"), f"{tool.name} was left raising"
+    def run(name: str, command: str, timeout: int) -> container.Output:
+        calls.append((name, command, timeout))
+        return container.Output(output="found it", exit_code=3, truncated=False)
 
-
-def test_the_filesystem_middleware_name_is_the_class_name() -> None:
-    # Recording a dependency's behavior, and the one Coral's construction rests on: middleware
-    # merges by name, so an instance named `FilesystemMiddleware` replaces the framework's own
-    # rather than joining it. An upstream rename would leave two middlewares each registering a
-    # `read_file` tool, and the shell ceiling would be whichever one won.
-    from deepagents import FilesystemMiddleware
-
-    assert FilesystemMiddleware(backend=backend()).name == "FilesystemMiddleware"
+    monkeypatch.setattr(container, "execute", run)
+    result = execute_tool("coral-reviewer").invoke({"command": "rg token", "timeout": 17})
+    assert result == "found it\n\n[exit code: 3]"
+    assert calls == [("coral-reviewer", "rg token", 17)]
 
 
-def test_the_container_backend_carries_every_tool_the_agent_holds() -> None:
-    # The framework registers `execute` only for a backend passing `isinstance` against
-    # `SandboxBackendProtocol`, which is why the container is a subclass rather than a wrapper
-    # forwarding to one. Without that the agent would have file tools and no shell; without the
-    # rest of the list it would have a shell and no file tools.
-    from deepagents import FilesystemMiddleware
-    from deepagents.backends.protocol import SandboxBackendProtocol
-
-    assert isinstance(backend(), SandboxBackendProtocol)
-    middleware = FilesystemMiddleware(backend=backend())
-    assert {tool.name for tool in middleware.tools} == {
-        "ls",
-        "read_file",
-        "write_file",
-        "edit_file",
-        "delete",
-        "glob",
-        "grep",
-        "execute",
-    }
-
-
-def encoded(path: str) -> str:
-    """The search root as the framework's glob script carries it, base64-encoded."""
-    return b64encode(path.encode()).decode()
-
-
-def test_a_glob_with_no_path_searches_the_checkout() -> None:
-    # The framework's own default root is `/`, and a walk from there spends the whole shell
-    # ceiling on `/proc`, `/sys`, and the toolcache mount without answering.
-    recording = Recording()
-    recording.glob("**/*.py")
-    assert encoded(container.CHECKOUT) in recording.commands[0]
-
-
-def test_a_glob_with_a_path_searches_where_the_model_said() -> None:
-    recording = Recording()
-    recording.glob("*.py", "/checkout/tests")
-    assert encoded("/checkout/tests") in recording.commands[0]
-
-
-def test_a_grep_glob_the_framework_cannot_run_is_an_error_rather_than_no_matches() -> None:
-    # That route's Python is embedded in a double-quoted shell string and truncated by a comment
-    # of its own, and the route discards stderr, so the model would read a syntax error as an
-    # answered search that found nothing.
-    recording = Recording()
-    result = recording.grep("token", glob="src/**/*.py")
-    assert result.error is not None
-    assert "'*.py'" in result.error
-    assert recording.commands == []
-
-
-def test_a_grep_glob_on_the_file_name_alone_reaches_the_framework() -> None:
-    recording = Recording()
-    recording.grep("token", glob="*.py")
-    assert recording.commands
+def test_the_shell_tool_refuses_a_timeout_past_its_ceiling() -> None:
+    result = execute_tool("coral-reviewer").invoke(
+        {"command": "sleep forever", "timeout": SHELL_CEILING_SECONDS + 1}
+    )
+    assert result == f"Error: timeout must be between 1 and {SHELL_CEILING_SECONDS} seconds."
 
 
 class Built:
@@ -325,7 +244,7 @@ class Built:
     def __init__(self) -> None:
         self.config: dict[str, Any] = {}
 
-    def with_config(self, config: dict[str, Any]) -> Built:
+    def with_config(self, config: dict[str, Any]) -> "Built":
         self.config = config
         return self
 
@@ -353,7 +272,7 @@ def run_against(
         built.append((model, keywords, agent))
         return agent
 
-    monkeypatch.setattr(coral.agent, "create_deep_agent", build)
+    monkeypatch.setattr(coral.agent, "create_agent", build)
     _run(
         "not-a-key",
         "openai/gpt-5.6-luna",
@@ -424,8 +343,10 @@ def test_only_the_verifier_receives_bounded_issue_tools(
         monkeypatch,
         extra_tools=[evidence.search_open_issues, evidence.view_issue],
     )[1]["tools"]
-    assert reviewer_tools is None
-    assert verifier_tools == [evidence.search_open_issues, evidence.view_issue]
+    assert len(reviewer_tools) == 1
+    assert isinstance(reviewer_tools[0], StructuredTool)
+    assert reviewer_tools[0].name == "execute"
+    assert verifier_tools[1:] == [evidence.search_open_issues, evidence.view_issue]
     assert not any(isinstance(tool, GitHub) for tool in verifier_tools)
 
 
@@ -495,12 +416,3 @@ def test_an_effort_reaches_openrouters_reasoning_block(
     # Passed through unvalidated. What an effort may be is the provider's rule, and its refusal is
     # what a caller who got it wrong reads.
     assert run_against(monkeypatch, effort="high")[0].reasoning == {"effort": "high"}
-
-
-def test_the_container_backends_execute_still_takes_the_ceiling() -> None:
-    # The framework introspects `execute`'s signature before forwarding a `timeout`, so an
-    # override that dropped the keyword would silently lose the model's own ceiling.
-    from deepagents.backends.protocol import execute_accepts_timeout
-
-    assert execute_accepts_timeout(ContainerBackend)
-    assert backend().ceiling == SHELL_CEILING_SECONDS

@@ -121,7 +121,7 @@ def test_a_request_from_somebody_without_write_access_is_owed_nothing(
 def test_a_pull_request_delivery_that_failed_is_owed_a_comment(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    deliver(monkeypatch, tmp_path, "pull_request", {"pull_request": {"number": 7}})
+    deliver(monkeypatch, tmp_path, "pull_request_target", {"pull_request": {"number": 7}})
     assert owed(runner.event(), access("admin")) is True
 
 

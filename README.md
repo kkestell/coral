@@ -14,7 +14,7 @@ name: Coral
 on:
   push:
     branches: [main]
-  pull_request:
+  pull_request_target:
     types: [opened, ready_for_review]
   issue_comment:
     types: [created]
@@ -27,6 +27,9 @@ concurrency:
 
 jobs:
   coral:
+    if: >-
+      github.event_name != 'pull_request_target'
+      || github.event.pull_request.head.repo.id == github.event.pull_request.base.repo.id
     permissions:
       contents: read
       issues: write
@@ -50,7 +53,7 @@ Prefer the management key if your account balance would hurt to lose. The workfl
 
 ## Configuring Coral
 
-Coral is configured in that workflow file and nowhere else. Comment-triggered reviews read it from the default branch; the automatic `pull_request` risk is described below. Add a `with:` block to the job to change any of these; leave it out and you get the defaults.
+Coral is configured in that workflow file and nowhere else. Comment-triggered and automatic pull-request reviews read it from the default branch. Add a `with:` block to the job to change any of these; leave it out and you get the defaults.
 
 ```yaml
     uses: kkestell/coral/.github/workflows/coral.yml@v0.1.0
@@ -97,7 +100,7 @@ The measures below limit the damage. None of them stop a determined attacker fro
 - A container escape reaches the review job, which holds the OpenRouter key.
 - OpenRouter and whichever provider it routes to see the diff, files the agent opens, command output, and the conversation. Do not install Coral where that is unacceptable.
 - Prompt injection works. The diff and the conversation are attacker-controlled text in the model's context, so a review can be steered into missing a finding or posting text somebody else wrote.
-- On the `pull_request` trigger, GitHub runs the workflow file from the pull request's own branch. Anyone who can push a branch to your repository can rewrite it and take the OpenRouter key and the job token. This is true of every workflow that uses secrets on that trigger, not of Coral in particular. If your `main` is protected but branch creation is not, restrict who can create branches.
+- Automatic reviews use `pull_request_target`, so the default branch supplies the workflow code. Coral checks out the pinned head only in its read-only review job and executes agent-chosen operations only in the credential-free container.
 
 Prefer the management key, set a credit limit on whichever key you use, keep write access narrow, and treat Coral's comments as suggestions from an unreliable reviewer.
 

@@ -23,10 +23,9 @@ IMAGE: Final = "ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38
 CHECKOUT: Final = "/checkout"
 
 # `ubuntu:24.04` carries neither `git` nor `python3`. The `git log` the reviewer's prompt offers
-# and any `setuptools-scm` package's install need the first; every file tool the agent holds is a
-# `python3 -c` script the framework builds, so without the second the agent has no file tools at
-# all. Done at start rather than when the agent trips over the absence with a review's budget
-# running.
+# and any `setuptools-scm` package's install need the first; short Python scripts are the simplest
+# way for the agent to inspect or create structured files. Installed before the review budget is
+# spent on discovering either absence.
 INSTALL: Final = "apt-get update && apt-get install -y git python3"
 
 # What `timeout` waits after `TERM` before it sends `KILL`.
@@ -36,10 +35,8 @@ GRACE_SECONDS: Final = 5
 # it. The command itself is already dead by then; this bounds a stuck `docker exec`.
 BACKSTOP_SECONDS: Final = 30
 
-# The runner-side bound on one command's output. It has to sit above every cap the framework's
-# in-container scripts apply to themselves — the largest being a 500 KiB binary read arriving
-# base64-encoded — because a file tool's answer is one JSON document and a cut one does not parse.
-# What bounds what the model reads is the middleware's own eviction, well under this.
+# The runner-side bound on one command's output. It sits above what the model should need from one
+# command. The reader drains anything beyond it without retaining it.
 OUTPUT_CAP_BYTES: Final = 1_000_000
 
 # How much of a stream is taken off the pipe at a time. The reader keeps `OUTPUT_CAP_BYTES` of
@@ -132,22 +129,6 @@ def exec_arguments(name: str, command: str, timeout: int) -> list[str]:
     ]
 
 
-def upload_arguments(name: str, path: str) -> list[str]:
-    """The `docker exec` that writes one file's bytes into the container.
-
-    The path is an argument to the script rather than text inside it, so a path the model wrote is
-    never read as shell. The content crosses on stdin alone: it never appears in a command line,
-    and no temporary file is written on the runner. The working directory is the checkout, the
-    same one a command gets, so a relative path lands where the rest of the run would put it.
-    """
-    return ["exec", "-i", "--workdir", CHECKOUT, name, "bash", "-c", 'cat > "$1"', "coral", path]
-
-
-def download_arguments(name: str, path: str) -> list[str]:
-    """The `docker exec` that reads one file's bytes out of the container."""
-    return ["exec", "--workdir", CHECKOUT, name, "bash", "-c", 'cat -- "$1"', "coral", path]
-
-
 def shaped(stdout: str, stderr: str, exit_code: int, dropped: bool = False) -> Output:
     """One command's streams as the model reads them.
 
@@ -155,9 +136,8 @@ def shaped(stdout: str, stderr: str, exit_code: int, dropped: bool = False) -> O
     The prefix is what says which line came from where. `dropped` is what the reader already threw
     away, which is how a command that wrote a gigabyte still says it was cut.
 
-    The exit code is not written into the text. Every file tool the agent holds is a script run
-    through here whose answer is one JSON document, and a line appended after it does not parse;
-    the middleware tells the model a failing command's exit code from the `Output` itself.
+    The exit code is separate so the shell tool can label it without confusing it with command
+    output.
     """
     parts = []
     if stdout:
@@ -196,25 +176,6 @@ def docker(arguments: list[str]) -> None:
         raise RuntimeError(
             f"`docker {arguments[0]}` failed: {result.stderr.strip() or 'no output'}"
         )
-
-
-def upload(name: str, path: str, content: bytes) -> None:
-    """Put one file's bytes in the container, raising what `docker` said when it fails."""
-    result = subprocess.run(
-        ["docker", *upload_arguments(name, path)], input=content, capture_output=True
-    )
-    if result.returncode != 0:
-        message = result.stderr.decode(errors="replace").strip() or "no output"
-        raise RuntimeError(f"Writing `{path}` in the container failed: {message}")
-
-
-def download(name: str, path: str) -> bytes:
-    """Take one file's bytes out of the container, raising what `docker` said when it fails."""
-    result = subprocess.run(["docker", *download_arguments(name, path)], capture_output=True)
-    if result.returncode != 0:
-        message = result.stderr.decode(errors="replace").strip() or "no output"
-        raise RuntimeError(f"Reading `{path}` from the container failed: {message}")
-    return result.stdout
 
 
 def toolcache_source() -> Path:

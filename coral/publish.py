@@ -84,7 +84,8 @@ def owed(event: Event, access: Access) -> bool:
     """
     # The job-level condition is coarse, so a comment merely mentioning `/coral` mid-sentence
     # allocates a runner, and a run that fails there was asked for nothing. A `pull_request`
-    # delivery always asks, the condition having already excluded drafts and bots.
+    # `pull_request_target` delivery always asks, the condition having already excluded drafts and
+    # bots.
     if event.comment is not None and not is_request(
         event.comment.body, event.comment.author, access
     ):

@@ -105,7 +105,7 @@ def lower(tree: Tree, out: list[str]) -> None: ...
 ## Where the tooling is configured
 
 - `pyproject.toml` — `ruff` for lint and format, `pytest`, and `mypy`. All three are configured in that one file and nowhere else, so there is no separate `ruff.toml`, `mypy.ini`, or `pytest.ini` to look for. `ruff` is set to a 100-character line and to Markdown being none of its business; `mypy` runs strict over `coral` and `tests`.
-- `.python-version` — the interpreter `uv` builds the environment against. `requires-python` in `pyproject.toml` pins the same version a second time, so an install on an older interpreter fails outright.
+- `.python-version` — the interpreter `uv` builds the environment against. `requires-python` in `pyproject.toml` sets that version as the minimum, so an install on an older interpreter fails outright.
 - The command that runs each of these is in `.agents/docs/development.md`.
 
 ## When to graduate

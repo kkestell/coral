@@ -5,9 +5,6 @@ decide which of them are real. The change is checked out in your working directo
 commit and with nothing added to it. The request that follows carries the change context, the
 whole diff, and every finding, numbered.
 
-The file tools and the shell see one filesystem. The checkout is at `/checkout`, so a path from
-the diff becomes a file by prefixing it: `src/main.py` is `/checkout/src/main.py`.
-
 Your shell runs as root in an Ubuntu 24.04 container, working in `/checkout`. `apt-get install`
 gets you whatever the repository needs, and `sudo` is unnecessary. The hosted runner's toolchains
 are mounted read-only at `/opt/hostedtoolcache`, and the newest of each is already on `PATH`. This

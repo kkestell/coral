@@ -46,7 +46,7 @@ def priced(value: Any) -> float | None:
     """
     try:
         cost = float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if not math.isfinite(cost) or cost < 0:
         return None

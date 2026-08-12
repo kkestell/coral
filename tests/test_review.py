@@ -22,11 +22,11 @@ from coral.github.conversation import (
 )
 from coral.github.marker import marker
 from coral.review import (
+    PullRequestSubject,
+    PushSubject,
     copy_checkout,
     render_conversation,
-    render_push_request,
-    render_push_verification_request,
-    render_request,
+    render_review_request,
     render_verification_request,
 )
 from coral.schema import (
@@ -118,6 +118,20 @@ def conversation_of(
         bound=Bound(read=len(parsed) + len(reviews), unread=unread, oldest_read=None),
         reviewed_commits=reviewed or [],
     )
+
+
+def pull_subject(body: str | None = "It was wrong.") -> PullRequestSubject:
+    return PullRequestSubject(
+        head=COMMIT,
+        common="b" * 40,
+        title="Fix the parser",
+        body=body,
+        conversation=conversation_of(),
+    )
+
+
+def push_subject() -> PushSubject:
+    return PushSubject(head=COMMIT, common="b" * 40)
 
 
 def test_a_comment_carries_its_author_and_association() -> None:
@@ -215,23 +229,19 @@ def test_an_empty_conversation_says_so_in_each_section() -> None:
 
 def test_the_request_carries_the_title_the_body_and_the_diff_whole() -> None:
     diff = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-one\n+two\n"
-    rendered = render_request("Fix the parser", "It was wrong.", diff, conversation_of())
+    rendered = render_review_request(pull_subject(), diff)
     assert "# Fix the parser" in rendered
     assert "It was wrong." in rendered
     assert diff in rendered
 
 
 def test_a_pull_request_with_no_description_says_so() -> None:
-    assert "The author left no description." in render_request(
-        "A title", None, "", conversation_of()
-    )
-    assert "The author left no description." in render_request(
-        "A title", "  ", "", conversation_of()
-    )
+    assert "The author left no description." in render_review_request(pull_subject(None), "")
+    assert "The author left no description." in render_review_request(pull_subject("  "), "")
 
 
 def test_a_main_push_request_has_its_commit_and_parent_diff_without_a_conversation() -> None:
-    rendered = render_push_request(COMMIT, "a parent diff")
+    rendered = render_review_request(push_subject(), "a parent diff")
     assert f"# Main commit {COMMIT}" in rendered
     assert "There is no pull-request description or conversation." in rendered
     assert "a parent diff" in rendered
@@ -268,7 +278,7 @@ def test_the_findings_are_numbered_from_zero_in_order() -> None:
             regression_test=None,
         ),
     )
-    rendered = render_verification_request("A title", None, DIFF, review)
+    rendered = render_verification_request(pull_subject(None), DIFF, review)
     assert rendered.index("## Finding 0") < rendered.index("## Finding 1")
     assert rendered.index("First.") < rendered.index("Second.")
     assert "## Finding 2" not in rendered
@@ -283,7 +293,7 @@ def test_a_finding_carries_its_severity_and_where_it_points() -> None:
             regression_test=None,
         )
     )
-    rendered = render_verification_request("A title", None, DIFF, review)
+    rendered = render_verification_request(pull_subject(None), DIFF, review)
     assert "Severity: medium. Concerns `a.py`, lines 3 to 9." in rendered
 
 
@@ -296,7 +306,7 @@ def test_a_reproduced_finding_carries_its_test_whole() -> None:
             regression_test=REGRESSION,
         )
     )
-    rendered = render_verification_request("A title", None, DIFF, review)
+    rendered = render_verification_request(pull_subject(None), DIFF, review)
     assert REGRESSION.content in rendered
     assert "`tests/test_parser.py`" in rendered
     assert "`pytest tests/test_parser.py::test_it`" in rendered
@@ -311,12 +321,12 @@ def test_a_speculative_finding_says_so() -> None:
             regression_test=None,
         )
     )
-    rendered = render_verification_request("A title", None, DIFF, review)
+    rendered = render_verification_request(pull_subject(None), DIFF, review)
     assert "could not reproduce this with a test; it is speculative" in rendered
 
 
 def test_a_main_push_verification_request_has_no_pull_request_context() -> None:
-    rendered = render_push_verification_request(COMMIT, DIFF, review_of())
+    rendered = render_verification_request(push_subject(), DIFF, review_of())
     assert f"# Main commit {COMMIT}" in rendered
     assert "This commit was pushed directly to main." in rendered
     assert "The conversation" not in rendered
@@ -362,7 +372,14 @@ def test_the_verifier_never_sees_the_conversation() -> None:
             regression_test=None,
         )
     )
-    rendered = render_verification_request("A title", "The description.", DIFF, review)
+    subject = PullRequestSubject(
+        head=COMMIT,
+        common="b" * 40,
+        title="A title",
+        body="The description.",
+        conversation=conversation_of(comments=[comment_node("Secret conversation.")]),
+    )
+    rendered = render_verification_request(subject, DIFF, review)
     assert "conversation" not in rendered.lower()
     assert "# A title" in rendered
     assert "The description." in rendered

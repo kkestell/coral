@@ -80,7 +80,7 @@ jobs:
     # first is "more indented" in a YAML folded scalar, which keeps its line break instead of
     # folding it to a space.
     if: >-
-      (github.event_name == 'pull_request'
+      (github.event_name == 'pull_request_target'
       && github.event.pull_request.draft == false
       && github.event.pull_request.user.type != 'Bot')
       || (github.event_name == 'issue_comment'

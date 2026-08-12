@@ -27,7 +27,7 @@ def deliver(
 def test_a_pull_request_event_carries_a_number_and_no_comment(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    deliver(monkeypatch, tmp_path, "pull_request", {"pull_request": {"number": 7}})
+    deliver(monkeypatch, tmp_path, "pull_request_target", {"pull_request": {"number": 7}})
     event = runner.event()
     assert (event.owner, event.repo, event.number) == ("kkestell", "coral-test", 7)
     assert event.comment is None
@@ -123,7 +123,7 @@ def test_an_event_coral_does_not_handle_is_a_broken_workflow_file(
 def test_a_missing_event_path_names_the_variable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    deliver(monkeypatch, tmp_path, "pull_request", {"pull_request": {"number": 7}})
+    deliver(monkeypatch, tmp_path, "pull_request_target", {"pull_request": {"number": 7}})
     monkeypatch.delenv("GITHUB_EVENT_PATH")
     with pytest.raises(KeyError) as raised:
         runner.event()

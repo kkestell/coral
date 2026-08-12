@@ -66,10 +66,10 @@ def event() -> Event:
     owner, repo = os.environ["GITHUB_REPOSITORY"].split("/")
     payload: dict[str, Any] = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
 
-    # The workflow's `on:` block is the only thing that can produce a name here, so a fourth one
-    # is a broken workflow file rather than an event Coral has to understand.
+    # The workflow's `on:` block is the only thing that can produce a name here, so another one is
+    # a broken workflow file rather than an event Coral has to understand.
     match name:
-        case "pull_request":
+        case "pull_request_target":
             number = payload["pull_request"]["number"]
             comment = None
         case "issue_comment":
