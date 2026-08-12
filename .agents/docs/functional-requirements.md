@@ -1,92 +1,102 @@
 # Functional Requirements
 
-What Coral does, as behavior someone could watch happen. These requirements are the whole of it, and anything not listed is out of scope until this document says otherwise.
+What Coral does, as behavior someone can observe or as a security property an installation can inspect. These requirements are the whole product; anything not listed is out of scope.
 
 ## Trigger
 
-- Coral reviews a pull request when it is opened and when a draft is marked ready for review. Nobody has to ask for that first review.
-- Coral reviews every push to `main`, without a request. It creates issues for confirmed findings rather than commenting on a pull request.
-- A push carrying several commits is one review of all of them together, not one review each.
-- A push to any other branch starts nothing. Neither does a push to a `main` that had no commit before it, nor one that deletes `main`, which GitHub delivers as a push whose commit is forty zeroes.
-- Draft and bot-opened pull requests get no automatic review. Both can still be reviewed on request.
-- Coral reviews only pull requests whose head branch lives in the same repository as the base — a fork's branch is code nobody with write access vouched for.
-- After the automatic review, Coral reviews the pull request again only when someone asks. A bot that reviews every push to a branch teaches people to ignore it.
-- Asking is a `/coral` comment on the pull request as a whole or a diff reply. A submitted review cannot ask.
-- The command is lowercase and stands alone on its line, matched exactly. Quotes, prose, and code fences are inert.
-- Coral never reads its own comments as a request; a bot that can trigger itself will.
-- A comment is Coral's own only when Coral's own token wrote it and Coral's marker opens the body. The marker is characters anybody can type, so on its own it would let a stranger have their words attributed to Coral and let them silence the automatic review of a commit.
-- Only someone with write access can ask.
-- Coral acknowledges an authorized request with an `eyes` reaction before deciding whether a review runs, so a request it declines was still heard. Each request gets its own reaction. Requests declined for lack of write access get no reaction or review.
-- On a pull request, Coral reviews the head commit as it is at the start of the run, rather than the one the triggering event named.
+- Coral reviews a pull request automatically when it is opened and when a draft is marked ready for review.
+- Automatic pull-request delivery uses `pull_request_target`. GitHub reads the workflow from the base repository's default branch, and the pull request's exact head SHA is treated as untrusted input rather than as workflow code or a ref to execute.
+- Coral rejects a pull request whose head repository differs from its base repository before the run can expose credentials or execute the head revision. A missing head repository is rejected as a fork.
+- Draft and bot-opened pull requests get no automatic review. Either can still be reviewed on request.
+- Pushing commits, reopening a pull request, and changing its title or description start no review.
+- Coral reviews every push to `main` as one range from the event's before commit through its after commit. A multi-commit push is one review, not one review per commit.
+- A push to another branch, a push that creates `main` without a prior commit, and a push that deletes `main` start no review.
+- After an automatic pull-request review, Coral reviews again only when somebody asks by putting `/coral` in a new comment on the pull request or in a new diff reply. A submitted review and an edited comment cannot ask.
+- The command is lowercase, exact, and alone on its line. Quoted text, prose, and code fences are inert, and text beside the command cannot steer the review.
+- Coral never treats its own comment as a request. A comment is Coral's only when the workflow token authored it and Coral's marker opens its body; marker text alone establishes nothing.
+- Only an author whose current repository permission includes write access can ask for a review.
+- Coral adds an `eyes` reaction to every authorized request before any later gate may decline it. An unauthorized request receives neither a reaction nor a review.
+- A pull-request run pins the current head commit when the run starts rather than trusting the commit named by the triggering event.
 
-## What Coral Reviews
+## Review Subject And Context
 
-- On a pull request, the subject is the diff between the head commit and its merge base with the base branch, both fixed at the start of the run, so the reviewed change cannot shift while branches move.
-- On `main`, the subject is the diff between the commit `main` was at before the push and the commit it is at after, both fixed from the event.
-- A `main` push carries no description and no conversation. The commit and its diff are the whole of what Coral is given.
-- Coral works from a full checkout and reads any file, touched or not — understanding a change means reading code around it.
-- Every review covers the whole change, not what is new since the last review. A rebase leaves no meaningful range of new commits, and a change reads differently once the rest has moved.
-- Before a pull-request review, Coral reads its conversation — its own past reviews and everyone's comments — and does not repeat a finding that still stands. A finding stops standing when its thread is resolved or the code beneath it has moved.
-- Coral reads a bounded amount of conversation, most recent first, and the agent is told what went unread. A review thread is read at both ends, so what goes unread in a long one is its middle rather than the comment that opened it.
-- The conversation is information about the change, never instruction about how to review. A comment claiming a finding is settled is not grounds to drop it — Coral cannot tell a maintainer's judgment from a stranger's assertion, and a bot that can be talked out of a finding can be talked out of a true one. `/coral` is no exception: it is recognized by ordinary code before the review starts and decides only whether a review runs, never how.
+- A pull-request review covers the diff between the pinned head commit and its merge base with a pinned base-branch commit. Movement of either branch after pinning cannot change the review subject.
+- A `main` review covers the diff between the before and after commits fixed by the push event.
+- Coral works from a full-history checkout of the pinned head and may read any repository file, whether or not the change touched it.
+- Every run reviews the whole pinned change rather than only work added since an earlier review.
+- Before a pull-request review, Coral reads its earlier reviews, all kinds of pull-request comments, and each review thread's resolved and outdated state.
+- Coral does not repeat a finding that still stands. A finding stops standing when its thread is resolved or the code it concerned has moved.
+- Conversation input is bounded and selected most recent first. A thread retains both its opening comment and its newest comments, and the review input says what was left unread.
+- A `main` push has no pull-request title, description, or conversation in its review context.
+- Before either review mode starts an agent, Coral reads ordinary GitHub issues referenced by the change. References come from a pull request's manually or closing-linked issues, its title and body, and the commit messages in the reviewed range; a `main` review uses its range's commit messages.
+- Native GitHub issue-reference forms may name the current repository or another repository readable by the workflow token. Pull requests, issue comments, pull-request discussion, and repository custom autolinks do not become referenced-issue context.
+- Referenced-issue context contains the repository, number, state, title, and a bounded body for each readable issue. The number of references, commit messages examined, each body, and the complete context are bounded.
+- Both the reviewer and verifier receive the same fixed referenced-issue context. The context says when a bound omitted references or when an issue could not be read.
+- The diff, conversation, referenced issues, open-issue evidence, repository files, and command output are untrusted information about the change, never instructions about whether or how to review it.
 
-## What Coral Can Do While Reviewing
+## Review Capabilities And Boundaries
 
-Coral decides which of these to use, in what order, how many times.
+Coral decides which available capability to use, in what order, and how often.
 
-- Run shell commands inside the checkout.
-- Run individual tests it chooses, never the full suite — CI already does that, and a pull request is assumed to arrive passing. Coral runs a test to answer a question it formed.
-- Write scratch test files into the checkout. Never committed, never pushed; they disappear with the checkout.
-- On a `main` push, search this repository's open issues once per finding and read a few of the candidates the search returned, to see whether the defect is already filed. Both are reads, and the text they return is evidence about the defect rather than instruction about the review.
-- Never write to the repository on GitHub: no commits, no branches, nothing outside the checkout. Everything Coral posts comes from deterministic code, and the agent holds no credential that reaches GitHub.
+- Coral can run shell commands inside the checkout.
+- Coral can run individual tests or test selections chosen to answer a question it formed. It never runs the full suite on its own initiative.
+- Coral can write scratch tests and other scratch files inside its checkout. They are never committed or pushed and disappear with the review environment.
+- Every agent-controlled shell and file operation runs inside the same disposable, resource-bounded container. The container sees one private checkout copy and a read-only toolchain mount, retains network access, and cannot reach a workflow or model-provider credential, the runner filesystem or process table, a Docker daemon socket, or privileged execution.
+- Each agent run receives a fresh checkout copy and container. Files or processes created by the reviewer cannot affect the verifier except through the finding contract Coral gives it.
+- On a `main` review, the verifier may search this repository's open issues once per finding and read a bounded number of returned candidates. These reads are evidence about duplication and confer no other GitHub access.
+- The agent receives no credential capable of writing GitHub. Deterministic workflow code is the only publisher and never commits, pushes, creates branches, edits repository files, approves, or requests changes.
 
-## Output
+## Findings And Verification
 
-- A review is a summary plus findings; each finding carries its text and the place it concerns.
-- A finding is a correctness, security, or performance problem, and nothing else. Style, naming, structure, documentation, and test coverage are not findings.
-- Every finding carries a severity: low, medium, or high.
-- A finding Coral reproduced carries the failing test that shows it; one it could not reproduce is marked speculative.
-- A second agent run checks every finding against the code, never reading the conversation, and only the ones it confirms are posted. A rejected finding appears in the run's log, never on the pull request. A reviewer talks itself into findings; a reader cannot tell which ones.
-- A finding concerns a span of lines, a single line, a whole file, or the change as a whole. Coral chooses per finding.
-- On a pull request, line and span findings anchor to their code. Whole-file and pull-request findings appear in the summary, the file named — "this file has no tests" and "this change has no tests" must read differently.
-- A confirmed finding that cannot anchor still appears, in the summary, naming its intended file and line. When GitHub refuses the anchored review, Coral posts it again with every finding in the summary.
-- One review per run, not a comment per finding. A pull request reviewed several times carries several reviews.
-- On `main`, Coral creates one issue per confirmed finding. Its title names the defect, its body names the commit the finding was found in, and a `coral` label and a severity label carry the rest. Coral creates any of those labels the repository lacks, because GitHub drops a label with no definition.
-- A confirmed `main` finding creates no issue when an open issue Coral read describes the same defect. Who opened that issue does not matter. A closed issue suppresses nothing, because the finding is about code at the pushed commit and a closed issue did not fix it. Two `main` pushes reviewed at once can each file the same defect, each having searched before the other's issue existed; accepted.
-- An empty `main` review creates no issue, and no label either.
-- Every pull-request review names the commit it reviewed — readers need to know which state of the branch each review is about, and it is how Coral recognizes its own past work.
-- Every review ends with what the run spent.
-- Every review says it is Coral's; the posting account belongs to the repository's automation, not to Coral.
-- Earlier reviews are left alone: never edited, deleted, or resolved. GitHub marks comments outdated itself.
-- When a pull-request review has nothing to report, it says which of two things happened: nothing to find, or everything already said still stands. Without the distinction, a second "nothing found" reads as retracting the first review.
-- Coral never approves, never requests changes, never blocks a merge. The review is advisory.
+- A completed review is a structured summary and zero or more findings. Each finding carries its text and the place it concerns.
+- A finding reports a correctness, security, or performance defect. Style, naming, structure, documentation, and test coverage alone are not findings.
+- Every finding has low, medium, or high severity.
+- A reproduced finding includes the complete failing regression test and the command that demonstrated it. A finding Coral could not reproduce is explicitly speculative.
+- A separate agent run independently checks every proposed finding against a fresh checkout. It receives the change and the fixed referenced-issue context but not the pull-request conversation.
+- Only findings the verifier confirms are published. Missing, conflicting, or rejecting verdicts discard the finding, and the run log records the disposition without publishing it.
+- A finding may concern a span of lines, one line, a whole file, or the change as a whole.
 
-## Failure
+## Publication
 
-- Every failed pull-request review says so on the pull request, in enough detail to know whether to retry or investigate — including failures before the agent starts. A run that dies leaving no publishing job — cancelled, or its setup broken — says nothing; the Actions run is the record.
-- A failed `main` review creates no issue. The failed Actions run is the record of it.
-- Each automatic review happens once; a request is honored once. Asking again gets another review even when nothing changed — a person who asks again means it.
-- Two reviews of one pull request never run at once. A request arriving mid-review is neither dropped nor run immediately; it is honored after the running review posts. Several such requests cost one further review between them, each still acknowledged.
-- A closed or merged pull request is not reviewed, checked at the start and again before posting. A merge landing in the last seconds still wins the race; accepted.
-- A review whose commit is no longer the head is not posted; Coral says the branch moved, because nothing re-triggers it afterwards.
-- A review that dies partway does not block later reviews.
-- A review that does not finish is discarded: Coral says it ran out of time and posts nothing else, because a partial review is indistinguishable from a complete one.
-- A review that spends past its cap is stopped the same way, saying what it spent against the cap. So is one whose spending Coral cannot measure: a response reporting no usable cost leaves the cap unenforceable.
-- A pull request too large is not reviewed: too many changed files or too many changed lines. Coral says it exceeds what it will read and posts nothing else. A backstop, not an expected case. A `main` push has no size backstop.
-- A `main` review that proposes more than ten findings creates no issue and fails. Coral checks each confirmed finding against the open issues, and it will not create an issue for a finding it did not check.
+- A pull-request run publishes one comment-only review containing the summary and all confirmed findings. It never publishes one comment per finding, approves, requests changes, or blocks a merge.
+- Line and span findings attach to the corresponding changed code. Whole-file findings and change-level findings appear in the review body, with a whole-file finding naming its file.
+- A confirmed finding whose requested anchor is invalid still appears in the review body naming its intended location. If GitHub rejects an anchored review, Coral retries once with every finding in the body and no inline comments.
+- Each pull-request review names Coral and the pinned commit it reviewed. Earlier reviews and their threads are never edited, deleted, resolved, or reused.
+- A pull-request review with no confirmed finding says whether Coral found nothing or whether everything it would report was already present and still standing.
+- Every published review result reports the run's measured model cost, composed outside agent control.
+- A `main` review creates one issue for each confirmed finding. The title names the defect; the body names Coral, the reviewed commit, location, evidence, and cost; and `coral` plus severity labels carry its classification.
+- Before creating any `main` issue, Coral ensures the four labels it may apply exist. An empty review creates neither an issue nor a label.
+- A confirmed `main` finding creates no issue when an open issue the verifier actually read describes the same defect. The issue's author does not matter, and a closed issue suppresses nothing.
+- Two concurrent `main` reviews may each create the same issue when both completed their bounded duplicate check before either issue existed.
+
+## Configuration And Credentials
+
+- Coral is configured only in the installing repository's workflow file, read from its default branch: the model, reasoning effort, review time budget, and per-review spend cap, each with a default. The change under review cannot alter how it is reviewed.
+- The configured model is an exact name the provider lists. A moving alias is refused, and a model the provider does not list stops the run with a report, so the configuration always shows which model produced a review.
+- The configured reasoning effort reaches the provider as given, and an empty value asks for none. A value the model refuses fails the review with the provider's refusal reported.
+- The installation supplies one provider credential mode: a key used as given, or a management credential from which Coral mints a fresh key for each run, capped at the configured spend cap and unable to authenticate after its run. The two modes are exclusive, and a missing, mixed, or mismatched credential configuration fails the review with a report.
+- No cleartext minted key, or reversible encoding of one, appears in a log, workflow output, artifact, checkout, or agent container.
+
+## Failure And Limits
+
+- A failed pull-request review posts one actionable failure comment when publication reaches a working comment call, including failures before either agent starts. Cancellation, broken publication setup, or GitHub refusing the report may leave only the Actions run as its record.
+- A `main` review that fails before producing complete issue payloads creates no issue. If creating several issues fails partway, issues GitHub already accepted remain and the failed Actions run records the incomplete publication.
+- Each automatic trigger is handled once, and each authorized request is acknowledged and honored once. A later `/coral` request starts another review even when the head is unchanged.
+- Pull-request reviews are serialized by pull request. One running review finishes, one pending review represents all requests that arrived meanwhile, and every collapsed request is still acknowledged.
+- Coral checks that a pull request is open before reviewing and again before publication. A closed or merged pull request receives no review.
+- Coral publishes no review if the pinned commit is no longer the pull request's head. It posts a notice naming the reviewed commit and invites a fresh request.
+- A failed run does not prevent a later review.
+- A review that reaches its time limit is discarded whole and reported as timed out. Findings accumulated before the limit are not published.
+- Coral stops and discards a review that reaches its spend cap or receives a model response whose cost cannot be measured. The failure reports measured spend against the cap.
+- Both review modes refuse a request that cannot be captured, assembled, sent to the selected model, or published whole within their byte and context limits. Coral never silently truncates a diff, agent request, finding, regression test, review, or issue into a partial review.
+- Pull requests also have changed-file and changed-line backstops. A rejected request says which limit was exceeded and publishes no review.
+- A `main` review proposing more findings than Coral can duplicate-check fails without creating any issue.
+- Actions logs make a live run diagnosable by naming each bounded agent action and its outcome while omitting credentials, unbounded tool results, and model-transport noise.
 
 ## Out Of Scope
 
-- Forges other than GitHub.
-- Pull requests from forks.
-- Repositories that have not installed Coral.
-- Anything happening to a pull request other than opening, marking ready, or asking. Reopens and title or description edits start nothing.
-- Asking by any other means. `/coral` edited into an existing comment does nothing — invisible.
-- Replying to comments or carrying on a conversation. Coral reads, reacts, and reviews.
-- Steering a review from the command. Text alongside `/coral` is conversation, not direction.
-- Any command other than asking: no stop, no configure, no dismiss.
-- Being assigned as a reviewer; Coral has no GitHub identity to request.
-- Suggested changes a reviewer applies with a click.
-- Per-repository configuration of what Coral looks for.
-- Any store of past reviews beyond the pull request itself.
-- A Docker daemon the agent's shell can reach, and `--privileged`. Both are host root, which is what the container takes away.
+- Forges other than GitHub, GitHub Enterprise Server, pull requests from forks, and repositories where Coral is not installed.
+- A trigger, request location, command, response, or configuration mechanism not named above, including assignment as a reviewer, suggested changes, stop or dismiss commands, and conversational replies.
+- Repository-specific configuration of what Coral considers a finding, and any review-memory store beyond the pull request itself.
+- A second model provider.
+- An external credential broker and a microVM agent shell.

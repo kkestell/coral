@@ -50,7 +50,7 @@ Prefer the management key if your account balance would hurt to lose. The workfl
 
 ## Configuring Coral
 
-Coral is configured in that workflow file and nowhere else, so a pull request cannot change how it is reviewed. Add a `with:` block to the job to change any of these; leave it out and you get the defaults.
+Coral is configured in that workflow file and nowhere else. Comment-triggered reviews read it from the default branch; the automatic `pull_request` risk is described below. Add a `with:` block to the job to change any of these; leave it out and you get the defaults.
 
 ```yaml
     uses: kkestell/coral/.github/workflows/coral.yml@v0.1.0
