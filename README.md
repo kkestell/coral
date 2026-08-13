@@ -1,8 +1,12 @@
 # 🪸 Coral
 
-A code review agent that runs as a GitHub Actions workflow. Coral reviews pull requests and comments on them. It also reviews each commit pushed to `main` and creates an issue for every confirmed finding that no open issue already describes.
+A code review agent that runs as a GitHub Actions workflow. Coral reviews pull requests and comments on them. It also reviews each push to `main` as one range, including a multi-commit push, and creates an issue for every confirmed finding that no open issue already describes.
 
 Coral is a proof of concept and is early.
+
+[![Coral review flow](docs/diagrams/review-flow.svg)](docs/diagrams/review-flow.mmd)
+
+[Edit the Mermaid source](docs/diagrams/review-flow.mmd).
 
 ## Adding Coral to your repository
 
@@ -77,13 +81,17 @@ Anyone with write access can ask. Coral only comments: it never pushes, approves
 
 ## Reviewing main
 
-The caller file above reviews every commit pushed to `main`. Coral compares that commit with the prior main commit. It creates one issue for each finding its verifier confirms when no open issue already describes that defect. A main-push review with no confirmed findings creates no issue. A failed main-push review is visible in Actions and creates no issue.
+The caller file above reviews every push to `main` as one range from the prior main tip through the pushed head, including a multi-commit push. It creates one issue for each finding its verifier confirms when no open issue already describes that defect. A main-push review with no confirmed findings creates no issue. A failed main-push review is visible in Actions and creates no issue.
 
 Each issue is labeled `coral` and `severity: low`, `severity: medium`, or `severity: high`. Coral creates any of those four labels your repository does not have, and never touches the color or description of one it already has.
 
 ## Risks
 
 The measures below limit the damage. None of them stop a determined attacker from reaching the OpenRouter key or the workflow's GitHub token.
+
+[![Coral credential boundaries](docs/diagrams/credential-boundaries.svg)](docs/diagrams/credential-boundaries.mmd)
+
+[Edit the Mermaid source](docs/diagrams/credential-boundaries.mmd).
 
 ### Mitigations
 

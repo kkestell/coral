@@ -2,13 +2,14 @@
 
 Nothing here posts. What the module decides on its own is how a finding reads once Coral has
 composed it out of the pieces the model returned separately, and where each finding lands, and
-that is what these cover. The retry's control flow is not among them: recovering from a 422 needs
-a `GitHub` that fails, and what makes the retry correct is that it sends the demoted body —
-`review_payload` against an empty set — which is tested below.
+that is what these cover. The transport seam is a small `GitHub` subclass in the retry cases
+below, so both the recovery and the refusal that must propagate are covered without a request.
 """
 
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from coral.diff import AddedLine
 from coral.github.client import ApiError, GitHub
@@ -25,6 +26,7 @@ from coral.github.post import (
     nothing_to_report,
     payloads,
     post_issue,
+    post_review,
     read_issue_payloads,
     read_payloads,
     rendered_finding,
@@ -198,6 +200,44 @@ def test_submitted_stamps_the_commit_and_the_comment_event() -> None:
     assert posted["body"] == "prose"
 
 
+def test_a_rejected_anchored_review_retries_once_with_the_demoted_body() -> None:
+    sent: list[tuple[str, dict[str, Any]]] = []
+
+    class RejectingOnce(GitHub):
+        def post(self, path: str, body: dict[str, Any]) -> Any:
+            sent.append((path, body))
+            if len(sent) == 1:
+                raise ApiError("POST", path, 422, '{"message":"Validation Failed"}')
+            return {"id": 7}
+
+    pair = payloads(COMMIT, review_of(finding_at(line(7))), ADDED, SPENT)
+    result = post_review(RejectingOnce(token="not a real token"), "owner", "repo", 12, COMMIT, pair)
+
+    assert result == {"id": 7}
+    assert len(sent) == 2
+    assert sent[0][0] == sent[1][0] == "/repos/owner/repo/pulls/12/reviews"
+    assert sent[0][1] == submitted(COMMIT, pair.anchored)
+    assert sent[1][1] == submitted(COMMIT, pair.demoted)
+    assert sent[1][1]["commit_id"] == COMMIT
+    assert sent[1][1]["event"] == "COMMENT"
+
+
+def test_a_non_422_review_rejection_is_not_retried() -> None:
+    sent: list[str] = []
+
+    class Forbidding(GitHub):
+        def post(self, path: str, body: dict[str, Any]) -> Any:
+            sent.append(path)
+            raise ApiError("POST", path, 403, '{"message":"Resource not accessible"}')
+
+    pair = payloads(COMMIT, review_of(finding_at(line(7))), ADDED, SPENT)
+    with pytest.raises(ApiError) as raised:
+        post_review(Forbidding(token="not a real token"), "owner", "repo", 12, COMMIT, pair)
+
+    assert raised.value.status == 403
+    assert sent == ["/repos/owner/repo/pulls/12/reviews"]
+
+
 def test_the_pair_holds_the_anchored_body_and_the_demoted_one() -> None:
     anchored_finding = finding_at(line(7))
     pair = payloads(COMMIT, review_of(anchored_finding), ADDED, SPENT)
@@ -235,22 +275,22 @@ def test_a_cost_under_a_cent_survives_its_formatting() -> None:
 
 def test_each_main_push_finding_becomes_one_issue_with_the_commit_and_cost() -> None:
     review = review_of(finding_at(line(7)), finding_at(FileAnchor(kind="file", path="a.py")))
-    issues = issue_payloads(COMMIT, review, SPENT).issues
+    issues = issue_payloads("b" * 40, COMMIT, review, SPENT).issues
     assert len(issues) == 2
     assert issues[0].title == "The parser drops the last token."
     assert marker(COMMIT) in issues[0].body
-    assert f"main commit `{COMMIT}`" in issues[0].body
+    assert f"main range `{'b' * 40}..{COMMIT}`" in issues[0].body
     assert "The parser drops the last token." in issues[0].body
     assert cost(SPENT) in issues[0].body
 
 
 def test_an_empty_main_push_review_creates_no_issue() -> None:
-    assert issue_payloads(COMMIT, review_of(), SPENT).issues == []
+    assert issue_payloads("b" * 40, COMMIT, review_of(), SPENT).issues == []
 
 
 def test_an_issue_title_names_the_defect_not_its_location() -> None:
     issue = issue_payloads(
-        COMMIT, review_of(finding_at(PullRequestAnchor(kind="pull_request"))), SPENT
+        "b" * 40, COMMIT, review_of(finding_at(PullRequestAnchor(kind="pull_request"))), SPENT
     ).issues[0]
     assert issue.title == "The parser drops the last token."
     assert "the change as a whole" in issue.body
@@ -288,7 +328,7 @@ def test_an_issue_title_reads_past_a_period_inside_a_word() -> None:
 def test_an_issue_carries_corals_label_and_its_severity() -> None:
     for severity in ("low", "medium", "high"):
         review = review_of(finding_at(line(7), severity=severity))
-        assert issue_payloads(COMMIT, review, SPENT).issues[0].labels == [
+        assert issue_payloads("b" * 40, COMMIT, review, SPENT).issues[0].labels == [
             "coral",
             f"severity: {severity}",
         ]
@@ -300,7 +340,7 @@ def test_every_label_an_issue_carries_is_one_coral_creates() -> None:
     review = review_of(
         *(finding_at(line(7), severity=severity) for severity in ("low", "medium", "high"))
     )
-    for issue in issue_payloads(COMMIT, review, SPENT).issues:
+    for issue in issue_payloads("b" * 40, COMMIT, review, SPENT).issues:
         assert set(issue.labels) <= set(LABELS)
 
 
@@ -310,7 +350,7 @@ def test_an_issue_title_stays_within_githubs_limit() -> None:
 
 
 def test_main_push_issue_payloads_round_trip_through_a_file(tmp_path: Path) -> None:
-    issues = issue_payloads(COMMIT, review_of(finding_at(line(7))), SPENT)
+    issues = issue_payloads("b" * 40, COMMIT, review_of(finding_at(line(7))), SPENT)
     write_issue_payloads(tmp_path / "issue-payloads.json", issues)
     assert read_issue_payloads(tmp_path / "issue-payloads.json") == issues
 
@@ -323,7 +363,7 @@ def test_posting_a_main_push_finding_uses_the_issue_endpoint() -> None:
             sent.append((path, body))
             return {}
 
-    issue = issue_payloads(COMMIT, review_of(finding_at(line(7))), SPENT).issues[0]
+    issue = issue_payloads("b" * 40, COMMIT, review_of(finding_at(line(7))), SPENT).issues[0]
     post_issue(Recording(token="not a real token"), "kkestell", "coral-test", issue)
     assert sent == [
         (

@@ -245,7 +245,7 @@ def issue_where(finding: Finding) -> str:
     return where(finding.anchor)
 
 
-def issue_payloads(commit: str, review: Review, spent: float) -> IssuePayloads:
+def issue_payloads(common: str, head: str, review: Review, spent: float) -> IssuePayloads:
     """One complete GitHub issue body for every confirmed finding."""
     return IssuePayloads(
         issues=[
@@ -254,9 +254,9 @@ def issue_payloads(commit: str, review: Review, spent: float) -> IssuePayloads:
                 labels=issue_labels(finding),
                 body="\n".join(
                     [
-                        marker(commit),
+                        marker(head),
                         "",
-                        f"🪸 Coral found this in main commit `{commit}`.",
+                        f"🪸 Coral found this in main range `{common}..{head}`.",
                         "",
                         f"**{issue_where(finding)}**",
                         "",

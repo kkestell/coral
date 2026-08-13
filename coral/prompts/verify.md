@@ -38,7 +38,7 @@ front of you.
 
 ## Duplicate Issues For A Main Push
 
-When the request is for a main commit, each numbered finding has two extra tools. First establish
+When the request is for a main range, each numbered finding has two extra tools. First establish
 the code claim as you do for every finding. Then call `search_open_issues` exactly once for that
 finding, with its number and plain-language terms for the defect. The search returns at most a few
 open issue titles. View only candidates whose titles might describe the same defect.

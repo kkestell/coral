@@ -64,7 +64,7 @@ Coral decides which available capability to use, in what order, and how often.
 - Each pull-request review names Coral and the pinned commit it reviewed. Earlier reviews and their threads are never edited, deleted, resolved, or reused.
 - A pull-request review with no confirmed finding says whether Coral found nothing or whether everything it would report was already present and still standing.
 - Every published review result reports the run's measured model cost, composed outside agent control.
-- A `main` review creates one issue for each confirmed finding. The title names the defect; the body names Coral, the reviewed commit, location, evidence, and cost; and `coral` plus severity labels carry its classification.
+- A `main` review creates one issue for each confirmed finding. The title names the defect; the body names Coral, the reviewed main range, location, evidence, and cost; and `coral` plus severity labels carry its classification.
 - Before creating any `main` issue, Coral ensures the four labels it may apply exist. An empty review creates neither an issue nor a label.
 - A confirmed `main` finding creates no issue when an open issue the verifier actually read describes the same defect. The issue's author does not matter, and a closed issue suppresses nothing.
 - Two concurrent `main` reviews may each create the same issue when both completed their bounded duplicate check before either issue existed.

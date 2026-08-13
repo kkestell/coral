@@ -16,6 +16,9 @@ false, so the eight are held in one helper rather than written out five times.
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from coral.github.client import GitHub
 from coral.github.conversation import (
     EYES,
     MAX_BODY_CHARACTERS,
@@ -24,6 +27,7 @@ from coral.github.conversation import (
     MAX_PAGES,
     Fetched,
     bound,
+    fetch_conversation,
     parse_comments,
     parse_reviews,
     parse_threads,
@@ -665,3 +669,150 @@ def test_a_connection_with_nothing_older_is_left_alone() -> None:
 def test_paging_stops_at_the_page_cap() -> None:
     # What keeps a pull request carrying a thousand empty reviews from being walked end to end.
     assert wants_another_page(has_previous=True, comments_so_far=0, pages=MAX_PAGES) is False
+
+
+def page(nodes: list[dict[str, Any]], total: int, cursor: str) -> dict[str, Any]:
+    """One connection's answer, always claiming there is something older behind it."""
+    return {
+        "totalCount": total,
+        "pageInfo": {"hasPreviousPage": True, "startCursor": cursor},
+        "nodes": nodes,
+    }
+
+
+# The three connections in this fake stop for the three different reasons `wants_another_page`
+# has, which is what makes one walk cover the rule: reviews run out of pages, because a body-less
+# review spends none of the bound however many of them come back; threads spend the bound, because
+# every comment in a thread counts against it; and issue comments spend it too, one apiece.
+PAGED_FIRST: dict[str, Any] = {
+    "reviews": page(
+        [review_node(f"PRR_new_{n}", body="", written_at=at(9)) for n in range(MAX_COMMENTS)],
+        205,
+        "review-0",
+    ),
+    "reviewThreads": page(
+        [
+            thread_node(
+                f"PRRT_new_{n}",
+                [
+                    comment_node(f"PRRC_new_{n}_{comment}", written_at=at(8 + comment))
+                    for comment in range(4)
+                ],
+            )
+            for n in range(49)
+        ],
+        52,
+        "thread-0",
+    ),
+    "comments": page([comment_node("IC_new", written_at=at(1000))], 202, "comment-0"),
+}
+
+# Exactly the pages the walk should ask for, so asking for one more is a failure with a sentence
+# on it rather than an `IndexError`.
+PAGED_OLDER: dict[str, list[dict[str, Any]]] = {
+    "reviews": [
+        page(
+            [review_node("PRR_1", body=marker(COMMIT), written_at=at(1), authored=True)],
+            205,
+            "review-1",
+        ),
+        page([review_node("PRR_2", body="", written_at=at(4))], 205, "review-2"),
+        page([review_node("PRR_3", body="", written_at=at(6))], 205, "review-3"),
+    ],
+    "reviewThreads": [
+        page(
+            [
+                thread_node(
+                    "PRRT_1",
+                    [
+                        comment_node(f"PRRC_1_{comment}", written_at=at(comment))
+                        for comment in range(4)
+                    ],
+                )
+            ],
+            52,
+            "thread-1",
+        )
+    ],
+    "comments": [
+        page(
+            [comment_node(f"IC_old_{n}", written_at=at(n)) for n in range(MAX_COMMENTS - 1)],
+            202,
+            "comment-1",
+        )
+    ],
+}
+
+
+def test_each_connection_is_walked_back_until_its_own_rule_stops_it(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class Paging(GitHub):
+        def __init__(self) -> None:
+            super().__init__(token="not-a-token")
+            self.calls: list[tuple[str, dict[str, Any]]] = []
+
+        def graphql(self, query: str, variables: dict[str, Any]) -> Any:
+            if "query Conversation(" in query:
+                kind = "conversation"
+                pull_request = PAGED_FIRST
+            else:
+                kind = next(
+                    name
+                    for name, query_name in (
+                        ("reviews", "ReviewsPage"),
+                        ("reviewThreads", "ThreadsPage"),
+                        ("comments", "CommentsPage"),
+                    )
+                    if f"query {query_name}" in query
+                )
+                asked = sum(call[0] == kind for call in self.calls)
+                assert asked < len(PAGED_OLDER[kind]), f"{kind} was walked past where it stops."
+                pull_request = {"connection": PAGED_OLDER[kind][asked]}
+            self.calls.append((kind, variables))
+            return {
+                "repository": {"pullRequest": pull_request},
+                "rateLimit": {
+                    "cost": 1,
+                    "remaining": 5000 - len(self.calls),
+                    "nodeCount": 100 + len(self.calls),
+                },
+            }
+
+    def asked_before(kind: str) -> list[str]:
+        return [str(sent["before"]) for name, sent in github.calls if name == kind]
+
+    github = Paging()
+    with caplog.at_level("INFO", logger="coral.github.conversation"):
+        fetched = fetch_conversation(github, "owner", "repo", 7)
+
+    # One opening query, then a separate backwards walk per connection, each request carrying the
+    # cursor the page before it started at.
+    assert [kind for kind, _ in github.calls] == [
+        "conversation",
+        # The first page is one of the four this connection is allowed, so three more are asked.
+        *["reviews"] * (MAX_PAGES - 1),
+        "reviewThreads",
+        "comments",
+    ]
+    assert asked_before("reviews") == ["review-0", "review-1", "review-2"]
+    assert asked_before("reviewThreads") == ["thread-0"]
+    assert asked_before("comments") == ["comment-0"]
+
+    # Older nodes go in front, so every connection comes back in the ascending order it was read
+    # in, and the bound each one spent is counted over that connection alone.
+    assert [review.id for review in fetched.reviews] == ["PRR_1"]
+    assert len(fetched.threads) == 50
+    assert fetched.threads[0].id == "PRRT_1"
+    assert fetched.threads[-1].id == "PRRT_new_48"
+    assert sum(len(thread.comments) for thread in fetched.threads) == MAX_COMMENTS
+    assert len(fetched.comments) == MAX_COMMENTS
+    assert fetched.comments[0].id == "IC_old_0"
+    assert fetched.comments[-1].id == "IC_new"
+    written = [comment.written_at for comment in fetched.comments]
+    assert written == sorted(written)
+
+    # Read off every page the walk accepted rather than off the first one.
+    assert fetched.reviewed_commits == [COMMIT]
+    assert fetched.unfetched == 6
+    assert "6 queries costing 6 points and 621 nodes, 4994 points left" in caplog.text

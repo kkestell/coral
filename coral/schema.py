@@ -215,23 +215,6 @@ def apply_dispositions(review: Review, dispositions: list[FindingDisposition]) -
     return replace(review, findings=kept)
 
 
-def confirmed(
-    review: Review,
-    verification: Verification,
-    searched_findings: set[int] | None = None,
-    viewed_issues: set[int] | None = None,
-) -> Review:
-    """The review that survives confirmation and, for main pushes, duplicate checks.
-
-    A finding no verdict names is dropped. The verifier is told to rule on every finding, so
-    silence about one is a run that went wrong rather than an endorsement. Main-push evidence is
-    supplied together or not at all: without a search a finding cannot be published, and only a
-    common issue number the reader viewed can suppress a confirmed finding.
-    """
-    dispositions = finding_dispositions(review, verification, searched_findings, viewed_issues)
-    return apply_dispositions(review, dispositions)
-
-
 # LangChain sets `structured_response` to None when the model answers with prose, and the key is
 # optional, so an absent key and a None both mean the same thing: nothing came back.
 def review_from_result(result: Mapping[str, object]) -> Review:

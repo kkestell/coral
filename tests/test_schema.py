@@ -22,7 +22,7 @@ from coral.schema import (
     SpanAnchor,
     Verdict,
     Verification,
-    confirmed,
+    apply_dispositions,
     finding_dispositions,
     review_from_result,
     verification_from_result,
@@ -285,76 +285,73 @@ def test_a_verdict_rejects_an_invalid_duplicate_issue(number: object) -> None:
 
 def test_a_confirmed_finding_survives() -> None:
     kept = finding()
-    survivors = confirmed(
-        review_of(kept),
-        Verification(
-            verdicts=[Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=None)]
-        ),
+    review = review_of(kept)
+    verification = Verification(
+        verdicts=[Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=None)]
     )
+    survivors = apply_dispositions(review, finding_dispositions(review, verification))
     assert survivors.findings == [kept]
 
 
 def test_a_rejected_finding_is_dropped() -> None:
-    survivors = confirmed(
-        review_of(finding()),
-        Verification(
-            verdicts=[Verdict(finding=0, confirmed=False, reason="Passed.", duplicate_issue=None)]
-        ),
+    review = review_of(finding())
+    verification = Verification(
+        verdicts=[Verdict(finding=0, confirmed=False, reason="Passed.", duplicate_issue=None)]
     )
+    survivors = apply_dispositions(review, finding_dispositions(review, verification))
     assert survivors.findings == []
 
 
 def test_a_finding_no_verdict_names_is_dropped() -> None:
     # Silence is not confirmation: the verifier is told to rule on every finding, so a finding it
     # skipped is a run that went wrong rather than a finding that stands.
-    survivors = confirmed(
-        review_of(finding("First."), finding("Second.")),
-        Verification(
-            verdicts=[Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=None)]
-        ),
+    review = review_of(finding("First."), finding("Second."))
+    verification = Verification(
+        verdicts=[Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=None)]
     )
+    survivors = apply_dispositions(review, finding_dispositions(review, verification))
     assert [kept.body for kept in survivors.findings] == ["First."]
 
 
 def test_a_verdict_naming_no_finding_is_ignored() -> None:
-    survivors = confirmed(
-        review_of(finding()),
-        Verification(
-            verdicts=[
-                Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=None),
-                Verdict(finding=9, confirmed=False, reason="About nothing.", duplicate_issue=None),
-            ]
-        ),
+    review = review_of(finding())
+    verification = Verification(
+        verdicts=[
+            Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=None),
+            Verdict(finding=9, confirmed=False, reason="About nothing.", duplicate_issue=None),
+        ]
     )
+    survivors = apply_dispositions(review, finding_dispositions(review, verification))
     assert len(survivors.findings) == 1
 
 
 def test_conflicting_verdicts_drop_the_finding() -> None:
-    survivors = confirmed(
-        review_of(finding()),
-        Verification(
-            verdicts=[
-                Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=None),
-                Verdict(
-                    finding=0,
-                    confirmed=False,
-                    reason="On reflection, no.",
-                    duplicate_issue=None,
-                ),
-            ]
-        ),
+    review = review_of(finding())
+    verification = Verification(
+        verdicts=[
+            Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=None),
+            Verdict(
+                finding=0,
+                confirmed=False,
+                reason="On reflection, no.",
+                duplicate_issue=None,
+            ),
+        ]
     )
+    survivors = apply_dispositions(review, finding_dispositions(review, verification))
     assert survivors.findings == []
 
 
 def test_no_verdicts_at_all_drops_every_finding() -> None:
-    survivors = confirmed(review_of(finding(), finding()), Verification(verdicts=[]))
+    review = review_of(finding(), finding())
+    verification = Verification(verdicts=[])
+    survivors = apply_dispositions(review, finding_dispositions(review, verification))
     assert survivors.findings == []
 
 
 def test_the_summary_and_the_flag_pass_through_the_filter() -> None:
     review = Review(summary="What the change does.", findings=[], everything_already_said=True)
-    survivors = confirmed(review, Verification(verdicts=[]))
+    survivors = apply_dispositions(review, finding_dispositions(review, Verification(verdicts=[])))
     assert survivors.summary == "What the change does."
     assert survivors.everything_already_said is True
 
@@ -397,68 +394,58 @@ def test_each_finding_disposition_names_the_filtering_decision(
 
 def test_a_main_push_finding_without_a_duplicate_survives() -> None:
     kept = finding()
-    survivors = confirmed(
-        review_of(kept),
-        Verification(
-            verdicts=[Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=None)]
-        ),
-        {0},
-        set(),
+    review = review_of(kept)
+    verification = Verification(
+        verdicts=[Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=None)]
     )
+    dispositions = finding_dispositions(review, verification, {0}, set())
+    survivors = apply_dispositions(review, dispositions)
     assert survivors.findings == [kept]
 
 
 def test_a_main_push_duplicate_suppresses_a_confirmed_finding() -> None:
-    survivors = confirmed(
-        review_of(finding()),
-        Verification(
-            verdicts=[Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=17)]
-        ),
-        {0},
-        {17},
+    review = review_of(finding())
+    verification = Verification(
+        verdicts=[Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=17)]
     )
+    dispositions = finding_dispositions(review, verification, {0}, {17})
+    survivors = apply_dispositions(review, dispositions)
     assert survivors.findings == []
 
 
 def test_a_main_push_finding_that_never_searched_is_dropped() -> None:
-    survivors = confirmed(
-        review_of(finding()),
-        Verification(
-            verdicts=[Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=None)]
-        ),
-        set(),
-        set(),
+    review = review_of(finding())
+    verification = Verification(
+        verdicts=[Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=None)]
     )
+    dispositions = finding_dispositions(review, verification, set(), set())
+    survivors = apply_dispositions(review, dispositions)
     assert survivors.findings == []
 
 
 @pytest.mark.parametrize("viewed", [set(), {18}])
 def test_an_unviewed_or_unrelated_duplicate_does_not_suppress(viewed: set[int]) -> None:
     kept = finding()
-    survivors = confirmed(
-        review_of(kept),
-        Verification(
-            verdicts=[Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=17)]
-        ),
-        {0},
-        viewed,
+    review = review_of(kept)
+    verification = Verification(
+        verdicts=[Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=17)]
     )
+    dispositions = finding_dispositions(review, verification, {0}, viewed)
+    survivors = apply_dispositions(review, dispositions)
     assert survivors.findings == [kept]
 
 
 def test_conflicting_duplicate_numbers_do_not_suppress() -> None:
     kept = finding()
-    survivors = confirmed(
-        review_of(kept),
-        Verification(
-            verdicts=[
-                Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=17),
-                Verdict(finding=0, confirmed=True, reason="Ran again.", duplicate_issue=18),
-            ]
-        ),
-        {0},
-        {17, 18},
+    review = review_of(kept)
+    verification = Verification(
+        verdicts=[
+            Verdict(finding=0, confirmed=True, reason="Ran.", duplicate_issue=17),
+            Verdict(finding=0, confirmed=True, reason="Ran again.", duplicate_issue=18),
+        ]
     )
+    dispositions = finding_dispositions(review, verification, {0}, {17, 18})
+    survivors = apply_dispositions(review, dispositions)
     assert survivors.findings == [kept]
 
 

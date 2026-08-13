@@ -1,0 +1,20 @@
+flowchart LR
+    subgraph events["GitHub events"]
+        pull_request["Pull request opened<br/>or ready for review"]
+        request["Authorized /coral<br/>request"]
+        main_push["Commit pushed<br/>to main"]
+    end
+
+    resolve["Resolve<br/>pin the change and gate the run"]
+    reviewer["Reviewer<br/>inspect the change and run focused tests"]
+    verifier["Verifier<br/>independently check each finding"]
+    publish["Publish<br/>deterministic workflow code"]
+    pr_review["One pull request review<br/>with confirmed findings<br/>anchored inline when possible"]
+    main_issues["One issue per confirmed finding<br/>unless an open issue already matches"]
+
+    pull_request --> resolve
+    request --> resolve
+    main_push --> resolve
+    resolve --> reviewer --> verifier --> publish
+    publish -->|pull request| pr_review
+    publish -->|main push| main_issues

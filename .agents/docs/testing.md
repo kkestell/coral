@@ -4,7 +4,8 @@ How Coral is checked: the unit suite, and the real runs that are the only proof 
 
 ## The Unit Suite
 
-- `tests/` at the repository root, one `test_<module>.py` per module under test.
+- `tests/` at the repository root, one `test_<module>.py` per module under test. `coral/rehearse.py`
+  is person-driven glue covered by rehearsal itself, so it has no `tests/test_rehearse.py`.
 - A unit test is one module, real input, no network, no credentials, no container, and no model call. A failure the test is about uses `pytest.raises`.
 - No fixture directory, and no test imports another. A test writes its input inline as JSON-shaped dictionaries validated through `pydantic.TypeAdapter`, with schema payloads from the helpers in `tests/test_schema.py`. A real API response is trimmed to a few nodes of each kind, commented with its source and date.
 - A new test prefers edge cases to another happy path, and asserts what the contract promises.

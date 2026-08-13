@@ -1,30 +1,41 @@
 """Tests of `coral.review`.
 
-The rendering is the whole of what this module decides on its own; `review()`'s wiring has no
-unit test, same as `resolve()`'s. The conversation the renderer is given is built through the real
-parsers out of node dictionaries shaped like GitHub's, so a change to what a comment holds reaches
-these tests rather than passing them.
+The rendering is most of what this module decides on its own, and the rest is the two decisions
+that steer a whole run: which review mode `read_subject` reads off the staged artifacts, and what
+`duplicate_evidence` builds for a main push. `review()`'s wiring around them has no unit test,
+same as `resolve()`'s. The conversation the renderer is given is built through the real parsers
+out of node dictionaries shaped like GitHub's, so a change to what a comment holds reaches these
+tests rather than passing them.
 
 `copy_checkout` is the exception: it is what `cp` does rather than what Coral renders, so it runs
 against a real directory in a temporary one. `provision` around it needs Docker and is checked
 live.
 """
 
+import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from coral import runner
 from coral.github.conversation import (
     Bound,
     Conversation,
     parse_comments,
     parse_reviews,
     parse_threads,
+    write_conversation,
 )
+from coral.github.issues import MAX_SEARCHES, IssueEvidence
 from coral.github.marker import marker
 from coral.review import (
     PullRequestSubject,
     PushSubject,
     copy_checkout,
+    duplicate_evidence,
+    read_subject,
     render_conversation,
     render_review_request,
     render_verification_request,
@@ -242,8 +253,12 @@ def test_a_pull_request_with_no_description_says_so() -> None:
 
 def test_a_main_push_request_has_its_commit_and_parent_diff_without_a_conversation() -> None:
     rendered = render_review_request(push_subject(), "a parent diff")
-    assert f"# Main commit {COMMIT}" in rendered
-    assert "There is no pull-request description or conversation." in rendered
+    assert f"# Main range {'b' * 40}..{COMMIT}" in rendered
+    assert (
+        "This range was pushed directly to main. There is no pull-request description or "
+        "conversation."
+    ) in rendered
+    assert f"prior main tip `{'b' * 40}` and the pushed head `{COMMIT}`" in rendered
     assert "a parent diff" in rendered
     assert "# The conversation" not in rendered
 
@@ -327,12 +342,101 @@ def test_a_speculative_finding_says_so() -> None:
 
 def test_a_main_push_verification_request_has_no_pull_request_context() -> None:
     rendered = render_verification_request(push_subject(), DIFF, review_of())
-    assert f"# Main commit {COMMIT}" in rendered
-    assert "This commit was pushed directly to main." in rendered
+    assert f"# Main range {'b' * 40}..{COMMIT}" in rendered
+    assert "This range was pushed directly to main." in rendered
+    assert f"prior main tip `{'b' * 40}` and the pushed head `{COMMIT}`" in rendered
     assert "The conversation" not in rendered
     assert "Search open issues exactly once for every numbered finding" in rendered
     assert "duplicate_issue" in rendered
     assert "untrusted evidence" in rendered
+
+
+def test_read_subject_takes_a_staged_push_before_pull_request_artifacts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    runner.push_path().write_text(json.dumps({"head": COMMIT, "base": "b" * 40}))
+    runner.pull_request_path().write_text("not a pull request")
+
+    assert read_subject(tmp_path) == PushSubject(head=COMMIT, common="b" * 40)
+
+
+def test_read_subject_finishes_a_pull_request_range_from_the_real_git_history(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path / "runner"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    def git(*arguments: str) -> str:
+        return subprocess.run(
+            ["git", *arguments], cwd=workspace, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "Test")
+    (workspace / "parser.py").write_text("before\n")
+    git("add", "parser.py")
+    git("commit", "--message", "base")
+    base = git("rev-parse", "HEAD")
+    git("checkout", "-b", "feature")
+    (workspace / "parser.py").write_text("after\n")
+    git("commit", "--all", "--message", "head")
+    head = git("rev-parse", "HEAD")
+
+    expected = conversation_of(comments=[comment_node("Earlier discussion.")])
+    runner.pull_request_path().write_text(
+        json.dumps(
+            {
+                "head": {"sha": head},
+                "base": {"sha": base},
+                "title": "Fix the parser",
+                "body": "It was wrong.",
+            }
+        )
+    )
+    write_conversation(runner.conversation_path(), expected)
+
+    assert read_subject(workspace) == PullRequestSubject(
+        head=head,
+        common=base,
+        title="Fix the parser",
+        body="It was wrong.",
+        conversation=expected,
+    )
+
+
+def test_main_push_duplicate_evidence_reads_the_repository_off_the_event(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    event_path = tmp_path / "event.json"
+    event_path.write_text(
+        json.dumps({"after": COMMIT, "before": "b" * 40, "ref": "refs/heads/main"})
+    )
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+
+    evidence = duplicate_evidence(push_subject(), "token", MAX_SEARCHES)
+    assert isinstance(evidence, IssueEvidence)
+    assert evidence.owner == "owner"
+    assert evidence.repo == "repo"
+    assert evidence.finding_count == MAX_SEARCHES
+
+
+def test_a_main_push_past_the_search_bound_stops_before_any_reader_is_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No event staged, so the reader cannot be built even if something tried: a guard that ran
+    # after the event was read would raise a `KeyError` here instead of saying what is wrong.
+    monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+    with pytest.raises(RuntimeError, match=f"more than {MAX_SEARCHES} findings"):
+        duplicate_evidence(push_subject(), "token", MAX_SEARCHES + 1)
+
+
+def test_pull_request_duplicate_evidence_needs_neither_token_nor_searches() -> None:
+    assert duplicate_evidence(pull_subject(), "", MAX_SEARCHES + 1) is None
 
 
 def checkout(root: Path) -> Path:

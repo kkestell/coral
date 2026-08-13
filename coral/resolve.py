@@ -188,6 +188,31 @@ def push_decline(push: runner.Push) -> str | None:
     return None
 
 
+def encrypted_handoff(timeout: int, cap: float) -> str | None:
+    """Mint this run's own key and encrypt it for the review job, or `None` for a plain-key run.
+
+    Called from both accepted paths after their gates, so a declined run mints nothing, and before
+    their outputs, so a mint or an encryption that fails leaves no `proceed=true` behind it. The
+    key is named for the run, which is what ties a key in the OpenRouter dashboard to the review
+    that asked for it.
+    """
+    management = reported(
+        lambda: management_key(
+            os.environ["OPENROUTER_MANAGEMENT_KEY"],
+            os.environ["OPENROUTER_API_KEY_PRESENT"] == "true",
+        )
+    )
+    encryption = reported(lambda: handoff_key(management, os.environ["CORAL_KEY_ENCRYPTION_KEY"]))
+    if management is None:
+        return None
+
+    minted = partial(mint, management, runner.run_url(), key_ttl_seconds(timeout), cap)
+    api_key = reported(minted)
+    runner.mask(api_key)
+    assert encryption is not None
+    return reported(lambda: encrypt(encryption, api_key))
+
+
 def resolve() -> None:
     """Pin the commits Coral will review, or stop the run."""
     # Checked before the fetch, so a budget the caller got wrong is loud on every triggered run
@@ -215,22 +240,9 @@ def resolve() -> None:
             return
 
         runner.push_path().write_text(json.dumps({"head": push.sha, "base": push.base}))
-        management = reported(
-            lambda: management_key(
-                os.environ["OPENROUTER_MANAGEMENT_KEY"],
-                os.environ["OPENROUTER_API_KEY_PRESENT"] == "true",
-            )
-        )
-        encryption = reported(
-            lambda: handoff_key(management, os.environ["CORAL_KEY_ENCRYPTION_KEY"])
-        )
-        if management is not None:
-            minted = partial(mint, management, runner.run_url(), key_ttl_seconds(timeout), cap)
-            api_key = reported(minted)
-            runner.mask(api_key)
-            assert encryption is not None
-            key = encryption
-            runner.write_output("encrypted-key", reported(lambda: encrypt(key, api_key)))
+        encrypted = encrypted_handoff(timeout, cap)
+        if encrypted is not None:
+            runner.write_output("encrypted-key", encrypted)
 
         runner.write_output("head-sha", push.sha)
         runner.write_output("timeout-minutes", str(timeout))
@@ -288,23 +300,9 @@ def resolve() -> None:
     # so checking here would refuse a run Coral was going to decline anyway, and refuse it with a
     # comment the fork's read-only token cannot post. The plain key's value never comes here; the
     # review job reads that secret itself, and all resolve is told is whether it exists.
-    management = reported(
-        lambda: management_key(
-            os.environ["OPENROUTER_MANAGEMENT_KEY"],
-            os.environ["OPENROUTER_API_KEY_PRESENT"] == "true",
-        )
-    )
-    encryption = reported(lambda: handoff_key(management, os.environ["CORAL_KEY_ENCRYPTION_KEY"]))
-
-    # After the gates, so a declined run mints nothing, and before the outputs, so a mint that
-    # fails leaves no `proceed=true` behind it. The key is named for the run, which is what ties
-    # a key in the OpenRouter dashboard to the review that asked for it.
-    if management is not None:
-        minted = partial(mint, management, runner.run_url(), key_ttl_seconds(timeout), cap)
-        api_key = reported(minted)
-        runner.mask(api_key)
-        assert encryption is not None
-        runner.write_output("encrypted-key", reported(lambda: encrypt(encryption, api_key)))
+    encrypted = encrypted_handoff(timeout, cap)
+    if encrypted is not None:
+        runner.write_output("encrypted-key", encrypted)
 
     runner.write_output("head-sha", subject.head_sha)
     runner.write_output("timeout-minutes", str(timeout))

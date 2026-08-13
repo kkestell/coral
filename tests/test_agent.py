@@ -244,6 +244,7 @@ class Built:
     def __init__(self) -> None:
         self.config: dict[str, Any] = {}
 
+    # These methods intentionally mirror the LangChain object `_run` uses.
     def with_config(self, config: dict[str, Any]) -> "Built":
         self.config = config
         return self

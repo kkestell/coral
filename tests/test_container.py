@@ -2,12 +2,16 @@
 
 No Docker runs here, and none should: that namespaces isolate, that mounts mount, and that
 `--init` reaps are the kernel's and the daemon's, checked live on a real runner. What these tests
-pin is the arguments Coral builds — the mounts, the absences, the ceiling — and the shaping of a
-command's output, which is the whole of what the model reads back.
+pin is the arguments Coral builds — the mounts, the absences, the ceiling — the shaping of a
+command's output, which is the whole of what the model reads back, and what `execute` decides
+around the client process it starts.
 """
 
 import io
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from coral.container import (
     CHECKOUT,
@@ -20,6 +24,7 @@ from coral.container import (
     Stream,
     drained,
     exec_arguments,
+    execute,
     run_arguments,
     shaped,
     timed_out,
@@ -30,6 +35,27 @@ COPY = Path("/tmp/coral/coral-reviewer")
 
 # The runner's own toolcache, which is also the default mount source.
 SOURCE = Path(TOOLCACHE)
+
+
+class PopenStub:
+    """A client process with in-memory streams and a configurable runner-side wait."""
+
+    def __init__(self, exit_code: int, *, runner_timeout: bool = False) -> None:
+        self.stdout = io.StringIO("output\n")
+        self.stderr = io.StringIO("warning\n")
+        self.exit_code = exit_code
+        self.runner_timeout = runner_timeout
+        self.waits = 0
+        self.killed = False
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.waits += 1
+        if self.runner_timeout and self.waits == 1:
+            raise subprocess.TimeoutExpired("docker", timeout or 0.0)
+        return self.exit_code
+
+    def kill(self) -> None:
+        self.killed = True
 
 
 def test_the_container_comes_up_detached_with_a_reaping_init() -> None:
@@ -190,3 +216,42 @@ def test_output_the_reader_already_dropped_still_says_it_was_cut() -> None:
     result = shaped("x" * 10, "", 0, dropped=True)
     assert result.truncated
     assert "truncated" in result.output
+
+
+def test_execute_drains_both_streams_and_keeps_the_exit_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = PopenStub(exit_code=3)
+    monkeypatch.setattr(subprocess, "Popen", lambda *arguments, **keywords: process)
+
+    result = execute("coral-reviewer", "pytest", 17)
+
+    assert result.output == "output\n\n[stderr] warning"
+    assert result.exit_code == 3
+    assert result.truncated is False
+    assert process.waits == 1
+
+
+def test_execute_turns_the_container_timeout_exit_code_into_a_timeout_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = PopenStub(exit_code=124)
+    monkeypatch.setattr(subprocess, "Popen", lambda *arguments, **keywords: process)
+
+    result = execute("coral-reviewer", "timeout", 17)
+
+    assert result == timed_out(17)
+    assert process.killed is False
+
+
+def test_execute_kills_and_reaps_a_client_that_outlives_the_backstop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = PopenStub(exit_code=3, runner_timeout=True)
+    monkeypatch.setattr(subprocess, "Popen", lambda *arguments, **keywords: process)
+
+    result = execute("coral-reviewer", "stuck", 17)
+
+    assert result == timed_out(17)
+    assert process.killed is True
+    assert process.waits == 2

@@ -82,7 +82,7 @@ class IssueEvidence:
         # no candidates in it is a completed check.
         self.searched_findings.add(finding)
         candidates = [
-            candidate for candidate in entries[:MAX_CANDIDATES] if self._open_issue(candidate)
+            candidate for candidate in entries[:MAX_CANDIDATES] if self._is_open_issue(candidate)
         ]
         self.candidates.update(candidate["number"] for candidate in candidates)
         if not candidates:
@@ -108,7 +108,7 @@ class IssueEvidence:
         )
         if answer is None:
             return "Unable to view that issue."
-        if not self._open_issue(answer) or answer["number"] != number:
+        if not self._is_open_issue(answer) or answer["number"] != number:
             return "That result is not an open ordinary issue."
 
         body = answer.get("body")
@@ -145,10 +145,10 @@ class IssueEvidence:
         return any(":" in part for part in terms.split())
 
     @staticmethod
-    def _open_issue(candidate: object) -> dict[str, Any] | None:
-        """An ordinary open issue result, reduced to the two fields tools may return."""
+    def _is_open_issue(candidate: object) -> bool:
+        """Whether a result is an ordinary open issue."""
         if not isinstance(candidate, dict):
-            return None
+            return False
         number = candidate.get("number")
         title = candidate.get("title")
         if (
@@ -159,5 +159,5 @@ class IssueEvidence:
             or candidate.get("state") != "open"
             or "pull_request" in candidate
         ):
-            return None
-        return {"number": number, "title": title}
+            return False
+        return True

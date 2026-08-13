@@ -6,8 +6,10 @@ Everything needed to build, run, and check this project on a working machine. Ev
 
 - `uv` — installs the interpreter, resolves the dependencies, and runs every command below.
 - Python — the version is pinned in the repository, and `uv` installs a matching interpreter itself, so nothing has to be installed by hand.
+- `make` — optional shortcuts for the commands below.
+- `line9` — required only to regenerate the README diagrams with `make diagrams`.
 
-Nothing else has to exist outside the repository to run the checks. Running Coral against a real pull request needs the two credentials under "Environment", and in normal operation both are supplied by the workflow rather than by a person.
+Running Coral against a real pull request needs the two credentials under "Environment", and in normal operation both are supplied by the workflow rather than by a person.
 
 ## Setup
 
@@ -16,6 +18,8 @@ Nothing else has to exist outside the repository to run the checks. Running Cora
 ## Commands
 
 There is no build step. Coral is a console script over one package, and `uv sync` is what makes it runnable.
+
+- Make shortcuts: `make help` lists the targets, `make check` runs every local CI check, and `make diagrams` regenerates the README SVGs from `docs/diagrams/*.mmd` with Line9.
 
 - Run: `uv run coral <subcommand>`, where the subcommand is `resolve`, `review`, or `publish`
 - Test: `uv run pytest`
@@ -35,7 +39,7 @@ What to type to set a live check up and follow it. What makes one, and when to r
 
 - Open a pull request — `gh pr create --repo kkestell/coral-test --base main --head <branch> --title <title> --body <body>`
 - Ask for a review — `gh pr comment --repo kkestell/coral-test <number> --body '/coral'`
-- Review a main commit — `git push origin main`, then `gh issue list --repo kkestell/coral-test`
+- Review a main range — `git push origin main`, then `gh issue list --repo kkestell/coral-test`
 - Watch the run — `gh run list --repo kkestell/coral-test`
 - Read the review — `gh pr view --repo kkestell/coral-test <number> --comments`
 

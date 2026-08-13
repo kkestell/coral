@@ -14,12 +14,7 @@ from typing import Any
 
 @dataclass
 class Ledger:
-    """The cap the run gets and what it has spent against it.
-
-    The one mutable object Coral passes between modules, and deliberately. The reviewer and the
-    verifier are two `invoke` calls with separate states, and one ledger crossing between them is
-    what makes the cap cover the run rather than each run alone.
-    """
+    """The mutable spend state shared by the reviewer's and verifier's agent runs."""
 
     cap: float
     spent: float = 0.0

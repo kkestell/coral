@@ -150,6 +150,41 @@ def test_a_model_the_listing_does_not_carry_says_so_by_name() -> None:
     assert "'openai/gpt-5.6-nebula'" in str(raised.value)
 
 
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {**LISTED[0], "top_provider": None},
+        {**LISTED[0], "top_provider": {"context_length": 1_050_000}},
+        {**LISTED[0], "context_length": "large"},
+        {**LISTED[0], "context_length": 0},
+        # A `bool` is an `int` in Python, so an entry answering `True` would otherwise build a
+        # profile with a context length of one.
+        {**LISTED[0], "context_length": True},
+        {**LISTED[0], "top_provider": {"max_completion_tokens": "many"}},
+        {**LISTED[0], "top_provider": {"max_completion_tokens": 0}},
+        {**LISTED[0], "supported_parameters": "tools"},
+        {**LISTED[0], "supported_parameters": ["tools", 3]},
+    ],
+)
+def test_a_selected_listing_entry_with_unreadable_facts_fails_clearly(
+    entry: dict[str, Any],
+) -> None:
+    with pytest.raises(RuntimeError) as raised:
+        facts_of([entry], "openai/gpt-5.6-luna")
+
+    # Named so a broken listing is one comment on the pull request rather than a traceback.
+    assert "openai/gpt-5.6-luna" in str(raised.value)
+    assert "listing entry" in str(raised.value)
+
+
+def test_an_unselected_malformed_listing_entry_is_not_validated() -> None:
+    facts = facts_of(
+        [{"id": "not-selected", "top_provider": "unreadable"}, LISTED[0]],
+        "openai/gpt-5.6-luna",
+    )
+    assert facts.context_length == LISTED[0]["context_length"]
+
+
 def test_an_alias_is_refused_before_anything_is_asked_of_it() -> None:
     # Not by its absence from the listing: aliases are in there, and the per-model route answers
     # 200 for them, so `model_facts` refuses one itself. This test makes no request, which is the
