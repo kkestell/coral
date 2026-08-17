@@ -4,7 +4,7 @@ A code review agent that runs as a GitHub Actions workflow. Coral reviews pull r
 
 Coral is a proof of concept and is early.
 
-[![Coral review flow](docs/diagrams/review-flow.svg)](docs/diagrams/review-flow.mmd)
+![Coral review flow](docs/diagrams/review-flow.svg)
 
 ## Adding Coral to your repository
 
@@ -87,7 +87,7 @@ Each issue is labeled `coral` and `severity: low`, `severity: medium`, or `sever
 
 The measures below limit the damage. None of them stop a determined attacker from reaching the OpenRouter key or the workflow's GitHub token.
 
-[![Coral credential boundaries](docs/diagrams/credential-boundaries.svg)](docs/diagrams/credential-boundaries.mmd)
+![Coral credential boundaries](docs/diagrams/credential-boundaries.svg)
 
 ### Mitigations
 
