@@ -6,8 +6,6 @@ Coral is a proof of concept and is early.
 
 [![Coral review flow](docs/diagrams/review-flow.svg)](docs/diagrams/review-flow.mmd)
 
-[Edit the Mermaid source](docs/diagrams/review-flow.mmd).
-
 ## Adding Coral to your repository
 
 **1. Add the workflow.** Copy [`examples/coral.yml`](examples/coral.yml) to `.github/workflows/coral.yml` on your **default branch**. GitHub reads the file from there when a comment triggers a run, so a copy that lives only on a feature branch never runs. The `@v0.1.0` on the `uses:` line is what pins the Coral you installed; bump it to take a newer one.
@@ -90,8 +88,6 @@ Each issue is labeled `coral` and `severity: low`, `severity: medium`, or `sever
 The measures below limit the damage. None of them stop a determined attacker from reaching the OpenRouter key or the workflow's GitHub token.
 
 [![Coral credential boundaries](docs/diagrams/credential-boundaries.svg)](docs/diagrams/credential-boundaries.mmd)
-
-[Edit the Mermaid source](docs/diagrams/credential-boundaries.mmd).
 
 ### Mitigations
 
