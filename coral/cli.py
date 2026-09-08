@@ -1,13 +1,13 @@
-"""The console script: `coral resolve`, `coral review`, `coral publish`, and `coral rehearse`."""
+"""The `coral [scope]` console script."""
 
 import argparse
 import logging
 import sys
+from pathlib import Path
 
-from coral.publish import publish
-from coral.rehearse import add_rehearse_arguments, rehearse
-from coral.resolve import resolve
-from coral.review import review
+from coral.local import default_scope, review
+from coral.progress import live_table
+from coral.settings import load_settings
 
 
 def configure_logging() -> None:
@@ -19,27 +19,18 @@ def configure_logging() -> None:
 def main() -> int:
     configure_logging()
 
-    parser = argparse.ArgumentParser(prog="coral", description="Review a pull request.")
-    subcommands = parser.add_subparsers(required=True)
-
-    # The three run steps read everything from the runner's environment, so their handlers take
-    # nothing; rehearse is driven by a person and takes its arguments from the command line.
-    resolve_command = subcommands.add_parser("resolve", help="Decide whether to review.")
-    resolve_command.set_defaults(handler=lambda arguments: resolve())
-
-    review_command = subcommands.add_parser("review", help="Review the change and verify findings.")
-    review_command.set_defaults(handler=lambda arguments: review())
-
-    publish_command = subcommands.add_parser("publish", help="Post what this run produced.")
-    publish_command.set_defaults(handler=lambda arguments: publish())
-
-    rehearse_command = subcommands.add_parser(
-        "rehearse", help="Review one commit of a local clone, with no GitHub."
-    )
-    add_rehearse_arguments(rehearse_command)
-    rehearse_command.set_defaults(handler=rehearse)
-
+    parser = argparse.ArgumentParser(prog="coral", description="Review code in this directory.")
+    parser.add_argument("scope", nargs="?", help="review scope passed verbatim to each reviewer")
     arguments = parser.parse_args()
-    # An attribute off a Namespace is typed Any, so call the handler and return 0 separately.
-    arguments.handler(arguments)
+    try:
+        workspace = Path.cwd()
+        scope = arguments.scope if arguments.scope is not None else default_scope(workspace)
+        settings = load_settings()
+        # The table closes before the review prints, so the final table stays above it.
+        with live_table(workspace) as table:
+            rendered = review(workspace, scope, settings, table)
+        print(rendered)
+    except Exception as error:
+        print(f"Coral failed: {error}", file=sys.stderr)
+        return 1
     return 0

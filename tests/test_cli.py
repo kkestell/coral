@@ -2,20 +2,28 @@
 
 import logging
 import sys
+from pathlib import Path
 
 import pytest
 
 from coral import cli
+from coral.progress import Table
+from coral.settings import AgentSettings, Settings
 
-SUBCOMMANDS = ("resolve", "review", "publish", "rehearse")
+SETTINGS = Settings(
+    openrouter_api_key="sk-test",
+    review_agents=[AgentSettings(model="reviewer", effort="high")],
+    num_reviews=1,
+    max_concurrent_reviews=1,
+    verification_agent=AgentSettings(model="verifier", effort="low"),
+    time_budget_minutes=20,
+    spend_cap_dollars=2.0,
+)
 
 
 def test_logging_keeps_coral_at_info_and_silences_httpx(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Asserted through what reaches stderr rather than through the arguments `basicConfig` was
-    # passed, because `basicConfig` does nothing at all when the root logger already has a
-    # handler — which under pytest it does. Emptying it is what makes the call mean anything.
     root = logging.getLogger()
     monkeypatch.setattr(root, "handlers", [])
     monkeypatch.setattr(root, "level", logging.NOTSET)
@@ -28,16 +36,50 @@ def test_logging_keeps_coral_at_info_and_silences_httpx(
     assert capsys.readouterr().err == "coral progress\n"
 
 
-@pytest.mark.parametrize("subcommand", SUBCOMMANDS)
-def test_each_subcommand_dispatches_only_to_its_handler(
-    monkeypatch: pytest.MonkeyPatch, subcommand: str
+def test_an_explicit_scope_reaches_the_review_unchanged(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    called: list[str] = []
-    for name in SUBCOMMANDS:
-        monkeypatch.setattr(cli, name, lambda arguments=None, name=name: called.append(name))
-    # Only rehearse takes arguments of its own, and its commit is positional.
-    argv = ["coral", subcommand, "head"] if subcommand == "rehearse" else ["coral", subcommand]
-    monkeypatch.setattr(sys, "argv", argv)
+    seen: list[tuple[Path, str, Settings]] = []
+    monkeypatch.setattr(sys, "argv", ["coral", "focus on the parser"])
+    monkeypatch.setattr(cli, "load_settings", lambda: SETTINGS)
+
+    def review(workspace: Path, scope: str, settings: Settings, table: Table) -> str:
+        seen.append((workspace, scope, settings))
+        return "done"
+
+    monkeypatch.setattr(cli, "review", review)
 
     assert cli.main() == 0
-    assert called == [subcommand]
+    assert seen == [(Path.cwd(), "focus on the parser", SETTINGS)]
+    assert capsys.readouterr().out == "done\n"
+
+
+def test_an_absent_scope_uses_the_default(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: list[str] = []
+    monkeypatch.setattr(sys, "argv", ["coral"])
+    monkeypatch.setattr(cli, "load_settings", lambda: SETTINGS)
+    monkeypatch.setattr(cli, "default_scope", lambda workspace: "the automatic scope")
+
+    def review(workspace: Path, scope: str, settings: Settings, table: Table) -> str:
+        seen.append(scope)
+        return "done"
+
+    monkeypatch.setattr(cli, "review", review)
+
+    assert cli.main() == 0
+    assert seen == ["the automatic scope"]
+    assert capsys.readouterr().out == "done\n"
+
+
+def test_a_failure_is_one_stderr_message_without_output(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["coral", "anything"])
+    monkeypatch.setattr(cli, "load_settings", lambda: (_ for _ in ()).throw(RuntimeError("bad")))
+
+    assert cli.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "Coral failed: bad\n"

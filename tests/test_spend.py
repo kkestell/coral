@@ -11,7 +11,6 @@ import pytest
 
 from coral.spend import Ledger, cap_dollars, priced, stop_if_over_cap
 
-# The `spend_cap_dollars` input's default, declared in `.github/workflows/coral.yml`.
 DEFAULT = "2.00"
 
 

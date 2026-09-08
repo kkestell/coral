@@ -1,40 +1,10 @@
-"""Tests of `coral.openrouter`.
+"""Tests of `coral.openrouter` model-profile lookup."""
 
-The request bodies, the reading of an answer, and the alias refusal are decided here. `mint` and
-`model_facts` are each one request, and the live checks in `.agents/docs/testing.md` are what
-exercise them against the real API.
-"""
-
-from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 
-from coral.openrouter import (
-    ModelFacts,
-    facts_of,
-    key_request,
-    key_ttl_seconds,
-    minted_key,
-    model_facts,
-)
-
-RUN_URL = "https://github.com/kkestell/coral-test/actions/runs/17"
-
-# Trimmed from a real `POST /api/v1/keys` answer, 2026-08-07. The key string is a placeholder; the
-# real one is shaped `sk-or-v1-` and 64 hex characters.
-CREATED = {
-    "key": "sk-or-v1-not-a-real-key",
-    "data": {
-        "hash": "4f0d1c8a",
-        "name": RUN_URL,
-        "label": "sk-or-v1-...key",
-        "limit": 2.0,
-        "expires_at": "2026-08-07T18:57:34.000Z",
-        "usage": 0,
-        "disabled": False,
-    },
-}
+from coral.openrouter import ModelFacts, facts_of, model_facts
 
 # Three entries out of a real `GET /api/v1/models` answer of 400, 2026-08-07, each cut to the keys
 # the reduction reads: the default model, a model whose output ceiling OpenRouter does not report,
@@ -76,46 +46,6 @@ LISTED: list[dict[str, Any]] = [
         "supported_parameters": ["max_tokens", "reasoning", "tools"],
     },
 ]
-
-
-def test_the_request_carries_the_cap_the_expiry_and_the_name() -> None:
-    # The expiry is the TTL past `now`, in the format the endpoint echoes back: ISO 8601 UTC,
-    # milliseconds, `Z`.
-    now = datetime(2026, 8, 7, 17, 54, 34, 500_000, tzinfo=UTC)
-    assert key_request(RUN_URL, now, 3600, 2.00) == {
-        "name": RUN_URL,
-        "limit": 2.00,
-        "expires_at": "2026-08-07T18:54:34.500Z",
-    }
-
-
-def test_the_key_is_capped_at_whatever_the_caller_named() -> None:
-    # No constant of its own: the caller's `spend_cap_dollars` is the limit, and the endpoint takes
-    # a fractional cent and echoes it back exactly.
-    now = datetime(2026, 8, 7, 17, 54, 34, 500_000, tzinfo=UTC)
-    assert key_request(RUN_URL, now, 3600, 0.0005)["limit"] == 0.0005
-
-
-def test_the_expiry_moves_with_the_ttl_it_is_given() -> None:
-    now = datetime(2026, 8, 7, 17, 54, 34, 500_000, tzinfo=UTC)
-    assert key_request(RUN_URL, now, 60, 2.00)["expires_at"] == "2026-08-07T17:55:34.500Z"
-
-
-def test_the_ttl_outlives_the_job_the_key_is_for() -> None:
-    # The key has to still work when a review job that queued for a while finally runs.
-    assert key_ttl_seconds(30) == 2 * 30 * 60
-
-
-def test_the_key_comes_off_the_top_level_of_the_answer() -> None:
-    assert minted_key(CREATED) == "sk-or-v1-not-a-real-key"
-
-
-def test_an_answer_carrying_no_key_says_what_it_carried_instead() -> None:
-    # The key is offered once. An answer without it is one nothing later in the run recovers from,
-    # so it fails here rather than as a 401 in the review job half an hour later.
-    with pytest.raises(RuntimeError) as raised:
-        minted_key({"data": CREATED["data"]})
-    assert "['data']" in str(raised.value)
 
 
 def test_the_listing_gives_up_the_facts_the_profile_needs() -> None:
@@ -172,7 +102,7 @@ def test_a_selected_listing_entry_with_unreadable_facts_fails_clearly(
     with pytest.raises(RuntimeError) as raised:
         facts_of([entry], "openai/gpt-5.6-luna")
 
-    # Named so a broken listing is one comment on the pull request rather than a traceback.
+    # Named so a broken listing is one CLI error rather than a traceback.
     assert "openai/gpt-5.6-luna" in str(raised.value)
     assert "listing entry" in str(raised.value)
 

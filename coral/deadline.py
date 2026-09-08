@@ -1,4 +1,4 @@
-"""Coral's own time budget for a review, and the job timeout derived from it.
+"""Coral's time budget for one CLI review.
 
 Arithmetic over one `time.monotonic()` reading, and nothing else, including the check that fails a
 run the budget should have stopped. This module imports only the standard library so the budget
@@ -11,22 +11,14 @@ import time
 from dataclasses import dataclass
 from typing import Final
 
-# The gap between the review step's budget and the review job's own `timeout-minutes`. The step
-# has to still be running when its deadline fires, because it is the step that writes the reason
-# the failure comment carries.
-HEADROOM_MINUTES: Final = 10
-
-# What GitHub allows a hosted job. The budget plus the headroom is the job's timeout, so this is
-# what bounds the budget.
-JOB_CEILING_MINUTES: Final = 360
+MAX_BUDGET_MINUTES: Final = 350
 
 # The reviewer's slice of the step. The verifier runs under the step's own budget, so whatever the
 # reviewer leaves is what the verifier gets, and this number is what guarantees there is any. A
 # reviewer that would have used the whole step fails here instead — a review whose findings cannot
 # be verified posts nothing anyway.
 #
-# Real reviews in `kkestell/coral-test`, including pull requests sized near the change-size
-# backstop, finished in 21 to 60 seconds, so the split holds as chosen at every budget.
+# Observed reviews finished in 21 to 60 seconds, so the split holds as chosen at every budget.
 REVIEWER_FRACTION: Final = 0.65
 
 
@@ -55,10 +47,8 @@ def start(budget: float) -> Deadline:
 def stop_if_expired(deadline: Deadline) -> None:
     """Fail the run when the budget is spent.
 
-    Raised rather than ended gracefully. A fired deadline is a failure, and a graceful end would
-    arrive as "the agent returned no structured review" with the reason lost. The exception
-    propagates out of `invoke`, where the review step turns it into a comment; the message is the
-    whole of what that comment says the reason was.
+    Raised rather than ended gracefully so the CLI reports the real limit instead of a missing
+    structured response.
     """
     if deadline.expired():
         raise RuntimeError(
@@ -68,25 +58,18 @@ def stop_if_expired(deadline: Deadline) -> None:
 
 
 def budget_minutes(value: str) -> int:
-    """The step's budget out of the `time_budget_minutes` input, validated.
-
-    Both messages carry the bound, because a caller who set the input wrong reads them on the pull
-    request. The only default is the input's own, declared in the reusable workflow.
-    """
-    ceiling = JOB_CEILING_MINUTES - HEADROOM_MINUTES
+    """Validate the settings file's whole-command time budget."""
     try:
         minutes = int(value)
     except ValueError:
         raise RuntimeError(
             f"Coral's `time_budget_minutes` input has to be a whole number of minutes between 1 "
-            f"and {ceiling}, and this run passed {value!r}."
+            f"and {MAX_BUDGET_MINUTES}, and this run passed {value!r}."
         ) from None
-    if not 1 <= minutes <= ceiling:
+    if not 1 <= minutes <= MAX_BUDGET_MINUTES:
         raise RuntimeError(
-            f"Coral's `time_budget_minutes` input has to be between 1 and {ceiling} minutes, and "
-            f"this run passed {minutes}. The upper bound is GitHub's {JOB_CEILING_MINUTES}-minute "
-            f"ceiling on a job, less the {HEADROOM_MINUTES} minutes of headroom Coral holds past "
-            f"the budget."
+            "Coral's `time_budget_minutes` input has to be between 1 and "
+            f"{MAX_BUDGET_MINUTES} minutes, and this run passed {minutes}."
         )
     return minutes
 
@@ -94,11 +77,6 @@ def budget_minutes(value: str) -> int:
 def budget_seconds(value: str) -> float:
     """The step's budget out of the input, in the unit a `Deadline` carries."""
     return budget_minutes(value) * 60.0
-
-
-def job_timeout_minutes(value: str) -> int:
-    """The review job's `timeout-minutes` for this budget."""
-    return budget_minutes(value) + HEADROOM_MINUTES
 
 
 def reviewer_budget(step_budget: float) -> float:

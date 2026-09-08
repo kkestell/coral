@@ -1,68 +1,37 @@
 # Roadmap
 
-The remaining implementation sequence for Coral. Completed items are removed once their mechanics
-live in code and current documentation; a verified item stays only when unfinished work depends on
-the boundary it established.
+The remaining implementation sequence for Coral.
 
-## 24. Credential-free agent workspace
-
-Status: verified
-
-Depends on: nothing
-
-Every agent-controlled file and shell operation goes through one bounded shell tool inside the
-agent's credential-free container. Reviewer and verifier runs receive separate checkout copies and
-containers.
-
-Done when: a real review reads, searches, edits, and runs a scratch test through the shell; a
-resource-bound probe dies inside the container; the verifier sees no reviewer scratch state; and no
-agent operation reaches the runner filesystem, process table, credentials, or Docker authority.
-
-## 23. Referenced issue context
-
-Status: not started
-
-Depends on: 24
-
-Before reviewing a pull request or a main-branch range, read each referenced ordinary GitHub issue
-and give both agents the same fixed bounded context. Resolve fetches the context and transfers it as
-an artifact; neither agent receives another GitHub capability.
-
-Done when: a real pull-request review reads a linked issue and one named only in a commit message; a
-real main-push review reads an issue named by its range; both agents receive the same context;
-unavailable and excess references leave an explicit bounded notice; and no agent container carries
-a GitHub token.
-
-## 25. End-to-end byte budget
-
-Status: not started
-
-Depends on: 23
-
-One budget covers the captured diff, assembled agent requests, selected model context, structured
-agent output, and publication payloads in both review modes. A value that cannot be carried whole is
-refused rather than truncated.
-
-Done when: a real pull request and a real main push crossing the capture budget are declined before
-a model call; a request outside the selected model's context stops before its first completion; and
-an oversized finding, regression test, review, or issue fails without partial publication.
-
-## 26. Default-branch automatic review delivery
+## CLI review
 
 Status: built
 
-Depends on: 24
+Depends on: nothing
 
-Automatic pull-request review uses `pull_request_target`, so default-branch workflow code owns the
-credentialed run. The caller rejects forks before invoking the reusable workflow; deterministic
-resolution pins the same-repository head SHA before the isolated review job checks it out.
+Run one or more configured review agents concurrently over an optional opaque scope, verify their
+combined findings with a separately configured agent, and print one final Markdown review.
 
-Done when: a real same-repository pull request that edits its caller is reviewed by the default
-branch's workflow; the review checks and posts against the pinned head commit; and a fork pull
-request invokes no credentialed reusable job.
+Done when: a real command with two differently configured reviewers shows both running
+concurrently, the scope reaches both unchanged, the verifier runs against a fresh checkout, only
+confirmed findings print to stdout, progress stays on stderr, and the API key is absent from every
+agent container.
+
+## Reviewer count and fallback
+
+Status: built, awaiting its real run
+
+Depends on: CLI review
+
+Take the number of reviews wanted and the number of reviewers run at once from the settings file,
+and treat `review_agents` as a preference-ordered list a failed reviewer falls down.
+
+Done when: a real command with more `review_agents` entries than `num_reviews` and a deliberately
+broken model in the list shows the broken model's reviewer failing, the next entry taking its
+place, `max_concurrent_reviews` reviewers running at a time, and the printed review carrying the
+findings of the models that succeeded.
 
 ## Not On This Roadmap
 
-- Forges other than GitHub, GitHub Enterprise Server, and a second model provider.
-- An external credential broker or microVM agent shell.
-- A review-memory store outside the pull request or repository-specific review policy.
+- GitHub Actions delivery, pull-request publication, or issue creation.
+- OpenRouter management keys or another model provider.
+- Repository-specific review policy or persistent review memory.

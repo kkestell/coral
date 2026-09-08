@@ -8,7 +8,8 @@ framework they hook into.
 """
 
 import math
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -22,14 +23,27 @@ class Ledger:
     # whose spending Coral cannot measure is one the cap does not hold, and in pass-through mode
     # no provider-side limit holds it either.
     unpriced: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def add(self, cost: float) -> None:
         """Count what one response cost."""
-        self.spent += cost
+        with self._lock:
+            self.spent += cost
+
+    def add_unpriced(self) -> None:
+        """Count one response whose cost could not be measured."""
+        with self._lock:
+            self.unpriced += 1
 
     def exceeded(self) -> bool:
         """Whether the cap is reached."""
-        return self.spent >= self.cap
+        with self._lock:
+            return self.spent >= self.cap
+
+    def snapshot(self) -> tuple[float, int]:
+        """Read the values a limit check reports together."""
+        with self._lock:
+            return self.spent, self.unpriced
 
 
 def priced(value: Any) -> float | None:
@@ -56,25 +70,20 @@ def stop_if_over_cap(ledger: Ledger) -> None:
     """
     # A cap Coral cannot measure against is not a cap, so this stops the run too. Only the minted
     # key's own limit would have caught the spending, and a passed-through key has none.
-    if ledger.unpriced:
+    spent, unpriced = ledger.snapshot()
+    if unpriced:
         raise RuntimeError(
-            f"{ledger.unpriced} of this run's responses carried no cost, so Coral cannot hold it "
+            f"{unpriced} of this run's responses carried no cost, so Coral cannot hold it "
             f"to its cap of ${ledger.cap:.6f}. It had counted ${ledger.spent:.6f} of that."
         )
-    if ledger.exceeded():
+    if spent >= ledger.cap:
         raise RuntimeError(
-            f"Coral ran out of money after ${ledger.spent:.6f}, against a cap of ${ledger.cap:.6f}."
+            f"Coral ran out of money after ${spent:.6f}, against a cap of ${ledger.cap:.6f}."
         )
 
 
 def cap_dollars(value: str) -> float:
-    """The run's cap out of the `spend_cap_dollars` input, validated.
-
-    The message carries the bound, because a caller who set the input wrong reads it on the pull
-    request. No upper bound, unlike the time budget: GitHub's ceiling on a job is what bounds that
-    one, and nothing outside Coral bounds a dollar figure. The only default is the input's own,
-    declared in the reusable workflow.
-    """
+    """Validate the settings file's per-command spend cap."""
     problem = (
         "Coral's `spend_cap_dollars` input has to be a number of dollars above zero, and this run "
         f"passed {value!r}."

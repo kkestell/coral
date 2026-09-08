@@ -9,18 +9,14 @@ import time
 import pytest
 
 from coral.deadline import (
-    HEADROOM_MINUTES,
-    JOB_CEILING_MINUTES,
+    MAX_BUDGET_MINUTES,
     Deadline,
     budget_seconds,
-    job_timeout_minutes,
     reviewer_budget,
     start,
     stop_if_expired,
 )
 
-# The `time_budget_minutes` input's default, declared in `.github/workflows/coral.yml`. Every
-# assertion below about an unconfigured install is against this value.
 DEFAULT = "20"
 
 
@@ -52,10 +48,6 @@ def test_elapsed_grows_with_the_gap_to_the_starting_reading() -> None:
 
 def test_the_budget_is_the_input_in_seconds() -> None:
     assert budget_seconds(DEFAULT) == 20 * 60
-
-
-def test_the_job_timeout_is_the_budget_plus_the_headroom() -> None:
-    assert job_timeout_minutes(DEFAULT) == 20 + HEADROOM_MINUTES
 
 
 def test_the_reviewer_leaves_the_step_something_for_the_verifier() -> None:
@@ -91,14 +83,12 @@ def test_the_smallest_budget_passes() -> None:
     assert budget_seconds("1") == 60
 
 
-def test_the_largest_budget_is_the_one_whose_job_reaches_githubs_ceiling() -> None:
-    largest = JOB_CEILING_MINUTES - HEADROOM_MINUTES
-    assert job_timeout_minutes(str(largest)) == JOB_CEILING_MINUTES
+def test_the_largest_budget_passes() -> None:
+    assert budget_seconds(str(MAX_BUDGET_MINUTES)) == MAX_BUDGET_MINUTES * 60
 
 
-def test_a_budget_whose_job_would_pass_githubs_ceiling_carries_the_bound() -> None:
-    over = JOB_CEILING_MINUTES - HEADROOM_MINUTES + 1
+def test_a_budget_past_the_ceiling_carries_the_bound() -> None:
+    over = MAX_BUDGET_MINUTES + 1
     with pytest.raises(RuntimeError) as raised:
-        job_timeout_minutes(str(over))
+        budget_seconds(str(over))
     assert "between 1 and 350" in str(raised.value)
-    assert "360-minute" in str(raised.value)

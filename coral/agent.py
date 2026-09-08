@@ -1,17 +1,14 @@
 """The agent: the model client, its one shell tool, the middleware, and the two runs.
 
 The only module that imports the agent framework. Everything else in Coral depends on the review
-object in `coral/schema.py`, which keeps the framework's import cost off `coral resolve` and keeps
-the rest of the code testable without it.
+object in `coral/schema.py`, which keeps the rest of the code testable without the framework.
 """
 
 import functools
 import logging
-import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from importlib.resources import files
 from typing import Any, Final
-from uuid import UUID
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
@@ -27,17 +24,16 @@ from pydantic import SecretStr
 
 from coral import container
 from coral.deadline import Deadline, stop_if_expired
-from coral.github.issues import IssueEvidence
 from coral.openrouter import ModelFacts
+from coral.progress import Row
 from coral.schema import Review, Verification, review_from_result, verification_from_result
 from coral.spend import Ledger, priced, stop_if_over_cap
 
 log = logging.getLogger(__name__)
 
 # `ChatOpenRouter` takes its timeout in milliseconds. No real run has come near it: real reviews
-# in `kkestell/coral-test` used 14 to 51 messages against the 200-message `STEP_CAP` and a
-# verifier run confirming one finding used 9, while the longest single shell command any of them
-# ran took 12.2 seconds against the 300-second `SHELL_CEILING_SECONDS`. Both hold as chosen.
+# used 14 to 51 messages against the 200-message `STEP_CAP`; a verifier confirming one finding
+# used 9. The longest observed shell command took 12.2 seconds against the 300-second ceiling.
 MODEL_TIMEOUT_MILLISECONDS: Final = 180_000
 STEP_CAP: Final = 200
 SHELL_CEILING_SECONDS: Final = 300
@@ -48,12 +44,6 @@ SHELL_CEILING_SECONDS: Final = 300
 # fourteen minutes, past the ten minutes of headroom before the job's own timeout. One makes it
 # about eight and a half. No real run has fired a retry.
 MODEL_RETRIES: Final = 1
-ARGUMENT_PREVIEW_CHARACTERS: Final = 120
-TOOL_ARGUMENT_ORDER: Final = {
-    "execute": ("command", "timeout"),
-    "search_open_issues": ("finding", "terms"),
-    "view_issue": ("number",),
-}
 
 
 def execute_tool(container_name: str) -> StructuredTool:
@@ -86,12 +76,14 @@ class SpendHandler(BaseCallbackHandler):
 
     A callback rather than a middleware hook because LangChain hands it the `LLMResult` carrying
     provider response metadata directly. No message-state convention sits between the reported
-    amount and Coral's ledger.
+    amount and Coral's ledger. One response is also one turn of the agent's row in the progress
+    table.
     """
 
-    def __init__(self, ledger: Ledger, model: str) -> None:
+    def __init__(self, ledger: Ledger, model: str, row: Row) -> None:
         self.ledger = ledger
         self.model = model
+        self.row = row
 
     def on_llm_end(self, response: LLMResult, **keywords: Any) -> None:
         for generations in response.generations:
@@ -109,65 +101,11 @@ class SpendHandler(BaseCallbackHandler):
                         self.model,
                         metadata.get("cost"),
                     )
-                    self.ledger.unpriced += 1
+                    self.ledger.add_unpriced()
+                    self.row.responded(0.0)
                     continue
                 self.ledger.add(cost)
-
-
-def _escaped_repr(value: object) -> str:
-    """Render one value without making a second log line."""
-    return repr(value).replace("\r", "\\r").replace("\n", "\\n")
-
-
-def format_tool_arguments(name: str, inputs: Mapping[str, Any]) -> str:
-    """Render the model-supplied arguments for one public tool call."""
-    allowed = {key: value for key, value in inputs.items() if key != "runtime"}
-    order = TOOL_ARGUMENT_ORDER.get(name, ())
-    keys = [key for key in order if key in allowed]
-    keys.extend(sorted(key for key in allowed if key not in order))
-    rendered = []
-    for key in keys:
-        value = allowed[key]
-        if isinstance(value, str) and len(value) > ARGUMENT_PREVIEW_CHARACTERS:
-            preview = _escaped_repr(value[:ARGUMENT_PREVIEW_CHARACTERS])
-            rendered.append(f"{key}={preview}... ({len(value)} characters)")
-        else:
-            rendered.append(f"{key}={_escaped_repr(value)}")
-    return ", ".join(rendered)
-
-
-class ToolProgressHandler(BaseCallbackHandler):
-    """Logs each agent tool call without logging its result."""
-
-    def __init__(self) -> None:
-        self.calls: dict[UUID, tuple[str, float]] = {}
-
-    def on_tool_start(
-        self,
-        serialized: dict[str, Any],
-        input_str: str,
-        *,
-        run_id: UUID,
-        inputs: dict[str, Any] | None = None,
-        **keywords: Any,
-    ) -> None:
-        name = str(serialized["name"])
-        self.calls[run_id] = (name, time.monotonic())
-        log.info("Calling %s(%s).", name, format_tool_arguments(name, inputs or {}))
-
-    def on_tool_end(self, output: Any, *, run_id: UUID, **keywords: Any) -> None:
-        call = self.calls.pop(run_id, None)
-        if call is None:
-            return
-        name, started = call
-        log.info("%s finished in %.1f seconds.", name, time.monotonic() - started)
-
-    def on_tool_error(self, error: BaseException, *, run_id: UUID, **keywords: Any) -> None:
-        call = self.calls.pop(run_id, None)
-        if call is None:
-            return
-        name, started = call
-        log.info("%s failed in %.1f seconds: %s", name, time.monotonic() - started, error)
+                self.row.responded(cost)
 
 
 class SpendMiddleware(AgentMiddleware[Any, Any]):
@@ -238,9 +176,9 @@ def _run(
     request: str,
     deadline: Deadline,
     ledger: Ledger,
+    row: Row,
     system_prompt: str,
     response_format: type[Any],
-    extra_tools: list[Callable[..., str]] | None = None,
 ) -> dict[str, Any]:
     """Build an agent over its container, run it, and return its result state.
 
@@ -268,7 +206,7 @@ def _run(
         model=model,
         system_prompt=system_prompt,
         middleware=[DeadlineMiddleware(deadline), SpendMiddleware(ledger)],
-        tools=[execute_tool(container_name), *(extra_tools or [])],
+        tools=[execute_tool(container_name)],
         # Named rather than left to the framework's auto-detection, which asks for the provider's
         # own structured output whenever the model's profile carries `structured_output` or its
         # name matches a table of GPT, Claude, and Grok names kept upstream. That request makes the
@@ -284,7 +222,7 @@ def _run(
     bounded = agent.with_config(
         {
             "recursion_limit": STEP_CAP,
-            "callbacks": [SpendHandler(ledger, name), ToolProgressHandler()],
+            "callbacks": [SpendHandler(ledger, name, row)],
         }
     )
 
@@ -314,6 +252,7 @@ def produce_review(
     request: str,
     deadline: Deadline,
     ledger: Ledger,
+    row: Row,
 ) -> Review:
     """Run the reviewer over its copy of the checkout and return the review it produced, or fail."""
     return review_from_result(
@@ -326,6 +265,7 @@ def produce_review(
             request,
             deadline,
             ledger,
+            row,
             review_prompt(),
             Review,
         )
@@ -341,7 +281,7 @@ def verify_findings(
     request: str,
     deadline: Deadline,
     ledger: Ledger,
-    issue_evidence: IssueEvidence | None = None,
+    row: Row,
 ) -> Verification:
     """Run the verifier over its own fresh copy of the checkout and return its verdicts, or fail."""
     return verification_from_result(
@@ -354,12 +294,8 @@ def verify_findings(
             request,
             deadline,
             ledger,
+            row,
             verify_prompt(),
             Verification,
-            (
-                [issue_evidence.search_open_issues, issue_evidence.view_issue]
-                if issue_evidence is not None
-                else None
-            ),
         )
     )

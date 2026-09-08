@@ -68,7 +68,7 @@ def test_the_container_comes_up_detached_with_a_reaping_init() -> None:
 
 
 def test_the_image_is_pinned_by_digest() -> None:
-    # A tag moves under whoever reads it; the same reasoning as the workflow's SHA-pinned actions.
+    # A tag moves under whoever reads it, while the configured digest identifies one image.
     assert IMAGE.startswith("ubuntu@sha256:")
     assert run_arguments("coral-reviewer", COPY, {}, SOURCE).count(IMAGE) == 1
 

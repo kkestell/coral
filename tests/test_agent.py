@@ -5,15 +5,16 @@ prompt loading, the deadline hook, what the agent is asked for, and two behavior
 the construction relies on.
 """
 
+import io
 import time
 from inspect import signature
+from pathlib import Path
 from typing import Any
 
 import pytest
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
-from langchain_core.tools import StructuredTool
 
 import coral.agent
 from coral import container
@@ -22,24 +23,27 @@ from coral.agent import (
     DeadlineMiddleware,
     SpendHandler,
     SpendMiddleware,
-    ToolProgressHandler,
     _run,
     caught,
     execute_tool,
-    format_tool_arguments,
     profile_of,
     review_prompt,
     verify_prompt,
 )
 from coral.deadline import Deadline, budget_seconds
-from coral.github.client import GitHub
-from coral.github.issues import IssueEvidence
 from coral.openrouter import ModelFacts
-from coral.schema import Review, Verification
+from coral.progress import Row, Table
+from coral.schema import Review
 from coral.spend import Ledger, cap_dollars
 
 BUDGET = budget_seconds("20")
 CAP = cap_dollars("2.00")
+
+
+def row() -> Row:
+    """One agent's progress row, over a table with no terminal to paint on."""
+    return Table(workspace=Path("/checkout"), stream=io.StringIO()).agent("openai/gpt-5.6-luna")
+
 
 # What `coral/openrouter.py` reduces the default model's entry in a real `GET /api/v1/models`
 # answer to, 2026-08-07.
@@ -70,9 +74,8 @@ def test_the_prompt_comes_out_of_the_installed_package() -> None:
 def test_the_verifier_prompt_comes_out_of_the_installed_package() -> None:
     prompt = verify_prompt()
     assert "Coral" in prompt
-    assert "search_open_issues" in prompt
-    assert "duplicate_issue" in prompt
-    assert "untrusted evidence" in prompt
+    assert "write the final summary" in prompt
+    assert "duplicates" in prompt
 
 
 def test_a_live_deadline_lets_the_model_be_called() -> None:
@@ -97,20 +100,24 @@ def answered(metadata: dict[str, Any]) -> LLMResult:
     return LLMResult(generations=[[ChatGeneration(message=message)]])
 
 
-def test_a_responses_cost_reaches_the_ledger() -> None:
+def test_a_responses_cost_reaches_the_ledger_and_its_row() -> None:
     ledger = Ledger(cap=CAP)
-    SpendHandler(ledger, "openai/gpt-5.6-luna").on_llm_end(
+    counted = row()
+    SpendHandler(ledger, "openai/gpt-5.6-luna", counted).on_llm_end(
         answered({"cost": 2.015e-05, "is_byok": False}), run_id=None
     )
     assert ledger.spent == 2.015e-05
+    assert (counted.turns, counted.cost) == (1, 2.015e-05)
 
 
 def test_a_response_carrying_no_cost_is_counted_rather_than_treated_as_free() -> None:
     # There is no amount to add, so what the ledger records is that it could not price this one.
     ledger = Ledger(cap=CAP)
-    SpendHandler(ledger, "openai/gpt-5.6-luna").on_llm_end(answered({}), run_id=None)
+    counted = row()
+    SpendHandler(ledger, "openai/gpt-5.6-luna", counted).on_llm_end(answered({}), run_id=None)
     assert ledger.spent == 0.0
     assert ledger.unpriced == 1
+    assert (counted.turns, counted.cost) == (1, 0.0)
 
 
 @pytest.mark.parametrize("cost", [float("nan"), float("inf"), -0.01, "free", None])
@@ -119,7 +126,9 @@ def test_a_cost_the_ledger_cannot_hold_a_cap_against_is_counted_as_unpriced(cost
     # ledger never reaches the cap and a negative cost pays for later spending; both stop the run
     # instead, which is what an unreported cost already does.
     ledger = Ledger(cap=CAP)
-    SpendHandler(ledger, "openai/gpt-5.6-luna").on_llm_end(answered({"cost": cost}), run_id=None)
+    SpendHandler(ledger, "openai/gpt-5.6-luna", row()).on_llm_end(
+        answered({"cost": cost}), run_id=None
+    )
     assert ledger.spent == 0.0
     assert ledger.unpriced == 1
 
@@ -169,55 +178,6 @@ def test_a_wrapped_tool_keeps_the_signature_langchain_injects_against() -> None:
     ]
 
 
-def test_tool_progress_uses_the_public_name_and_model_arguments(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    def execute(command: str, timeout: int, runtime: object | None = None) -> str:
-        """Run a command."""
-        return command
-
-    tool = StructuredTool.from_function(execute, name="execute")
-    with caplog.at_level("INFO", logger="coral.agent"):
-        assert (
-            tool.invoke(
-                {"command": "pwd", "timeout": 30, "runtime": object()},
-                config={"callbacks": [ToolProgressHandler()]},
-            )
-            == "pwd"
-        )
-
-    assert "Calling execute(command='pwd', timeout=30)." in caplog.messages
-    assert any(message.startswith("execute finished in ") for message in caplog.messages)
-    assert not any("runtime" in message or "sync_" in message for message in caplog.messages)
-
-
-def test_tool_progress_clears_a_failed_calls_timer(caplog: pytest.LogCaptureFixture) -> None:
-    def fail(command: str) -> str:
-        """Fail to run a command."""
-        raise RuntimeError("unavailable")
-
-    handler = ToolProgressHandler()
-    tool = StructuredTool.from_function(fail, name="execute")
-    with caplog.at_level("INFO", logger="coral.agent"):
-        with pytest.raises(RuntimeError, match="unavailable"):
-            tool.invoke({"command": "pwd"}, config={"callbacks": [handler]})
-
-    assert handler.calls == {}
-    assert any(
-        message.startswith("execute failed in ") and "unavailable" in message
-        for message in caplog.messages
-    )
-
-
-def test_tool_progress_bounds_and_escapes_long_arguments() -> None:
-    command = "first line\n" + "x" * 200
-    rendered = format_tool_arguments("execute", {"command": command, "timeout": 30})
-    assert rendered.startswith("command='first line\\n")
-    assert f"({len(command)} characters), timeout=30" in rendered
-    assert command not in rendered
-    assert "\n" not in rendered
-
-
 def test_the_shell_tool_runs_in_its_named_container(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, str, int]] = []
 
@@ -257,7 +217,6 @@ def run_against(
     monkeypatch: pytest.MonkeyPatch,
     effort: str = "",
     facts: ModelFacts = LUNA,
-    extra_tools: list[Any] | None = None,
     deadline: Deadline | None = None,
     ledger: Ledger | None = None,
 ) -> tuple[Any, dict[str, Any], dict[str, Any]]:
@@ -283,9 +242,9 @@ def run_against(
         "review this",
         deadline or Deadline(started=time.monotonic(), budget=BUDGET),
         ledger or Ledger(cap=CAP),
+        row(),
         review_prompt(),
         Review,
-        extra_tools,
     )
     return built[0][0], built[0][1], built[0][2].config
 
@@ -320,7 +279,6 @@ def test_every_run_installs_one_progress_callback(
 ) -> None:
     callbacks = run_against(monkeypatch)[2]["callbacks"]
     assert sum(isinstance(callback, SpendHandler) for callback in callbacks) == 1
-    assert sum(isinstance(callback, ToolProgressHandler) for callback in callbacks) == 1
 
 
 def test_the_structured_output_strategy_is_named_rather_than_detected(
@@ -333,47 +291,6 @@ def test_the_structured_output_strategy_is_named_rather_than_detected(
     strategy = run_against(monkeypatch)[1]["response_format"]
     assert isinstance(strategy, ToolStrategy)
     assert strategy.schema is Review
-
-
-def test_only_the_verifier_receives_bounded_issue_tools(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    evidence = IssueEvidence(GitHub(token="not-a-token"), "owner", "repo", 1)
-    reviewer_tools = run_against(monkeypatch)[1]["tools"]
-    verifier_tools = run_against(
-        monkeypatch,
-        extra_tools=[evidence.search_open_issues, evidence.view_issue],
-    )[1]["tools"]
-    assert len(reviewer_tools) == 1
-    assert isinstance(reviewer_tools[0], StructuredTool)
-    assert reviewer_tools[0].name == "execute"
-    assert verifier_tools[1:] == [evidence.search_open_issues, evidence.view_issue]
-    assert not any(isinstance(tool, GitHub) for tool in verifier_tools)
-
-
-def test_verify_findings_passes_only_issue_evidence_tools(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[tuple[Any, ...]] = []
-
-    def run(*arguments: Any) -> dict[str, Any]:
-        calls.append(arguments)
-        return {"structured_response": Verification(verdicts=[])}
-
-    evidence = IssueEvidence(GitHub(token="not-a-token"), "owner", "repo", 1)
-    monkeypatch.setattr(coral.agent, "_run", run)
-    coral.agent.verify_findings(
-        "not-a-key",
-        "openai/gpt-5.6-luna",
-        "",
-        LUNA,
-        "coral-verifier",
-        "verify this",
-        Deadline(started=time.monotonic(), budget=BUDGET),
-        Ledger(cap=CAP),
-        evidence,
-    )
-    assert calls[0][-1] == [evidence.search_open_issues, evidence.view_issue]
 
 
 def test_the_default_models_profile_is_the_one_coral_used_to_carry_by_hand() -> None:

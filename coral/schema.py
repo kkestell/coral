@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Annotated, Literal
 
-from pydantic import Field, StrictInt
+from pydantic import Field
 
 
 @dataclass(frozen=True)
@@ -41,16 +41,16 @@ class FileAnchor:
 
 
 @dataclass(frozen=True)
-class PullRequestAnchor:
-    """The pull request as a whole, rather than any one file."""
+class ScopeAnchor:
+    """The reviewed scope as a whole, rather than any one file."""
 
-    kind: Literal["pull_request"]
+    kind: Literal["scope"]
 
 
 # A plain union with no Pydantic discriminator on it. The `kind` literals discriminate without
 # one, and adding one emits `oneOf` where a strict provider-side validator takes only `anyOf`.
 # `tests/test_schema.py` pins the generated schema against that.
-Anchor = SpanAnchor | LineAnchor | FileAnchor | PullRequestAnchor
+Anchor = SpanAnchor | LineAnchor | FileAnchor | ScopeAnchor
 
 
 def where(anchor: Anchor) -> str:
@@ -66,8 +66,8 @@ def where(anchor: Anchor) -> str:
             return f"`{path}`, line {line}"
         case FileAnchor(path=path):
             return f"`{path}`, the whole file"
-        case PullRequestAnchor():
-            return "the pull request as a whole"
+        case ScopeAnchor():
+            return "the reviewed scope as a whole"
 
 
 @dataclass(frozen=True)
@@ -107,20 +107,10 @@ class Finding:
 
 @dataclass(frozen=True)
 class Review:
-    """A review of a pull request: an overall summary and the findings it is made of."""
+    """An overall summary and the findings one reviewer produced."""
 
     summary: str
     findings: list[Finding]
-    everything_already_said: Annotated[
-        bool,
-        Field(
-            description=(
-                "Read only when findings is empty. True means everything you would say about "
-                "this change is already on this pull request and still stands. False means "
-                "there was nothing to find."
-            )
-        ),
-    ]
 
 
 @dataclass(frozen=True)
@@ -136,16 +126,6 @@ class Verdict:
     reason: Annotated[
         str, Field(description="A sentence or two on what you did and what it showed.")
     ]
-    duplicate_issue: Annotated[
-        StrictInt | None,
-        Field(
-            ge=1,
-            description=(
-                "The open issue you viewed that describes this confirmed finding, or null when "
-                "none does."
-            ),
-        ),
-    ]
 
 
 @dataclass(frozen=True)
@@ -153,6 +133,10 @@ class Verification:
     """A ruling on every finding in a review."""
 
     verdicts: list[Verdict]
+    summary: Annotated[
+        str,
+        Field(description="A standalone final summary of the reviewed scope."),
+    ] = ""
 
 
 @dataclass(frozen=True)
@@ -161,33 +145,20 @@ class FindingDisposition:
 
     finding: int
     kept: bool
-    reason: Literal["confirmed", "no verdict", "rejected", "unchecked", "duplicate"]
+    reason: Literal["confirmed", "no verdict", "rejected"]
     verdicts: tuple[Verdict, ...]
-    duplicate_issue: int | None = None
 
 
-def finding_dispositions(
-    review: Review,
-    verification: Verification,
-    searched_findings: set[int] | None = None,
-    viewed_issues: set[int] | None = None,
-) -> list[FindingDisposition]:
+def finding_dispositions(review: Review, verification: Verification) -> list[FindingDisposition]:
     """Decide each finding once, for both filtering and diagnostic logging."""
-    assert (searched_findings is None) == (viewed_issues is None)
     dispositions = []
     for index in range(len(review.findings)):
         verdicts = tuple(verdict for verdict in verification.verdicts if verdict.finding == index)
-        duplicates = {verdict.duplicate_issue for verdict in verdicts}
-        duplicate = duplicates.pop() if len(duplicates) == 1 else None
-        reason: Literal["confirmed", "no verdict", "rejected", "unchecked", "duplicate"]
+        reason: Literal["confirmed", "no verdict", "rejected"]
         if not verdicts:
             reason = "no verdict"
         elif not all(verdict.confirmed for verdict in verdicts):
             reason = "rejected"
-        elif searched_findings is not None and index not in searched_findings:
-            reason = "unchecked"
-        elif duplicate is not None and viewed_issues is not None and duplicate in viewed_issues:
-            reason = "duplicate"
         else:
             reason = "confirmed"
         dispositions.append(
@@ -196,7 +167,6 @@ def finding_dispositions(
                 kept=reason == "confirmed",
                 reason=reason,
                 verdicts=verdicts,
-                duplicate_issue=duplicate if reason == "duplicate" else None,
             )
         )
     return dispositions

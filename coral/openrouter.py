@@ -1,14 +1,7 @@
-"""OpenRouter's HTTP API: minting the one API key this run gets, and what it says about a model.
-
-The only place Coral speaks to OpenRouter over HTTP, completions excepted. Those go through
-`ChatOpenRouter` in `coral/agent.py` and never through here, and a management key cannot make one
-anyway. Nothing here returns a LangChain type; `coral/agent.py` is where the facts below become a
-model profile.
-"""
+"""The OpenRouter model listing used to build an agent's model profile."""
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from typing import Any, Final, TypeIs
 
 import httpx
@@ -33,67 +26,6 @@ class ModelFacts:
     # Null in the listing for the models whose output ceiling OpenRouter does not report.
     max_completion_tokens: int | None
     parameters: frozenset[str]
-
-
-def key_ttl_seconds(job_timeout_minutes: int) -> int:
-    """How long a minted key lives: twice the review job's own timeout.
-
-    That job is the only long pole after minting, and the slack covers the runner queue time
-    between the two jobs, which GitHub does not bound. A review job that starts later than that
-    finds the provider answering 401, and the failure comment carries it.
-    """
-    return 2 * job_timeout_minutes * 60
-
-
-def key_request(name: str, now: datetime, ttl_seconds: int, cap_dollars: float) -> dict[str, Any]:
-    """The create-key body: the name, the caller's spend cap, and the expiry that revokes the key.
-
-    The expiry is what makes revocation independent of anything the rest of the run does. No
-    cleanup call can be skipped by a cancelled run, because there is no cleanup call. The endpoint
-    takes a fractional-cent limit and echoes it back exactly, so a cap this small is a real one.
-    """
-    expiry = now + timedelta(seconds=ttl_seconds)
-    return {
-        "name": name,
-        "limit": cap_dollars,
-        # ISO 8601 UTC, milliseconds, `Z`. The endpoint echoes back exactly what it was sent.
-        "expires_at": expiry.astimezone(UTC)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z"),
-    }
-
-
-def minted_key(answer: dict[str, Any]) -> str:
-    """The key string out of the create-key answer, which carries it once and never again.
-
-    It sits at the top level, beside a `data` object holding the hash and the limits. An answer
-    without it is one nothing later in the run can recover from.
-    """
-    if "key" not in answer:
-        raise RuntimeError(
-            "OpenRouter created a key and answered without one. The answer's keys were "
-            f"{sorted(answer)}."
-        )
-    return str(answer["key"])
-
-
-def mint(management_key: str, name: str, ttl_seconds: int, cap_dollars: float) -> str:
-    """Create this run's own API key, capped and expiring, and return it.
-
-    No retry: one mint per run, and a management key that cannot mint now will not mint on a
-    second attempt either. The status and the body go into the failure comment, because
-    OpenRouter's own words are what a broken secret has to say.
-    """
-    log.info("Minting an OpenRouter key named %s, capped at $%.6f.", name, cap_dollars)
-    response = httpx.post(
-        f"{BASE_URL}/keys",
-        json=key_request(name, datetime.now(UTC), ttl_seconds, cap_dollars),
-        timeout=TIMEOUT,
-        headers={"Authorization": f"Bearer {management_key}"},
-    )
-    if not response.is_success:
-        raise RuntimeError(f"POST /api/v1/keys returned {response.status_code}: {response.text}")
-    return minted_key(response.json())
 
 
 def counted(value: Any) -> TypeIs[int]:
@@ -159,7 +91,7 @@ def model_facts(name: str) -> ModelFacts:
         raise RuntimeError(
             f"Coral will not review with {name!r}. OpenRouter resolves a `{ALIAS_PREFIX}` alias to "
             "whichever model is current, so the model a review ran on would not be knowable from "
-            "the workflow file. Name the model exactly."
+            "the settings file. Name the model exactly."
         )
     log.info("Fetching OpenRouter's model listing to build the profile for %s.", name)
     response = httpx.get(f"{BASE_URL}/models", timeout=TIMEOUT)
