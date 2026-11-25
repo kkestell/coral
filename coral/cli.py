@@ -27,7 +27,7 @@ def main() -> int:
     resolve_command = subcommands.add_parser("resolve", help="Decide whether to review.")
     resolve_command.set_defaults(handler=lambda arguments: resolve())
 
-    review_command = subcommands.add_parser("review", help="Review the change and verify findings.")
+    review_command = subcommands.add_parser("review", help="Review the change.")
     review_command.set_defaults(handler=lambda arguments: review())
 
     publish_command = subcommands.add_parser("publish", help="Post what this run produced.")

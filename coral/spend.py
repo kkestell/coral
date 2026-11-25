@@ -14,7 +14,7 @@ from typing import Any
 
 @dataclass
 class Ledger:
-    """The mutable spend state shared by the reviewer's and verifier's agent runs."""
+    """The mutable spend state of one review's agent run."""
 
     cap: float
     spent: float = 0.0

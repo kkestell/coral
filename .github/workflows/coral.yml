@@ -22,10 +22,10 @@ on:
         default: ""
       instructions:
         description: >
-          The repository owner's guidance for reviewing this repository, such as which tests to
-          run and how, and what not to try to verify. Both agents receive it as instruction,
-          because it comes from this file on the default branch, which a pull request cannot
-          change. Empty adds nothing.
+          The repository owner's guidance for reviewing this repository, such as where to look
+          and what the agent cannot know. The agent receives it as instruction, because it comes
+          from this file on the default branch, which a pull request cannot change. Empty adds
+          nothing.
         type: string
         required: false
         default: ""
@@ -36,7 +36,7 @@ on:
           job.
         type: number
         required: false
-        default: 20
+        default: 5
       spend_cap_dollars:
         description: >
           What one review may spend. It caps a minted key at mint time and stops a review whose own
@@ -147,11 +147,10 @@ jobs:
     # expressions have no arithmetic. `fromJSON` because this key takes a number and a job output
     # is a string.
     timeout-minutes: ${{ fromJSON(needs.resolve.outputs.timeout-minutes) }}
-    # The job that runs the agent. Its token reads the checkout and, on main pushes alone, bounded
-    # open-issue evidence. The agent containers receive neither the token nor a GitHub client.
+    # The job that runs the agent. Its token reads the checkout and nothing else, and the agent's
+    # container never receives it.
     permissions:
       contents: read
-      issues: read
     steps:
       - id: setup
         uses: $/actions/setup
@@ -175,7 +174,6 @@ jobs:
       - uses: $/actions/review
         with:
           coral-bin: ${{ steps.setup.outputs.bin }}
-          github-token: ${{ github.event_name == 'push' && github.token || '' }}
           model: ${{ inputs.model }}
           reasoning-effort: ${{ inputs.reasoning_effort }}
           instructions: ${{ inputs.instructions }}

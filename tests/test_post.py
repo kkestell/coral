@@ -42,7 +42,6 @@ from coral.schema import (
     Finding,
     LineAnchor,
     PullRequestAnchor,
-    RegressionTest,
     Review,
     SpanAnchor,
 )
@@ -54,19 +53,15 @@ ADDED = {
     AddedLine(path="a.py", line=12),
 }
 
-TEST = RegressionTest(
-    path="tests/test_parser.py",
-    content="def test_it() -> None:\n    assert parse('') == []\n",
-    command="pytest tests/test_parser.py::test_it",
-)
+# A finding whose explanation runs to a second paragraph, as a cited one does.
+TWO_PARAGRAPHS = "The parser drops the last token.\n\n`parse` stops one short of the end."
 
 
-def finding(severity: str = "medium", regression_test: RegressionTest | None = None) -> Finding:
+def finding(severity: str = "medium", body: str = "The parser drops the last token.") -> Finding:
     return Finding(
-        body="The parser drops the last token.",
+        body=body,
         anchor=LineAnchor(kind="line", path="a.py", line=7),
         severity=severity,  # type: ignore[arg-type]
-        regression_test=regression_test,
     )
 
 
@@ -75,33 +70,18 @@ def test_the_severity_leads_the_finding() -> None:
         assert rendered_finding(finding(severity)).startswith(f"**{label} severity.**")
 
 
-def test_a_finding_with_no_test_is_marked_speculative() -> None:
-    rendered = rendered_finding(finding())
-    assert "*Speculative — not reproduced by a test.*" in rendered
-    assert "<details>" not in rendered
-
-
-def test_a_reproduced_finding_carries_its_test_collapsed() -> None:
-    rendered = rendered_finding(finding(regression_test=TEST))
-    assert "Speculative" not in rendered
-    assert "<details>" in rendered
-    assert "tests/test_parser.py" in rendered
-    assert "pytest tests/test_parser.py::test_it" in rendered
-    assert TEST.content in rendered
-
-
-def test_the_body_is_always_there() -> None:
-    assert "The parser drops the last token." in rendered_finding(finding())
-    assert "The parser drops the last token." in rendered_finding(finding(regression_test=TEST))
+def test_the_body_follows_the_severity() -> None:
+    assert rendered_finding(finding()) == (
+        "**Medium severity.**\n\nThe parser drops the last token."
+    )
 
 
 def test_a_demoted_finding_stays_inside_its_list_item() -> None:
     # A finding demoted into the summary is a list item, and everything after its first line has
-    # to be indented or the `<details>` block below it ends the list.
-    item = bullet(rendered_finding(finding(regression_test=TEST)))
+    # to be indented or its later paragraphs fall out of the list.
+    item = bullet(rendered_finding(finding(body=TWO_PARAGRAPHS)))
     assert item.startswith("- **Medium severity.**")
-    assert "\n  <details>" in item
-    assert "\n<details>" not in item
+    assert "\n  `parse` stops one short of the end." in item
 
 
 def test_a_blank_line_in_a_list_item_stays_blank() -> None:
@@ -133,7 +113,6 @@ def finding_at(
         body=body,
         anchor=anchor,
         severity=severity,  # type: ignore[arg-type]
-        regression_test=None,
     )
 
 
@@ -434,16 +413,13 @@ def test_a_pull_request_finding_is_demoted_with_no_place_prefix() -> None:
     assert demotion(whole) == rendered_finding(whole)
 
 
-def test_a_demoted_finding_keeps_its_test_inside_its_list_item() -> None:
-    reproduced = Finding(
-        body="The parser drops the last token.",
-        anchor=FileAnchor(kind="file", path="a.py"),
-        severity="high",
-        regression_test=TEST,
+def test_a_demoted_finding_keeps_its_paragraphs_inside_its_list_item() -> None:
+    whole_file = Finding(
+        body=TWO_PARAGRAPHS, anchor=FileAnchor(kind="file", path="a.py"), severity="high"
     )
-    body = payload_of(reproduced)["body"]
-    assert "\n  <details>" in body
-    assert "\n<details>" not in body
+    body = payload_of(whole_file)["body"]
+    assert "\n  `parse` stops one short of the end." in body
+    assert "\n`parse`" not in body
 
 
 def test_a_review_with_no_demotions_has_no_lead_in_line() -> None:
@@ -469,7 +445,7 @@ def appearances(payload: dict[str, Any], body: str) -> int:
 
 
 def test_no_finding_is_lost() -> None:
-    # The done condition, asserted directly: every finding that survived verification is on the
+    # The done condition, asserted directly: every finding the review returned is on the
     # pull request exactly once, wherever it landed.
     review = mixed()
     payload = review_payload(COMMIT, review, ADDED, SPENT)

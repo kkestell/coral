@@ -1,11 +1,10 @@
 """Tests of `coral.review`.
 
-The rendering is most of what this module decides on its own, and the rest is the two decisions
-that steer a whole run: which review mode `read_subject` reads off the staged artifacts, and what
-`duplicate_evidence` builds for a main push. `review()`'s wiring around them has no unit test,
-same as `resolve()`'s. The conversation the renderer is given is built through the real parsers
-out of node dictionaries shaped like GitHub's, so a change to what a comment holds reaches these
-tests rather than passing them.
+The rendering is most of what this module decides on its own, and the rest is the decision that
+steers a whole run: which review mode `read_subject` reads off the staged artifacts. `review()`'s
+wiring around them has no unit test, same as `resolve()`'s. The conversation the renderer is
+given is built through the real parsers out of node dictionaries shaped like GitHub's, so a change
+to what a comment holds reaches these tests rather than passing them.
 
 `copy_checkout` is the exception: it is what `cp` does rather than what Coral renders, so it runs
 against a real directory in a temporary one. `provision` around it needs Docker and is checked
@@ -28,25 +27,14 @@ from coral.github.conversation import (
     parse_threads,
     write_conversation,
 )
-from coral.github.issues import MAX_SEARCHES, IssueEvidence
 from coral.github.marker import marker
 from coral.review import (
     PullRequestSubject,
     PushSubject,
     copy_checkout,
-    duplicate_evidence,
     read_subject,
     render_conversation,
     render_review_request,
-    render_verification_request,
-)
-from coral.schema import (
-    Finding,
-    LineAnchor,
-    PullRequestAnchor,
-    RegressionTest,
-    Review,
-    SpanAnchor,
 )
 
 COMMIT = "a" * 40
@@ -263,94 +251,6 @@ def test_a_main_push_request_has_its_commit_and_parent_diff_without_a_conversati
     assert "# The conversation" not in rendered
 
 
-DIFF = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-one\n+two\n"
-
-REGRESSION = RegressionTest(
-    path="tests/test_parser.py",
-    content="def test_it() -> None:\n    assert parse('') == []\n",
-    command="pytest tests/test_parser.py::test_it",
-)
-
-
-def review_of(*findings: Finding) -> Review:
-    return Review(summary="A summary.", findings=list(findings), everything_already_said=False)
-
-
-def test_the_findings_are_numbered_from_zero_in_order() -> None:
-    # The numbers are the indices a verdict names, so they are the filter's contract as much as
-    # the prompt's.
-    review = review_of(
-        Finding(
-            body="First.",
-            anchor=LineAnchor(kind="line", path="a.py", line=7),
-            severity="high",
-            regression_test=None,
-        ),
-        Finding(
-            body="Second.",
-            anchor=PullRequestAnchor(kind="pull_request"),
-            severity="low",
-            regression_test=None,
-        ),
-    )
-    rendered = render_verification_request(pull_subject(None), DIFF, review)
-    assert rendered.index("## Finding 0") < rendered.index("## Finding 1")
-    assert rendered.index("First.") < rendered.index("Second.")
-    assert "## Finding 2" not in rendered
-
-
-def test_a_finding_carries_its_severity_and_where_it_points() -> None:
-    review = review_of(
-        Finding(
-            body="A span of trouble.",
-            anchor=SpanAnchor(kind="span", path="a.py", start_line=3, end_line=9),
-            severity="medium",
-            regression_test=None,
-        )
-    )
-    rendered = render_verification_request(pull_subject(None), DIFF, review)
-    assert "Severity: medium. Concerns `a.py`, lines 3 to 9." in rendered
-
-
-def test_a_reproduced_finding_carries_its_test_whole() -> None:
-    review = review_of(
-        Finding(
-            body="The parser drops the last token.",
-            anchor=LineAnchor(kind="line", path="a.py", line=7),
-            severity="high",
-            regression_test=REGRESSION,
-        )
-    )
-    rendered = render_verification_request(pull_subject(None), DIFF, review)
-    assert REGRESSION.content in rendered
-    assert "`tests/test_parser.py`" in rendered
-    assert "`pytest tests/test_parser.py::test_it`" in rendered
-
-
-def test_a_speculative_finding_says_so() -> None:
-    review = review_of(
-        Finding(
-            body="Something might race.",
-            anchor=PullRequestAnchor(kind="pull_request"),
-            severity="low",
-            regression_test=None,
-        )
-    )
-    rendered = render_verification_request(pull_subject(None), DIFF, review)
-    assert "could not reproduce this with a test; it is speculative" in rendered
-
-
-def test_a_main_push_verification_request_has_no_pull_request_context() -> None:
-    rendered = render_verification_request(push_subject(), DIFF, review_of())
-    assert f"# Main range {'b' * 40}..{COMMIT}" in rendered
-    assert "This range was pushed directly to main." in rendered
-    assert f"prior main tip `{'b' * 40}` and the pushed head `{COMMIT}`" in rendered
-    assert "The conversation" not in rendered
-    assert "Search open issues exactly once for every numbered finding" in rendered
-    assert "duplicate_issue" in rendered
-    assert "untrusted evidence" in rendered
-
-
 def test_read_subject_takes_a_staged_push_before_pull_request_artifacts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -407,38 +307,6 @@ def test_read_subject_finishes_a_pull_request_range_from_the_real_git_history(
     )
 
 
-def test_main_push_duplicate_evidence_reads_the_repository_off_the_event(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    event_path = tmp_path / "event.json"
-    event_path.write_text(
-        json.dumps({"after": COMMIT, "before": "b" * 40, "ref": "refs/heads/main"})
-    )
-    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
-    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
-    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
-
-    evidence = duplicate_evidence(push_subject(), "token", MAX_SEARCHES)
-    assert isinstance(evidence, IssueEvidence)
-    assert evidence.owner == "owner"
-    assert evidence.repo == "repo"
-    assert evidence.finding_count == MAX_SEARCHES
-
-
-def test_a_main_push_past_the_search_bound_stops_before_any_reader_is_built(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # No event staged, so the reader cannot be built even if something tried: a guard that ran
-    # after the event was read would raise a `KeyError` here instead of saying what is wrong.
-    monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
-    with pytest.raises(RuntimeError, match=f"more than {MAX_SEARCHES} findings"):
-        duplicate_evidence(push_subject(), "token", MAX_SEARCHES + 1)
-
-
-def test_pull_request_duplicate_evidence_needs_neither_token_nor_searches() -> None:
-    assert duplicate_evidence(pull_subject(), "", MAX_SEARCHES + 1) is None
-
-
 def checkout(root: Path) -> Path:
     """A directory shaped like the workspace: a tracked file, a hidden one, and a nested one."""
     workspace = root / "workspace"
@@ -464,27 +332,3 @@ def test_the_copy_is_the_agents_own(tmp_path: Path) -> None:
     (tmp_path / "coral-reviewer" / "test_scratch.py").write_text("assert False\n")
     assert (workspace / "coral.py").read_text() == "print('hello')\n"
     assert not (workspace / "test_scratch.py").exists()
-
-
-def test_the_verifier_never_sees_the_conversation() -> None:
-    # Deliberate: a finding a comment talked into existence faces somebody who never read it.
-    review = review_of(
-        Finding(
-            body="A finding.",
-            anchor=PullRequestAnchor(kind="pull_request"),
-            severity="low",
-            regression_test=None,
-        )
-    )
-    subject = PullRequestSubject(
-        head=COMMIT,
-        common="b" * 40,
-        title="A title",
-        body="The description.",
-        conversation=conversation_of(comments=[comment_node("Secret conversation.")]),
-    )
-    rendered = render_verification_request(subject, DIFF, review)
-    assert "conversation" not in rendered.lower()
-    assert "# A title" in rendered
-    assert "The description." in rendered
-    assert DIFF in rendered

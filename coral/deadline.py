@@ -20,15 +20,6 @@ HEADROOM_MINUTES: Final = 10
 # what bounds the budget.
 JOB_CEILING_MINUTES: Final = 360
 
-# The reviewer's slice of the step. The verifier runs under the step's own budget, so whatever the
-# reviewer leaves is what the verifier gets, and this number is what guarantees there is any. A
-# reviewer that would have used the whole step fails here instead — a review whose findings cannot
-# be verified posts nothing anyway.
-#
-# Real reviews in `kkestell/coral-test`, including pull requests sized near the change-size
-# backstop, finished in 21 to 60 seconds, so the split holds as chosen at every budget.
-REVIEWER_FRACTION: Final = 0.65
-
 # The time a run keeps back to write its answer: inside it the model may only answer, and no shell
 # command may run into it. A quarter of a small budget instead, so a one-minute budget still leaves
 # time to investigate.
@@ -113,8 +104,3 @@ def budget_seconds(value: str) -> float:
 def job_timeout_minutes(value: str) -> int:
     """The review job's `timeout-minutes` for this budget."""
     return budget_minutes(value) + HEADROOM_MINUTES
-
-
-def reviewer_budget(step_budget: float) -> float:
-    """The reviewer's slice of the step's budget."""
-    return step_budget * REVIEWER_FRACTION

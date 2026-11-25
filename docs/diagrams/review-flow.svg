@@ -57,47 +57,42 @@
     <g class="node" data-line9-node="pull_request" transform="translate(138, 139)">
       <defs><clipPath id="clip-pull_request"><rect x="-70" y="-42.5" width="140" height="85" /></clipPath></defs>
       <rect x="-70" y="-42.5" width="140" height="85" rx="0" ry="0" fill="transparent" stroke="rgba(255, 254, 252, 0.95)" stroke-width="1.25" />
-      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="11" font-weight="400" clip-path="url(#clip-pull_request)"><tspan x="0" dy="-5.61">Pull request opened</tspan><tspan x="0" dy="15.4">or ready for review</tspan></text>
+      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="12" font-weight="400" clip-path="url(#clip-pull_request)"><tspan x="0" dy="-6.12">Pull request opened</tspan><tspan x="0" dy="16.8">or ready for review</tspan></text>
     </g>
     <g class="node" data-line9-node="request" transform="translate(138, 270)">
       <defs><clipPath id="clip-request"><rect x="-70" y="-42.5" width="140" height="85" /></clipPath></defs>
       <rect x="-70" y="-42.5" width="140" height="85" rx="0" ry="0" fill="transparent" stroke="rgba(255, 254, 252, 0.95)" stroke-width="1.25" />
-      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="11" font-weight="400" clip-path="url(#clip-request)"><tspan x="0" dy="-5.61">Authorized /coral</tspan><tspan x="0" dy="15.4">request</tspan></text>
+      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="12" font-weight="400" clip-path="url(#clip-request)"><tspan x="0" dy="-6.12">Authorized /coral</tspan><tspan x="0" dy="16.8">request</tspan></text>
     </g>
     <g class="node" data-line9-node="main_push" transform="translate(138, 401)">
       <defs><clipPath id="clip-main_push"><rect x="-70" y="-42.5" width="140" height="85" /></clipPath></defs>
       <rect x="-70" y="-42.5" width="140" height="85" rx="0" ry="0" fill="transparent" stroke="rgba(255, 254, 252, 0.95)" stroke-width="1.25" />
-      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="11" font-weight="400" clip-path="url(#clip-main_push)"><tspan x="0" dy="-5.61">Commit pushed</tspan><tspan x="0" dy="15.4">to main</tspan></text>
+      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="12" font-weight="400" clip-path="url(#clip-main_push)"><tspan x="0" dy="-14.52">Commit pushed to</tspan><tspan x="0" dy="16.8">main</tspan><tspan x="0" dy="16.8">if enabled</tspan></text>
     </g>
     <g class="node" data-line9-node="resolve" transform="translate(404, 270)">
       <defs><clipPath id="clip-resolve"><rect x="-70" y="-42.5" width="140" height="85" /></clipPath></defs>
       <rect x="-70" y="-42.5" width="140" height="85" rx="0" ry="0" fill="transparent" stroke="rgba(255, 254, 252, 0.95)" stroke-width="1.25" />
-      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="11" font-weight="400" clip-path="url(#clip-resolve)"><tspan x="0" dy="-13.31">Resolve</tspan><tspan x="0" dy="15.4">pin the change and</tspan><tspan x="0" dy="15.4">gate the run</tspan></text>
+      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="12" font-weight="400" clip-path="url(#clip-resolve)"><tspan x="0" dy="-14.52">Resolve</tspan><tspan x="0" dy="16.8">pin the change and</tspan><tspan x="0" dy="16.8">gate the run</tspan></text>
     </g>
-    <g class="node" data-line9-node="reviewer" transform="translate(404, 139)">
+    <g class="node" data-line9-node="reviewer" transform="translate(590, 139)">
       <defs><clipPath id="clip-reviewer"><rect x="-70" y="-42.5" width="140" height="85" /></clipPath></defs>
       <rect x="-70" y="-42.5" width="140" height="85" rx="0" ry="0" fill="transparent" stroke="rgba(255, 254, 252, 0.95)" stroke-width="1.25" />
-      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="11" font-weight="400" clip-path="url(#clip-reviewer)"><tspan x="0" dy="-13.31">Reviewer</tspan><tspan x="0" dy="15.4">inspect the change and</tspan><tspan x="0" dy="15.4">run focused tests</tspan></text>
-    </g>
-    <g class="node" data-line9-node="verifier" transform="translate(590, 139)">
-      <defs><clipPath id="clip-verifier"><rect x="-70" y="-42.5" width="140" height="85" /></clipPath></defs>
-      <rect x="-70" y="-42.5" width="140" height="85" rx="0" ry="0" fill="transparent" stroke="rgba(255, 254, 252, 0.95)" stroke-width="1.25" />
-      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="11" font-weight="400" clip-path="url(#clip-verifier)"><tspan x="0" dy="-13.31">Verifier</tspan><tspan x="0" dy="15.4">independently check</tspan><tspan x="0" dy="15.4">each finding</tspan></text>
+      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="12" font-weight="400" clip-path="url(#clip-reviewer)"><tspan x="0" dy="-14.52">Reviewer</tspan><tspan x="0" dy="16.8">read the change and</tspan><tspan x="0" dy="16.8">the code around it</tspan></text>
     </g>
     <g class="node" data-line9-node="publish" transform="translate(590, 270)">
       <defs><clipPath id="clip-publish"><rect x="-70" y="-42.5" width="140" height="85" /></clipPath></defs>
       <rect x="-70" y="-42.5" width="140" height="85" rx="0" ry="0" fill="transparent" stroke="rgba(255, 254, 252, 0.95)" stroke-width="1.25" />
-      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="11" font-weight="400" clip-path="url(#clip-publish)"><tspan x="0" dy="-13.31">Publish</tspan><tspan x="0" dy="15.4">deterministic workflow</tspan><tspan x="0" dy="15.4">code</tspan></text>
+      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="12" font-weight="400" clip-path="url(#clip-publish)"><tspan x="0" dy="-14.52">Publish</tspan><tspan x="0" dy="16.8">deterministic</tspan><tspan x="0" dy="16.8">workflow code</tspan></text>
     </g>
     <g class="node" data-line9-node="pr_review" transform="translate(776, 139)">
       <defs><clipPath id="clip-pr_review"><rect x="-70" y="-42.5" width="140" height="85" /></clipPath></defs>
       <rect x="-70" y="-42.5" width="140" height="85" rx="0" ry="0" fill="transparent" stroke="rgba(255, 254, 252, 0.95)" stroke-width="1.25" />
-      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="10" font-weight="400" clip-path="url(#clip-pr_review)"><tspan x="0" dy="-19.1">One pull request review</tspan><tspan x="0" dy="14">with confirmed findings</tspan><tspan x="0" dy="14">anchored inline when</tspan><tspan x="0" dy="14">possible</tspan></text>
+      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="11" font-weight="400" clip-path="url(#clip-pr_review)"><tspan x="0" dy="-28.71">One pull request</tspan><tspan x="0" dy="15.4">review</tspan><tspan x="0" dy="15.4">findings anchored</tspan><tspan x="0" dy="15.4">inline</tspan><tspan x="0" dy="15.4">when possible</tspan></text>
     </g>
     <g class="node" data-line9-node="main_issues" transform="translate(776, 401)">
       <defs><clipPath id="clip-main_issues"><rect x="-70" y="-42.5" width="140" height="85" /></clipPath></defs>
       <rect x="-70" y="-42.5" width="140" height="85" rx="0" ry="0" fill="transparent" stroke="rgba(255, 254, 252, 0.95)" stroke-width="1.25" />
-      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="11" font-weight="400" clip-path="url(#clip-main_issues)"><tspan x="0" dy="-21.01">One issue per</tspan><tspan x="0" dy="15.4">confirmed finding</tspan><tspan x="0" dy="15.4">unless an open issue</tspan><tspan x="0" dy="15.4">already matches</tspan></text>
+      <text text-anchor="middle" fill="rgba(255, 254, 252, 0.85)" font-family="&#39;Share Tech Mono&#39;, &#39;Courier New&#39;, monospace" font-size="12" font-weight="400" clip-path="url(#clip-main_issues)"><tspan x="0" dy="-6.12">One issue per</tspan><tspan x="0" dy="16.8">finding</tspan></text>
     </g>
   </g>
   <g class="edges">
@@ -111,21 +106,18 @@
       <path d="M 208,401 L 281,401 L 281,290 L 334,290" fill="none" stroke="rgba(255, 254, 252, 0.84)" stroke-width="1" marker-end="url(#marker-arrow)" />
     </g>
     <g class="edge" data-edge-id="e3">
-      <path d="M 404,227 L 404,181" fill="none" stroke="rgba(255, 254, 252, 0.84)" stroke-width="1" marker-end="url(#marker-arrow)" />
+      <path d="M 404,227 L 404,139 L 520,139" fill="none" stroke="rgba(255, 254, 252, 0.84)" stroke-width="1" marker-end="url(#marker-arrow)" />
     </g>
     <g class="edge" data-edge-id="e4">
-      <path d="M 474,139 L 520,139" fill="none" stroke="rgba(255, 254, 252, 0.84)" stroke-width="1" marker-end="url(#marker-arrow)" />
-    </g>
-    <g class="edge" data-edge-id="e5">
       <path d="M 590,181 L 590,227" fill="none" stroke="rgba(255, 254, 252, 0.84)" stroke-width="1" marker-end="url(#marker-arrow)" />
     </g>
-    <g class="edge" data-edge-id="e6">
+    <g class="edge" data-edge-id="e5">
       <path d="M 660,250 L 776,250 L 776,181" fill="none" stroke="rgba(255, 254, 252, 0.84)" stroke-width="1" marker-end="url(#marker-arrow)" />
     </g>
-    <g class="edge" data-edge-id="e7">
+    <g class="edge" data-edge-id="e6">
       <path d="M 660,290 L 776,290 L 776,358" fill="none" stroke="rgba(255, 254, 252, 0.84)" stroke-width="1" marker-end="url(#marker-arrow)" />
     </g>
-    <g class="edge-label" data-edge-id="e6">
+    <g class="edge-label" data-edge-id="e5">
       <rect
         x="689.71" y="224.3"
         width="56.58" height="19.4"
@@ -139,7 +131,7 @@
         font-size="11" font-weight="300"
       >pull request</text>
     </g>
-    <g class="edge-label" data-edge-id="e7">
+    <g class="edge-label" data-edge-id="e6">
       <rect
         x="693.01" y="295.3"
         width="49.98" height="19.4"

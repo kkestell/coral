@@ -31,13 +31,10 @@ from coral.agent import (
     format_tool_arguments,
     profile_of,
     review_prompt,
-    verify_prompt,
 )
 from coral.deadline import Deadline, budget_seconds, start
-from coral.github.client import GitHub
-from coral.github.issues import IssueEvidence
 from coral.openrouter import ModelFacts
-from coral.schema import Review, Verification
+from coral.schema import Review
 from coral.spend import Ledger, cap_dollars
 
 BUDGET = budget_seconds("20")
@@ -69,31 +66,19 @@ def test_the_prompt_comes_out_of_the_installed_package() -> None:
     assert "Coral" in review_prompt()
 
 
-def test_the_verifier_prompt_comes_out_of_the_installed_package() -> None:
-    prompt = verify_prompt()
-    assert "Coral" in prompt
-    assert "search_open_issues" in prompt
-    assert "duplicate_issue" in prompt
-    assert "untrusted evidence" in prompt
-
-
-def test_no_instructions_leave_both_prompts_as_shipped() -> None:
+def test_no_instructions_leave_the_prompt_as_shipped() -> None:
     for blank in ("", "  \n"):
         assert review_prompt(blank) == review_prompt()
-        assert verify_prompt(blank) == verify_prompt()
         assert "Guidance" not in review_prompt(blank)
 
 
-def test_instructions_close_both_prompts_as_the_owners_guidance() -> None:
-    instructions = "Do not try to install the Claude Code CLI.\n"
-    for shipped, guided in (
-        (review_prompt(), review_prompt(instructions)),
-        (verify_prompt(), verify_prompt(instructions)),
-    ):
-        assert guided.startswith(shipped)
-        guidance = guided[len(shipped) :]
-        assert "## The Repository Owner's Guidance" in guidance
-        assert guidance.endswith("\n\nDo not try to install the Claude Code CLI.\n")
+def test_instructions_close_the_prompt_as_the_owners_guidance() -> None:
+    instructions = "Claude Code is not available to you.\n"
+    shipped, guided = review_prompt(), review_prompt(instructions)
+    assert guided.startswith(shipped)
+    guidance = guided[len(shipped) :]
+    assert "## The Repository Owner's Guidance" in guidance
+    assert guidance.endswith("\n\nClaude Code is not available to you.\n")
 
 
 def test_a_live_deadline_lets_the_model_be_called() -> None:
@@ -305,7 +290,6 @@ def run_against(
     monkeypatch: pytest.MonkeyPatch,
     effort: str = "",
     facts: ModelFacts = LUNA,
-    extra_tools: list[Any] | None = None,
     deadline: Deadline | None = None,
     ledger: Ledger | None = None,
 ) -> tuple[Any, dict[str, Any], dict[str, Any]]:
@@ -333,7 +317,6 @@ def run_against(
         ledger or Ledger(cap=CAP),
         review_prompt(),
         Review,
-        extra_tools,
     )
     return built[0][0], built[0][1], built[0][2].config
 
@@ -342,8 +325,8 @@ def test_a_run_that_ended_past_its_budget_fails_rather_than_answering(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The middleware checks before each model call, so the request that produced the answer is
-    # checked nowhere else. Without this the reviewer's empty review, or the verifier's last
-    # verdicts, would be posted after a request that ran past the whole budget.
+    # checked nowhere else. Without this the agent's last answer would be posted after a request
+    # that ran past the whole budget.
     spent = Deadline(started=time.monotonic() - (BUDGET + 1), budget=BUDGET)
     with pytest.raises(RuntimeError, match="ran out of time"):
         run_against(monkeypatch, deadline=spent)
@@ -383,46 +366,11 @@ def test_the_structured_output_strategy_is_named_rather_than_detected(
     assert strategy.schema is Review
 
 
-def test_only_the_verifier_receives_bounded_issue_tools(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    evidence = IssueEvidence(GitHub(token="not-a-token"), "owner", "repo", 1)
-    reviewer_tools = run_against(monkeypatch)[1]["tools"]
-    verifier_tools = run_against(
-        monkeypatch,
-        extra_tools=[evidence.search_open_issues, evidence.view_issue],
-    )[1]["tools"]
-    assert len(reviewer_tools) == 1
-    assert isinstance(reviewer_tools[0], StructuredTool)
-    assert reviewer_tools[0].name == "execute"
-    assert verifier_tools[1:] == [evidence.search_open_issues, evidence.view_issue]
-    assert not any(isinstance(tool, GitHub) for tool in verifier_tools)
-
-
-def test_verify_findings_passes_only_issue_evidence_tools(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[tuple[Any, ...]] = []
-
-    def run(*arguments: Any) -> dict[str, Any]:
-        calls.append(arguments)
-        return {"structured_response": Verification(verdicts=[])}
-
-    evidence = IssueEvidence(GitHub(token="not-a-token"), "owner", "repo", 1)
-    monkeypatch.setattr(coral.agent, "_run", run)
-    coral.agent.verify_findings(
-        "not-a-key",
-        "openai/gpt-5.6-luna",
-        "",
-        "",
-        LUNA,
-        "coral-verifier",
-        "verify this",
-        Deadline(started=time.monotonic(), budget=BUDGET),
-        Ledger(cap=CAP),
-        evidence,
-    )
-    assert calls[0][-1] == [evidence.search_open_issues, evidence.view_issue]
+def test_the_agent_receives_only_the_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    tools = run_against(monkeypatch)[1]["tools"]
+    assert len(tools) == 1
+    assert isinstance(tools[0], StructuredTool)
+    assert tools[0].name == "execute"
 
 
 def test_the_default_models_profile_is_the_one_coral_used_to_carry_by_hand() -> None:
@@ -534,7 +482,7 @@ def test_a_run_near_the_step_cap_returns_its_result(monkeypatch: pytest.MonkeyPa
     review, seen = investigate(monkeypatch, start(BUDGET))
     assert review == ANSWERED
     *investigating, (answering, last) = seen
-    assert len(investigating) > 40
+    assert len(investigating) > 15
     assert all(
         "execute" in offered and latest != ANSWER_NOTICE for offered, latest in investigating
     )

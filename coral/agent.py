@@ -1,4 +1,4 @@
-"""The agent: the model client, its one shell tool, the middleware, and the two runs.
+"""The agent: the model client, its one shell tool, the middleware, and the run.
 
 The only module that imports the agent framework. Everything else in Coral depends on the review
 object in `coral/schema.py`, which keeps the framework's import cost off `coral resolve` and keeps
@@ -28,19 +28,17 @@ from pydantic import SecretStr
 
 from coral import container
 from coral.deadline import Deadline, stop_if_expired
-from coral.github.issues import IssueEvidence
 from coral.openrouter import ModelFacts
-from coral.schema import Review, Verification, review_from_result, verification_from_result
+from coral.schema import Review, review_from_result
 from coral.spend import Ledger, priced, stop_if_over_cap
 
 log = logging.getLogger(__name__)
 
-# `ChatOpenRouter` takes its timeout in milliseconds. No real run has come near it: real reviews
-# in `kkestell/coral-test` used 14 to 51 messages against the 200-message `STEP_CAP` and a
-# verifier run confirming one finding used 9, while the longest single shell command any of them
-# ran took 12.2 seconds against the 300-second `SHELL_CEILING_SECONDS`. Both hold as chosen.
+# `ChatOpenRouter` takes its timeout in milliseconds. A read-only rehearsal of a 210-line Ox change
+# on 2026-11-25 used 75 graph steps and 28 shell calls before its five-minute budget made it
+# answer; `STEP_CAP` leaves room over that, and the time budget is what normally ends a run.
 MODEL_TIMEOUT_MILLISECONDS: Final = 180_000
-STEP_CAP: Final = 200
+STEP_CAP: Final = 100
 # The graph steps left when a run stops investigating and answers. A model call is three steps
 # with the two `before_model` hooks ahead of it, and a structured answer the framework refuses goes
 # back through them for another try, so this leaves room for at least three attempts.
@@ -60,8 +58,6 @@ MODEL_RETRIES: Final = 1
 ARGUMENT_PREVIEW_CHARACTERS: Final = 120
 TOOL_ARGUMENT_ORDER: Final = {
     "execute": ("command", "timeout"),
-    "search_open_issues": ("finding", "terms"),
-    "view_issue": ("number",),
 }
 
 
@@ -263,11 +259,6 @@ def review_prompt(instructions: str = "") -> str:
     return guided(prompt("review"), instructions)
 
 
-def verify_prompt(instructions: str = "") -> str:
-    """How Coral checks a finding, with the repository owner's guidance."""
-    return guided(prompt("verify"), instructions)
-
-
 def caught(name: str, inner: Callable[..., Any]) -> Callable[..., Any]:
     """A tool function that answers with its own error instead of raising it."""
 
@@ -295,12 +286,10 @@ def _run(
     ledger: Ledger,
     system_prompt: str,
     response_format: type[Any],
-    extra_tools: list[Callable[..., str]] | None = None,
 ) -> dict[str, Any]:
     """Build an agent over its container, run it, and return its result state.
 
-    The one place the model client, the backend, and the middleware are constructed. Both runs
-    share every bound here; what differs between them is the prompt and the type they return.
+    The one place the model client, the backend, and the middleware are constructed.
     """
     profile = profile_of(facts)
     log.info("Reviewing on %s with effort %r and the profile %s.", name, effort, profile)
@@ -327,7 +316,7 @@ def _run(
             SpendMiddleware(ledger),
             AnswerMiddleware(deadline),
         ],
-        tools=[execute_tool(container_name, deadline), *(extra_tools or [])],
+        tools=[execute_tool(container_name, deadline)],
         # Named rather than left to the framework's auto-detection, which asks for the provider's
         # own structured output whenever the model's profile carries `structured_output` or its
         # name matches a table of GPT, Claude, and Grok names kept upstream. That request makes the
@@ -375,7 +364,7 @@ def produce_review(
     deadline: Deadline,
     ledger: Ledger,
 ) -> Review:
-    """Run the reviewer over its copy of the checkout and return the review it produced, or fail."""
+    """Run the agent over its copy of the checkout and return the review it produced, or fail."""
     return review_from_result(
         _run(
             api_key,
@@ -388,39 +377,5 @@ def produce_review(
             ledger,
             review_prompt(instructions),
             Review,
-        )
-    )
-
-
-def verify_findings(
-    api_key: str,
-    name: str,
-    effort: str,
-    instructions: str,
-    facts: ModelFacts,
-    container_name: str,
-    request: str,
-    deadline: Deadline,
-    ledger: Ledger,
-    issue_evidence: IssueEvidence | None = None,
-) -> Verification:
-    """Run the verifier over its own fresh copy of the checkout and return its verdicts, or fail."""
-    return verification_from_result(
-        _run(
-            api_key,
-            name,
-            effort,
-            facts,
-            container_name,
-            request,
-            deadline,
-            ledger,
-            verify_prompt(instructions),
-            Verification,
-            (
-                [issue_evidence.search_open_issues, issue_evidence.view_issue]
-                if issue_evidence is not None
-                else None
-            ),
         )
     )

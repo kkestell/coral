@@ -8,8 +8,10 @@
 name: Coral
 
 on:
-  push:
-    branches: [main]
+  # Uncomment to file an issue for every finding in each push to `main`. Nothing checks those
+  # findings, and nothing looks for an open issue that already describes one.
+  # push:
+  #   branches: [main]
   pull_request_target:
     types: [opened, ready_for_review]
   issue_comment:
@@ -46,11 +48,11 @@ jobs:
     #   # Passed to the provider in OpenRouter's reasoning block. Empty sends no block, leaving the
     #   # provider its own default; what a value may be is the provider's rule, not Coral's.
     #   reasoning_effort: ""
-    #   # Your guidance for both agents: which tests to run and how, and what not to try to
-    #   # verify. Followed as instruction, because only this file can set it.
+    #   # Your guidance for the agent: where to look, and what it cannot know. Followed as
+    #   # instruction, because only this file can set it.
     #   instructions: ""
     #   # How long the review gets. The job's own timeout is ten minutes more than this.
-    #   time_budget_minutes: 20
+    #   time_budget_minutes: 5
     #   # What one review may spend. A review that reaches this stops and says so, and a minted
     #   # key is created with this as its limit.
     #   spend_cap_dollars: "2.00"

@@ -15,14 +15,13 @@ from coral.deadline import (
     Deadline,
     budget_seconds,
     job_timeout_minutes,
-    reviewer_budget,
     start,
     stop_if_expired,
 )
 
 # The `time_budget_minutes` input's default, declared in `.github/workflows/coral.yml`. Every
 # assertion below about an unconfigured install is against this value.
-DEFAULT = "20"
+DEFAULT = "5"
 
 
 def test_a_fresh_deadline_has_not_expired() -> None:
@@ -42,8 +41,8 @@ def test_the_check_stops_a_spent_budget_and_says_how_long_it_ran() -> None:
     budget = budget_seconds(DEFAULT)
     with pytest.raises(RuntimeError) as raised:
         stop_if_expired(Deadline(started=time.monotonic() - (budget + 1), budget=budget))
-    assert "ran out of time after 1201 seconds" in str(raised.value)
-    assert "budget of 1200" in str(raised.value)
+    assert "ran out of time after 301 seconds" in str(raised.value)
+    assert "budget of 300" in str(raised.value)
 
 
 def test_elapsed_grows_with_the_gap_to_the_starting_reading() -> None:
@@ -52,24 +51,11 @@ def test_elapsed_grows_with_the_gap_to_the_starting_reading() -> None:
 
 
 def test_the_budget_is_the_input_in_seconds() -> None:
-    assert budget_seconds(DEFAULT) == 20 * 60
+    assert budget_seconds(DEFAULT) == 5 * 60
 
 
 def test_the_job_timeout_is_the_budget_plus_the_headroom() -> None:
-    assert job_timeout_minutes(DEFAULT) == 20 + HEADROOM_MINUTES
-
-
-def test_the_reviewer_leaves_the_step_something_for_the_verifier() -> None:
-    # The whole point of the split. A reviewer budget at or above the step's would let the first
-    # run spend everything and leave the second nothing to run in.
-    budget = budget_seconds(DEFAULT)
-    assert reviewer_budget(budget) < budget
-
-
-def test_the_reviewers_slice_of_the_default_budget_is_thirteen_minutes() -> None:
-    # The number the fraction replaced, so an install naming no budget still splits the step the
-    # way every measurement behind it was taken.
-    assert reviewer_budget(budget_seconds(DEFAULT)) == 13 * 60
+    assert job_timeout_minutes(DEFAULT) == 5 + HEADROOM_MINUTES
 
 
 def test_a_budget_that_is_not_a_whole_number_of_minutes_says_what_it_takes() -> None:
@@ -105,8 +91,8 @@ def test_a_budget_whose_job_would_pass_githubs_ceiling_carries_the_bound() -> No
     assert "360-minute" in str(raised.value)
 
 
-def test_a_budget_keeps_back_its_answer_reserve() -> None:
-    deadline = start(budget_seconds(DEFAULT))
+def test_a_large_budget_keeps_back_its_answer_reserve() -> None:
+    deadline = start(budget_seconds("20"))
     assert deadline.reserve() == ANSWER_RESERVE_SECONDS
     assert (
         deadline.budget - ANSWER_RESERVE_SECONDS - 1
@@ -116,8 +102,8 @@ def test_a_budget_keeps_back_its_answer_reserve() -> None:
 
 
 def test_a_small_budget_keeps_back_a_quarter() -> None:
-    # The reviewer's slice of a one-minute budget, which a fixed reserve would consume whole.
-    assert start(reviewer_budget(budget_seconds("1"))).reserve() == pytest.approx(9.75)
+    # A one-minute budget, which a fixed reserve would consume whole.
+    assert start(budget_seconds("1")).reserve() == pytest.approx(15)
 
 
 def test_a_run_past_its_reserve_has_no_working_time() -> None:

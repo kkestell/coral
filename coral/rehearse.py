@@ -19,7 +19,7 @@ from typing import Final
 from coral.container import IMAGE
 from coral.github.conversation import Bound, Conversation, write_conversation
 from coral.github.post import read_payloads
-from coral.review import REVIEWER, VERIFIER, review
+from coral.review import REVIEWER, review
 
 # Each rehearsal gets a directory here holding the clone the agents review and the files that
 # would have crossed between jobs. Gitignored, and read by nothing but this module.
@@ -107,14 +107,11 @@ def rehearse(arguments: argparse.Namespace) -> None:
     obliterate(work)
     stage(repo, head, base, work)
 
-    # The containers carry fixed names because a job gets a runner VM to itself. This machine
-    # keeps its containers between rehearsals, so the last run's have to go first.
-    for name in (REVIEWER, VERIFIER):
-        subprocess.run(["docker", "rm", "--force", name], capture_output=True)
+    # The container carries a fixed name because a job gets a runner VM to itself. This machine
+    # keeps its containers between rehearsals, so the last run's has to go first.
+    subprocess.run(["docker", "rm", "--force", REVIEWER], capture_output=True)
 
-    # An empty toolcache. The agent installs any interpreter it wants with `apt-get`, which the
-    # prompt already tells it; a minute of installing per rehearsal costs less than keeping a
-    # local replica of the hosted image's cache current.
+    # An empty toolcache: a read-only review runs no toolchain.
     (work / "toolcache").mkdir()
 
     # The environment the workflow would have built, assembled in this process: `review` reads
@@ -123,7 +120,6 @@ def rehearse(arguments: argparse.Namespace) -> None:
         OPENROUTER_API_KEY=openrouter_key(repo),
         ENCRYPTED_OPENROUTER_API_KEY="",
         CORAL_KEY_ENCRYPTION_KEY="",
-        GITHUB_TOKEN="",
         CORAL_TOOLCACHE=str(work / "toolcache"),
         CORAL_MODEL=arguments.model,
         CORAL_REASONING_EFFORT=arguments.effort,

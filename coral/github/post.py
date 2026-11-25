@@ -23,25 +23,12 @@ log = logging.getLogger(__name__)
 
 
 def rendered_finding(finding: Finding) -> str:
-    """A finding as Coral posts it, wherever it lands: the severity, the prose, and the evidence.
+    """A finding as Coral posts it, wherever it lands: the severity and the prose.
 
-    Composed here rather than by the model, which returns the three pieces separately. Everything
-    below is the same for an anchored comment and for one demoted into the summary.
+    Composed here rather than by the model, which returns the two separately. Everything below is
+    the same for an anchored comment and for one demoted into the summary.
     """
-    parts = [f"**{finding.severity.capitalize()} severity.**"]
-    if finding.regression_test is None:
-        parts.append("*Speculative — not reproduced by a test.*")
-    parts.append(finding.body)
-    if finding.regression_test is not None:
-        test = finding.regression_test
-        parts.append(
-            "<details>\n"
-            f"<summary>Regression test — <code>{test.path}</code></summary>\n\n"
-            f"Run with `{test.command}`:\n\n"
-            f"```\n{test.content}\n```\n"
-            "</details>"
-        )
-    return "\n\n".join(parts)
+    return f"**{finding.severity.capitalize()} severity.**\n\n{finding.body}"
 
 
 def bullet(entry: str) -> str:
@@ -246,7 +233,7 @@ def issue_where(finding: Finding) -> str:
 
 
 def issue_payloads(common: str, head: str, review: Review, spent: float) -> IssuePayloads:
-    """One complete GitHub issue body for every confirmed finding."""
+    """One complete GitHub issue body for every finding."""
     return IssuePayloads(
         issues=[
             IssuePayload(
@@ -353,7 +340,7 @@ def create_labels(github: GitHub, owner: str, repo: str) -> None:
 
 
 def post_issue(github: GitHub, owner: str, repo: str, payload: IssuePayload) -> Any:
-    """Create one issue for a confirmed finding on a main-branch commit."""
+    """Create one issue for a finding on a main-branch commit."""
     return github.post(
         f"/repos/{owner}/{repo}/issues",
         {"title": payload.title, "body": payload.body, "labels": payload.labels},
