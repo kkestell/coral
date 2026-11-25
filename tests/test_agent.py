@@ -11,13 +11,15 @@ from typing import Any
 
 import pytest
 from langchain.agents.structured_output import ToolStrategy
-from langchain_core.messages import AIMessage
-from langchain_core.outputs import ChatGeneration, LLMResult
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatResult, LLMResult
 from langchain_core.tools import StructuredTool
 
 import coral.agent
 from coral import container
 from coral.agent import (
+    FINAL_NOTICE,
     SHELL_CEILING_SECONDS,
     DeadlineMiddleware,
     SpendHandler,
@@ -437,3 +439,68 @@ def test_an_effort_reaches_openrouters_reasoning_block(
     # Passed through unvalidated. What an effort may be is the provider's rule, and its refusal is
     # what a caller who got it wrong reads.
     assert run_against(monkeypatch, effort="high")[0].reasoning == {"effort": "high"}
+
+
+class Investigator(BaseChatModel):
+    """A model that runs the shell whenever it is offered and answers only when it is not."""
+
+    offered: list[str] = []
+    # `Any` so validation keeps the caller's list rather than copying it.
+    seen: Any
+
+    @property
+    def _llm_type(self) -> str:
+        return "investigator"
+
+    def bind_tools(self, tools: Any, *, tool_choice: Any = None, **keywords: Any) -> Any:
+        return self.model_copy(update={"offered": [tool.name for tool in tools]})
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: Any = None,
+        run_manager: Any = None,
+        **keywords: Any,
+    ) -> ChatResult:
+        self.seen.append((self.offered, messages[-1].text))
+        if "execute" in self.offered:
+            call = {"name": "execute", "args": {"command": "true"}, "id": f"call-{len(messages)}"}
+        else:
+            answer = {"summary": "Fine.", "findings": [], "everything_already_said": False}
+            call = {"name": "Review", "args": answer, "id": "answer"}
+        message = AIMessage(content="", tool_calls=[call], response_metadata={"cost": 0.0})
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+def test_a_run_near_the_step_cap_returns_its_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Without the step-cap middleware a model that never stops investigating reaches the recursion
+    # limit and the graph raises, leaving the run with no review at all.
+    seen: list[tuple[list[str], str]] = []
+    monkeypatch.setattr(coral.agent, "ChatOpenRouter", lambda **keywords: Investigator(seen=seen))
+    monkeypatch.setattr(
+        coral.agent,
+        "execute_tool",
+        lambda name: StructuredTool.from_function(
+            lambda command: "", name="execute", description="A shell."
+        ),
+    )
+    result = _run(
+        "not-a-key",
+        "openai/gpt-5.6-luna",
+        "",
+        LUNA,
+        "coral-reviewer",
+        "review this",
+        Deadline(started=time.monotonic(), budget=BUDGET),
+        Ledger(cap=CAP),
+        review_prompt(),
+        Review,
+    )
+    assert result["structured_response"] == Review(
+        summary="Fine.", findings=[], everything_already_said=False
+    )
+    *investigating, (answering, last) = seen
+    assert len(investigating) > 40
+    assert all("execute" in offered and latest != FINAL_NOTICE for offered, latest in investigating)
+    assert answering == ["Review"]
+    assert last == FINAL_NOTICE

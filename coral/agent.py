@@ -14,7 +14,7 @@ from typing import Any, Final
 from uuid import UUID
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware
+from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.model_profile import ModelProfile
@@ -22,6 +22,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 from langchain_core.tools import StructuredTool
 from langchain_openrouter import ChatOpenRouter
+from langgraph.config import get_config
 from langgraph.runtime import Runtime
 from pydantic import SecretStr
 
@@ -40,6 +41,14 @@ log = logging.getLogger(__name__)
 # ran took 12.2 seconds against the 300-second `SHELL_CEILING_SECONDS`. Both hold as chosen.
 MODEL_TIMEOUT_MILLISECONDS: Final = 180_000
 STEP_CAP: Final = 200
+# The graph steps left when a run stops investigating and answers. A model call is three steps
+# with the two `before_model` hooks ahead of it, and a structured answer the framework refuses goes
+# back through them for another try, so this leaves room for at least three attempts.
+FINAL_STEPS: Final = 12
+FINAL_NOTICE: Final = (
+    "This run has reached its step bound, and the shell is gone. Call the response tool now with "
+    "your real, complete result, written from what you have established so far."
+)
 SHELL_CEILING_SECONDS: Final = 300
 
 # One retry rather than the default two, which is deadline arithmetic. The elapsed check runs
@@ -79,6 +88,29 @@ class DeadlineMiddleware(AgentMiddleware[Any, Any]):
     def before_model(self, state: Any, runtime: Runtime[Any]) -> dict[str, Any] | None:
         stop_if_expired(self.deadline)
         return None
+
+
+class StepCapMiddleware(AgentMiddleware[Any, Any]):
+    """Makes the model return its structured result once the run nears `STEP_CAP`.
+
+    Every tool but the framework's response-format tool is withdrawn, and that tool is always
+    bound with `tool_choice="any"`, so the model's only move is to answer. Past `STEP_CAP` the
+    graph raises instead and the run has nothing to return.
+    """
+
+    def wrap_model_call(
+        self, request: ModelRequest[Any], handler: Callable[[ModelRequest[Any]], ModelResponse[Any]]
+    ) -> ModelResponse[Any]:
+        # The superstep LangGraph is running, which is what its recursion limit counts.
+        remaining = STEP_CAP - get_config()["metadata"]["langgraph_step"]
+        if remaining > FINAL_STEPS:
+            return handler(request)
+        log.info("The run is %d steps from its cap; asking for its result.", remaining)
+        # A user turn rather than a system-prompt addition, because it is the latest thing the
+        # model reads before it answers.
+        return handler(
+            request.override(tools=[], messages=[*request.messages, HumanMessage(FINAL_NOTICE)])
+        )
 
 
 class SpendHandler(BaseCallbackHandler):
@@ -279,7 +311,7 @@ def _run(
     agent = create_agent(
         model=model,
         system_prompt=system_prompt,
-        middleware=[DeadlineMiddleware(deadline), SpendMiddleware(ledger)],
+        middleware=[DeadlineMiddleware(deadline), SpendMiddleware(ledger), StepCapMiddleware()],
         tools=[execute_tool(container_name), *(extra_tools or [])],
         # Named rather than left to the framework's auto-detection, which asks for the provider's
         # own structured output whenever the model's profile carries `structured_output` or its

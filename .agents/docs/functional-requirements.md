@@ -88,6 +88,7 @@ Coral decides which available capability to use, in what order, and how often.
 - Coral publishes no review if the pinned commit is no longer the pull request's head. It posts a notice naming the reviewed commit and invites a fresh request.
 - A failed run does not prevent a later review.
 - A review that reaches its time limit is discarded whole and reported as timed out. Findings accumulated before the limit are not published.
+- Each agent run is bounded in steps. A run near its step bound stops investigating and returns its review or verdicts from what it has established, rather than failing.
 - Coral stops and discards a review that reaches its spend cap or receives a model response whose cost cannot be measured. The failure reports measured spend against the cap.
 - Both review modes refuse a request that cannot be captured, assembled, sent to the selected model, or published whole within their byte and context limits. Coral never silently truncates a diff, agent request, finding, regression test, review, or issue into a partial review.
 - Pull requests also have changed-file and changed-line backstops. A rejected request says which limit was exceeded and publishes no review.
