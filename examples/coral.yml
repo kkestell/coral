@@ -46,6 +46,9 @@ jobs:
     #   # Passed to the provider in OpenRouter's reasoning block. Empty sends no block, leaving the
     #   # provider its own default; what a value may be is the provider's rule, not Coral's.
     #   reasoning_effort: ""
+    #   # Your guidance for both agents: which tests to run and how, and what not to try to
+    #   # verify. Followed as instruction, because only this file can set it.
+    #   instructions: ""
     #   # How long the review gets. The job's own timeout is ten minutes more than this.
     #   time_budget_minutes: 20
     #   # What one review may spend. A review that reaches this stops and says so, and a minted

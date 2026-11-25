@@ -71,9 +71,10 @@ Coral decides which available capability to use, in what order, and how often.
 
 ## Configuration And Credentials
 
-- Coral is configured only in the installing repository's workflow file, read from its default branch: the model, reasoning effort, review time budget, and per-review spend cap, each with a default. The change under review cannot alter how it is reviewed.
+- Coral is configured only in the installing repository's workflow file, read from its default branch: the model, reasoning effort, review instructions, review time budget, and per-review spend cap, each with a default. The change under review cannot alter how it is reviewed.
 - The configured model is an exact name the provider lists. A moving alias is refused, and a model the provider does not list stops the run with a report, so the configuration always shows which model produced a review.
 - The configured reasoning effort reaches the provider as given, and an empty value asks for none. A value the model refuses fails the review with the provider's refusal reported.
+- The configured review instructions are the repository owner's guidance on how to investigate the change, such as which tests to run and what not to try to verify. When non-empty they reach both the reviewer and the verifier as instruction, because the change under review cannot alter them; empty instructions add nothing.
 - The installation supplies one provider credential mode: a key used as given, or a management credential from which Coral mints a fresh key for each run, capped at the configured spend cap and unable to authenticate after its run. The two modes are exclusive, and a missing, mixed, or mismatched credential configuration fails the review with a report.
 - No cleartext minted key, or reversible encoding of one, appears in a log, workflow output, artifact, checkout, or agent container.
 

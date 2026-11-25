@@ -203,14 +203,26 @@ def profile_of(facts: ModelFacts) -> ModelProfile:
     return profile
 
 
-def review_prompt() -> str:
-    """What Coral looks for, read out of the installed package."""
-    return (files("coral") / "prompts" / "review.md").read_text(encoding="utf-8")
+def prompt(name: str) -> str:
+    """One of Coral's prompts, read out of the installed package."""
+    return (files("coral") / "prompts" / f"{name}.md").read_text(encoding="utf-8")
 
 
-def verify_prompt() -> str:
-    """How Coral checks a finding, read out of the installed package."""
-    return (files("coral") / "prompts" / "verify.md").read_text(encoding="utf-8")
+def guided(system_prompt: str, instructions: str) -> str:
+    """A system prompt followed by the repository owner's guidance, when the caller gave any."""
+    if not instructions.strip():
+        return system_prompt
+    return f"{system_prompt}\n{prompt('guidance')}{instructions.strip()}\n"
+
+
+def review_prompt(instructions: str = "") -> str:
+    """What Coral looks for, with the repository owner's guidance."""
+    return guided(prompt("review"), instructions)
+
+
+def verify_prompt(instructions: str = "") -> str:
+    """How Coral checks a finding, with the repository owner's guidance."""
+    return guided(prompt("verify"), instructions)
 
 
 def caught(name: str, inner: Callable[..., Any]) -> Callable[..., Any]:
@@ -309,6 +321,7 @@ def produce_review(
     api_key: str,
     name: str,
     effort: str,
+    instructions: str,
     facts: ModelFacts,
     container_name: str,
     request: str,
@@ -326,7 +339,7 @@ def produce_review(
             request,
             deadline,
             ledger,
-            review_prompt(),
+            review_prompt(instructions),
             Review,
         )
     )
@@ -336,6 +349,7 @@ def verify_findings(
     api_key: str,
     name: str,
     effort: str,
+    instructions: str,
     facts: ModelFacts,
     container_name: str,
     request: str,
@@ -354,7 +368,7 @@ def verify_findings(
             request,
             deadline,
             ledger,
-            verify_prompt(),
+            verify_prompt(instructions),
             Verification,
             (
                 [issue_evidence.search_open_issues, issue_evidence.view_issue]

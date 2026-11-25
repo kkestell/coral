@@ -127,6 +127,7 @@ def rehearse(arguments: argparse.Namespace) -> None:
         CORAL_TOOLCACHE=str(work / "toolcache"),
         CORAL_MODEL=arguments.model,
         CORAL_REASONING_EFFORT=arguments.effort,
+        CORAL_INSTRUCTIONS=arguments.instructions,
         CORAL_TIME_BUDGET_MINUTES=arguments.budget,
         CORAL_SPEND_CAP_DOLLARS=arguments.cap,
         RUNNER_TEMP=str(work / "temp"),
@@ -159,6 +160,9 @@ def add_rehearse_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--repo", type=Path, default=Path.cwd(), help="the repository to clone")
     parser.add_argument("--model", default="openai/gpt-5.6-luna")
     parser.add_argument("--effort", default="")
+    parser.add_argument(
+        "--instructions", default="", help="the repository owner's guidance for the review"
+    )
     parser.add_argument("--budget", default="20", help="the time budget in minutes")
     parser.add_argument("--cap", default="2.00", help="the spend cap in dollars")
     parser.add_argument("--keep", action="store_true", help="leave the clone behind")

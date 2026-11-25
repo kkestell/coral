@@ -344,11 +344,12 @@ def review() -> None:
         if not plain_key:
             runner.mask(api_key)
 
-        # The four the caller configured, each already defaulted by the reusable workflow. The
+        # The five the caller configured, each already defaulted by the reusable workflow. The
         # budget runs from the top of the step, so everything below is spent out of it; the resolve
         # step validated the same value and derived this job's own timeout from it.
         name = os.environ["CORAL_MODEL"]
         effort = os.environ["CORAL_REASONING_EFFORT"]
+        instructions = os.environ["CORAL_INSTRUCTIONS"]
         deadline = start(budget_seconds(os.environ["CORAL_TIME_BUDGET_MINUTES"]))
         # One ledger for both runs, which is what makes the cap cover the run rather than each run
         # alone. A reviewer that spends it all leaves nothing to verify with, and the comment says
@@ -387,6 +388,7 @@ def review() -> None:
             api_key,
             name,
             effort,
+            instructions,
             facts,
             REVIEWER,
             request,
@@ -402,6 +404,7 @@ def review() -> None:
                 api_key,
                 name,
                 effort,
+                instructions,
                 facts,
                 VERIFIER,
                 render_verification_request(subject, diff, review),

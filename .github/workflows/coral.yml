@@ -20,6 +20,15 @@ on:
         type: string
         required: false
         default: ""
+      instructions:
+        description: >
+          The repository owner's guidance for reviewing this repository, such as which tests to
+          run and how, and what not to try to verify. Both agents receive it as instruction,
+          because it comes from this file on the default branch, which a pull request cannot
+          change. Empty adds nothing.
+        type: string
+        required: false
+        default: ""
       time_budget_minutes:
         description: >
           How long the review step gets. The review job's own `timeout-minutes` is this plus the
@@ -169,6 +178,7 @@ jobs:
           github-token: ${{ github.event_name == 'push' && github.token || '' }}
           model: ${{ inputs.model }}
           reasoning-effort: ${{ inputs.reasoning_effort }}
+          instructions: ${{ inputs.instructions }}
           time-budget-minutes: ${{ inputs.time_budget_minutes }}
           spend-cap-dollars: ${{ inputs.spend_cap_dollars }}
           openrouter-api-key: ${{ secrets.openrouter_api_key }}

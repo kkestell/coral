@@ -75,6 +75,25 @@ def test_the_verifier_prompt_comes_out_of_the_installed_package() -> None:
     assert "untrusted evidence" in prompt
 
 
+def test_no_instructions_leave_both_prompts_as_shipped() -> None:
+    for blank in ("", "  \n"):
+        assert review_prompt(blank) == review_prompt()
+        assert verify_prompt(blank) == verify_prompt()
+        assert "Guidance" not in review_prompt(blank)
+
+
+def test_instructions_close_both_prompts_as_the_owners_guidance() -> None:
+    instructions = "Do not try to install the Claude Code CLI.\n"
+    for shipped, guided in (
+        (review_prompt(), review_prompt(instructions)),
+        (verify_prompt(), verify_prompt(instructions)),
+    ):
+        assert guided.startswith(shipped)
+        guidance = guided[len(shipped) :]
+        assert "## The Repository Owner's Guidance" in guidance
+        assert guidance.endswith("\n\nDo not try to install the Claude Code CLI.\n")
+
+
 def test_a_live_deadline_lets_the_model_be_called() -> None:
     middleware = DeadlineMiddleware(Deadline(started=time.monotonic(), budget=BUDGET))
     assert middleware.before_model(state={}, runtime=None) is None  # type: ignore[arg-type]
@@ -365,6 +384,7 @@ def test_verify_findings_passes_only_issue_evidence_tools(
     coral.agent.verify_findings(
         "not-a-key",
         "openai/gpt-5.6-luna",
+        "",
         "",
         LUNA,
         "coral-verifier",
