@@ -9,6 +9,7 @@ import time
 import pytest
 
 from coral.deadline import (
+    ANSWER_RESERVE_SECONDS,
     HEADROOM_MINUTES,
     JOB_CEILING_MINUTES,
     Deadline,
@@ -102,3 +103,23 @@ def test_a_budget_whose_job_would_pass_githubs_ceiling_carries_the_bound() -> No
         job_timeout_minutes(str(over))
     assert "between 1 and 350" in str(raised.value)
     assert "360-minute" in str(raised.value)
+
+
+def test_a_budget_keeps_back_its_answer_reserve() -> None:
+    deadline = start(budget_seconds(DEFAULT))
+    assert deadline.reserve() == ANSWER_RESERVE_SECONDS
+    assert (
+        deadline.budget - ANSWER_RESERVE_SECONDS - 1
+        < deadline.working()
+        <= (deadline.budget - ANSWER_RESERVE_SECONDS)
+    )
+
+
+def test_a_small_budget_keeps_back_a_quarter() -> None:
+    # The reviewer's slice of a one-minute budget, which a fixed reserve would consume whole.
+    assert start(reviewer_budget(budget_seconds("1"))).reserve() == pytest.approx(9.75)
+
+
+def test_a_run_past_its_reserve_has_no_working_time() -> None:
+    budget = budget_seconds(DEFAULT)
+    assert Deadline(started=time.monotonic() - (budget - 60), budget=budget).working() < 0

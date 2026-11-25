@@ -45,9 +45,9 @@ STEP_CAP: Final = 200
 # with the two `before_model` hooks ahead of it, and a structured answer the framework refuses goes
 # back through them for another try, so this leaves room for at least three attempts.
 FINAL_STEPS: Final = 12
-FINAL_NOTICE: Final = (
-    "This run has reached its step bound, and the shell is gone. Call the response tool now with "
-    "your real, complete result, written from what you have established so far."
+ANSWER_NOTICE: Final = (
+    "This run has reached its step or time bound, and the shell is gone. Call the response tool "
+    "now with your real, complete result, written from what you have established so far."
 )
 SHELL_CEILING_SECONDS: Final = 300
 
@@ -65,14 +65,18 @@ TOOL_ARGUMENT_ORDER: Final = {
 }
 
 
-def execute_tool(container_name: str) -> StructuredTool:
+def execute_tool(container_name: str, deadline: Deadline) -> StructuredTool:
     """The one repository tool an agent receives, bound to its own container."""
 
     def execute(command: str, timeout: int = SHELL_CEILING_SECONDS) -> str:
         """Run a shell command in /checkout, with an optional timeout in seconds."""
         if not 1 <= timeout <= SHELL_CEILING_SECONDS:
             return f"Error: timeout must be between 1 and {SHELL_CEILING_SECONDS} seconds."
-        result = container.execute(container_name, command, timeout)
+        # Cut to the time left before the answer reserve, so no command runs into it.
+        left = int(deadline.working())
+        if left < 1:
+            return f"Error: no time is left for shell commands. {ANSWER_NOTICE}"
+        result = container.execute(container_name, command, min(timeout, left))
         return f"{result.output}\n\n[exit code: {result.exit_code}]"
 
     return StructuredTool.from_function(caught("execute", execute), name="execute")
@@ -90,26 +94,33 @@ class DeadlineMiddleware(AgentMiddleware[Any, Any]):
         return None
 
 
-class StepCapMiddleware(AgentMiddleware[Any, Any]):
-    """Makes the model return its structured result once the run nears `STEP_CAP`.
+class AnswerMiddleware(AgentMiddleware[Any, Any]):
+    """Makes the model return its structured result once the run nears `STEP_CAP` or its deadline.
 
     Every tool but the framework's response-format tool is withdrawn, and that tool is always
-    bound with `tool_choice="any"`, so the model's only move is to answer. Past `STEP_CAP` the
-    graph raises instead and the run has nothing to return.
+    bound with `tool_choice="any"`, so the model's only move is to answer. Past either bound the
+    run raises instead and has nothing to return.
     """
+
+    def __init__(self, deadline: Deadline) -> None:
+        super().__init__()
+        self.deadline = deadline
 
     def wrap_model_call(
         self, request: ModelRequest[Any], handler: Callable[[ModelRequest[Any]], ModelResponse[Any]]
     ) -> ModelResponse[Any]:
         # The superstep LangGraph is running, which is what its recursion limit counts.
-        remaining = STEP_CAP - get_config()["metadata"]["langgraph_step"]
-        if remaining > FINAL_STEPS:
+        steps = STEP_CAP - get_config()["metadata"]["langgraph_step"]
+        seconds = self.deadline.budget - self.deadline.elapsed()
+        if steps > FINAL_STEPS and self.deadline.working() > 0:
             return handler(request)
-        log.info("The run is %d steps from its cap; asking for its result.", remaining)
+        log.info(
+            "The run has %d steps and %.0f seconds left; asking for its result.", steps, seconds
+        )
         # A user turn rather than a system-prompt addition, because it is the latest thing the
         # model reads before it answers.
         return handler(
-            request.override(tools=[], messages=[*request.messages, HumanMessage(FINAL_NOTICE)])
+            request.override(tools=[], messages=[*request.messages, HumanMessage(ANSWER_NOTICE)])
         )
 
 
@@ -311,8 +322,12 @@ def _run(
     agent = create_agent(
         model=model,
         system_prompt=system_prompt,
-        middleware=[DeadlineMiddleware(deadline), SpendMiddleware(ledger), StepCapMiddleware()],
-        tools=[execute_tool(container_name), *(extra_tools or [])],
+        middleware=[
+            DeadlineMiddleware(deadline),
+            SpendMiddleware(ledger),
+            AnswerMiddleware(deadline),
+        ],
+        tools=[execute_tool(container_name, deadline), *(extra_tools or [])],
         # Named rather than left to the framework's auto-detection, which asks for the provider's
         # own structured output whenever the model's profile carries `structured_output` or its
         # name matches a table of GPT, Claude, and Grok names kept upstream. That request makes the

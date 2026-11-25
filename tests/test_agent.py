@@ -19,7 +19,7 @@ from langchain_core.tools import StructuredTool
 import coral.agent
 from coral import container
 from coral.agent import (
-    FINAL_NOTICE,
+    ANSWER_NOTICE,
     SHELL_CEILING_SECONDS,
     DeadlineMiddleware,
     SpendHandler,
@@ -33,7 +33,7 @@ from coral.agent import (
     review_prompt,
     verify_prompt,
 )
-from coral.deadline import Deadline, budget_seconds
+from coral.deadline import Deadline, budget_seconds, start
 from coral.github.client import GitHub
 from coral.github.issues import IssueEvidence
 from coral.openrouter import ModelFacts
@@ -247,16 +247,43 @@ def test_the_shell_tool_runs_in_its_named_container(monkeypatch: pytest.MonkeyPa
         return container.Output(output="found it", exit_code=3, truncated=False)
 
     monkeypatch.setattr(container, "execute", run)
-    result = execute_tool("coral-reviewer").invoke({"command": "rg token", "timeout": 17})
+    result = execute_tool("coral-reviewer", start(BUDGET)).invoke(
+        {"command": "rg token", "timeout": 17}
+    )
     assert result == "found it\n\n[exit code: 3]"
     assert calls == [("coral-reviewer", "rg token", 17)]
 
 
 def test_the_shell_tool_refuses_a_timeout_past_its_ceiling() -> None:
-    result = execute_tool("coral-reviewer").invoke(
+    result = execute_tool("coral-reviewer", start(BUDGET)).invoke(
         {"command": "sleep forever", "timeout": SHELL_CEILING_SECONDS + 1}
     )
     assert result == f"Error: timeout must be between 1 and {SHELL_CEILING_SECONDS} seconds."
+
+
+def test_the_shell_tool_stops_its_command_before_the_answer_reserve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    timeouts: list[int] = []
+
+    def run(name: str, command: str, timeout: int) -> container.Output:
+        timeouts.append(timeout)
+        return container.Output(output="", exit_code=0, truncated=False)
+
+    monkeypatch.setattr(container, "execute", run)
+    # Ninety seconds of investigating left once the reserve is kept back.
+    late = Deadline(started=time.monotonic() - (BUDGET - 120 - 90), budget=BUDGET)
+    execute_tool("coral-reviewer", late).invoke({"command": "npm test", "timeout": 300})
+    assert 88 <= timeouts[0] <= 90
+
+
+def test_the_shell_tool_runs_nothing_inside_the_answer_reserve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(container, "execute", lambda *arguments: pytest.fail("a command ran"))
+    reserved = Deadline(started=time.monotonic() - (BUDGET - 60), budget=BUDGET)
+    result = execute_tool("coral-reviewer", reserved).invoke({"command": "npm test"})
+    assert result == f"Error: no time is left for shell commands. {ANSWER_NOTICE}"
 
 
 class Built:
@@ -472,15 +499,14 @@ class Investigator(BaseChatModel):
         return ChatResult(generations=[ChatGeneration(message=message)])
 
 
-def test_a_run_near_the_step_cap_returns_its_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Without the step-cap middleware a model that never stops investigating reaches the recursion
-    # limit and the graph raises, leaving the run with no review at all.
+def investigate(monkeypatch: pytest.MonkeyPatch, deadline: Deadline) -> tuple[Any, list[Any]]:
+    """Run the reviewer on a model that never stops investigating, and return what it saw."""
     seen: list[tuple[list[str], str]] = []
     monkeypatch.setattr(coral.agent, "ChatOpenRouter", lambda **keywords: Investigator(seen=seen))
     monkeypatch.setattr(
         coral.agent,
         "execute_tool",
-        lambda name: StructuredTool.from_function(
+        lambda name, deadline: StructuredTool.from_function(
             lambda command: "", name="execute", description="A shell."
         ),
     )
@@ -491,16 +517,35 @@ def test_a_run_near_the_step_cap_returns_its_result(monkeypatch: pytest.MonkeyPa
         LUNA,
         "coral-reviewer",
         "review this",
-        Deadline(started=time.monotonic(), budget=BUDGET),
+        deadline,
         Ledger(cap=CAP),
         review_prompt(),
         Review,
     )
-    assert result["structured_response"] == Review(
-        summary="Fine.", findings=[], everything_already_said=False
-    )
+    return result["structured_response"], seen
+
+
+ANSWERED = Review(summary="Fine.", findings=[], everything_already_said=False)
+
+
+def test_a_run_near_the_step_cap_returns_its_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Without the answer middleware a model that never stops investigating reaches the recursion
+    # limit and the graph raises, leaving the run with no review at all.
+    review, seen = investigate(monkeypatch, start(BUDGET))
+    assert review == ANSWERED
     *investigating, (answering, last) = seen
     assert len(investigating) > 40
-    assert all("execute" in offered and latest != FINAL_NOTICE for offered, latest in investigating)
+    assert all(
+        "execute" in offered and latest != ANSWER_NOTICE for offered, latest in investigating
+    )
     assert answering == ["Review"]
-    assert last == FINAL_NOTICE
+    assert last == ANSWER_NOTICE
+
+
+def test_a_run_inside_its_answer_reserve_returns_its_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reserved = Deadline(started=time.monotonic() - (BUDGET - 60), budget=BUDGET)
+    review, seen = investigate(monkeypatch, reserved)
+    assert review == ANSWERED
+    assert seen == [(["Review"], ANSWER_NOTICE)]

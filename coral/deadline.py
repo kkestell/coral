@@ -29,6 +29,12 @@ JOB_CEILING_MINUTES: Final = 360
 # backstop, finished in 21 to 60 seconds, so the split holds as chosen at every budget.
 REVIEWER_FRACTION: Final = 0.65
 
+# The time a run keeps back to write its answer: inside it the model may only answer, and no shell
+# command may run into it. A quarter of a small budget instead, so a one-minute budget still leaves
+# time to investigate.
+ANSWER_RESERVE_SECONDS: Final = 120
+ANSWER_RESERVE_FRACTION: Final = 0.25
+
 
 @dataclass(frozen=True)
 class Deadline:
@@ -45,6 +51,14 @@ class Deadline:
     def expired(self) -> bool:
         """Whether the budget is spent."""
         return self.elapsed() >= self.budget
+
+    def reserve(self) -> float:
+        """How much of the budget is kept back for the answer."""
+        return min(ANSWER_RESERVE_SECONDS, self.budget * ANSWER_RESERVE_FRACTION)
+
+    def working(self) -> float:
+        """How long the run may still investigate before it has to answer; negative once past."""
+        return self.budget - self.elapsed() - self.reserve()
 
 
 def start(budget: float) -> Deadline:

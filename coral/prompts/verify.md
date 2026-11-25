@@ -11,7 +11,7 @@ are mounted read-only at `/opt/hostedtoolcache`, and the newest of each is alrea
 checkout is yours alone: any dependency the test needs, you install.
 
 Your run is bounded in steps and in time. Rule on every finding before either runs out. A run that
-nears its step bound loses the shell and must return its verdicts as they stand.
+nears either bound loses the shell and must return its verdicts as they stand.
 
 Confirm only what you establish yourself. You did not write these findings, and a claim that reads
 well is not a claim that is true. Rejecting a real finding costs the author one comment; confirming

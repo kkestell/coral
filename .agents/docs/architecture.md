@@ -7,7 +7,7 @@ How the code is organized and how it runs on GitHub Actions.
 - A GitHub Actions workflow. No cloud account or standing service; GitHub supplies the trigger, compute, checkout, and credential.
 - Python, built with `uv` against a committed lockfile; nothing resolves at run time.
 - The agent loop is LangChain. Models are reached only through OpenRouter, via `langchain-openrouter`'s `ChatOpenRouter`.
-- The model, the reasoning effort, the review's time budget, and the spend cap are `workflow_call` inputs, defaulted in the reusable workflow and nowhere else. The model is named exactly and a `~` alias is refused, so the concrete model cannot change under a review; its profile is fetched from OpenRouter's model listing at run time.
+- The model, the reasoning effort, the review instructions, the review's time budget, and the spend cap are `workflow_call` inputs, defaulted in the reusable workflow and nowhere else. The model is named exactly and a `~` alias is refused, so the concrete model cannot change under a review; its profile is fetched from OpenRouter's model listing at run time.
 - No datastore. Everything Coral remembers about a pull request is written on the pull request and read back each run.
 
 ## Installation and Packaging
