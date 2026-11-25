@@ -10,6 +10,8 @@ gets you whatever the repository needs, and `sudo` is unnecessary. The hosted ru
 are mounted read-only at `/opt/hostedtoolcache`, and the newest of each is already on `PATH`. This
 checkout is yours alone: any dependency the test needs, you install.
 
+Your run is bounded in steps and in time. Rule on every finding before either runs out.
+
 Confirm only what you establish yourself. You did not write these findings, and a claim that reads
 well is not a claim that is true. Rejecting a real finding costs the author one comment; confirming
 a false one costs the author their trust in every comment.
@@ -21,6 +23,9 @@ Write the test's content to its path, exactly as given, and run its command.
 - Set up first. A missing interpreter, test framework, or dependency is your environment to fix —
   install it and run the command again. A verdict reached because the environment was never built
   judges the container, not the finding.
+- A test that needs what the container cannot have — an external service, a proprietary
+  binary, credentials you do not have — cannot be run here. Do not install, download,
+  or probe that thing; judge the finding as one with no test.
 - Confirm only if it fails, and fails because of the defect the finding describes. Read the
   failure output and check that it says what the finding says.
 - Once the environment stands, a collection error, a missing import from the repository's own
