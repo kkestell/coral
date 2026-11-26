@@ -21,9 +21,10 @@ from coral.github.post import (
     count,
     create_labels,
     demotion,
+    footer,
+    headline,
     issue_payloads,
     issue_title,
-    nothing_to_report,
     payloads,
     post_issue,
     post_review,
@@ -77,7 +78,7 @@ def test_the_body_follows_the_severity() -> None:
 
 
 def test_a_demoted_finding_stays_inside_its_list_item() -> None:
-    # A finding demoted into the summary is a list item, and everything after its first line has
+    # A finding demoted into the review body is a list item, and everything after its first line has
     # to be indented or its later paragraphs fall out of the list.
     item = bullet(rendered_finding(finding(body=TWO_PARAGRAPHS)))
     assert item.startswith("- **Medium severity.**")
@@ -126,7 +127,9 @@ def span(start: int, end: int) -> SpanAnchor:
 
 def review_of(*findings: Finding, already_said: bool = False) -> Review:
     return Review(
-        summary="What the change does.",
+        overview="What the change is for.",
+        changes=["What the change does."],
+        checked=["What the review settled."],
         findings=list(findings),
         everything_already_said=already_said,
     )
@@ -224,8 +227,8 @@ def test_the_pair_holds_the_anchored_body_and_the_demoted_one() -> None:
     assert pair.demoted["comments"] == []
     assert "a.py" in pair.demoted["body"]
     assert "line 7" in pair.demoted["body"]
-    assert "What the change does." in pair.anchored["body"]
-    assert "What the change does." in pair.demoted["body"]
+    assert "What the change is for." in pair.anchored["body"]
+    assert "What the change is for." in pair.demoted["body"]
 
 
 def test_the_pair_round_trips_through_a_file(tmp_path: Path) -> None:
@@ -234,22 +237,55 @@ def test_the_pair_round_trips_through_a_file(tmp_path: Path) -> None:
     assert read_payloads(tmp_path / "review-payloads.json") == pair
 
 
-def test_the_body_carries_the_marker_the_commit_and_the_summary() -> None:
+def test_the_body_opens_with_the_marker_then_the_outcome_then_the_overview() -> None:
     body = payload_of()["body"]
-    assert body.startswith(marker(COMMIT))
-    assert f"Coral reviewed `{COMMIT}`." in body
-    assert "What the change does." in body
+    assert body.startswith(
+        f"{marker(COMMIT)}\n\n## {headline(review_of())}\n\nWhat the change is for."
+    )
 
 
-def test_the_body_ends_with_what_the_run_cost() -> None:
-    # Last, so it is read after the findings rather than ahead of the summary.
-    assert payload_of(finding_at(line(7)))["body"].endswith(cost(SPENT))
+def test_the_body_lays_out_each_part_under_its_heading_in_order() -> None:
+    body = payload_of(finding_at(line(99)))["body"]
+    unanchored = body.index("### Findings not anchored to a line")
+    changes = body.index("### Changes\n\n- What the change does.")
+    checked = body.index("### Checked\n\n- What the review settled.")
+    assert unanchored < changes < checked
+
+
+def test_an_empty_list_gets_no_heading() -> None:
+    review = Review(
+        overview="What the change is for.",
+        changes=[],
+        checked=[],
+        findings=[],
+        everything_already_said=False,
+    )
+    body = review_payload(COMMIT, review, ADDED, SPENT)["body"]
+    assert "###" not in body
+
+
+def test_the_body_ends_with_the_commit_and_what_the_run_cost() -> None:
+    # Last, so it is read after everything the reader acts on.
+    body = payload_of(finding_at(line(7)))["body"]
+    assert body.endswith(footer(COMMIT, SPENT))
+    assert COMMIT in footer(COMMIT, SPENT)
 
 
 def test_a_cost_under_a_cent_survives_its_formatting() -> None:
     # What every review measured so far cost. Two decimal places would print all of them `$0.00`.
     assert cost(0.0042) == "*This review cost $0.0042.*"
     assert cost(1.5) == "*This review cost $1.5000.*"
+    assert footer(COMMIT, 0.0042).endswith("$0.0042</sub>")
+
+
+def test_the_headline_counts_findings_by_severity_from_high_to_low() -> None:
+    review = review_of(
+        finding_at(line(7), severity="low"),
+        finding_at(line(7), severity="high"),
+        finding_at(line(7), severity="low"),
+    )
+    assert headline(review) == "🪸 Coral: 3 findings (1 high, 2 low)"
+    assert headline(review_of(finding_at(line(7)))) == "🪸 Coral: 1 finding (1 medium)"
 
 
 def test_each_main_push_finding_becomes_one_issue_with_the_commit_and_cost() -> None:
@@ -392,13 +428,13 @@ def test_a_label_coral_cannot_create_does_not_stop_the_issues() -> None:
 def test_both_bodies_report_the_same_cost() -> None:
     # The demoted body is what the retry posts, and a review that lost its anchors cost the same.
     pair = payloads(COMMIT, review_of(finding_at(line(99))), ADDED, SPENT)
-    assert cost(SPENT) in pair.anchored["body"]
-    assert cost(SPENT) in pair.demoted["body"]
+    assert footer(COMMIT, SPENT) in pair.anchored["body"]
+    assert footer(COMMIT, SPENT) in pair.demoted["body"]
 
 
 def test_an_unattachable_line_finding_names_its_file_and_its_line() -> None:
     body = payload_of(finding_at(line(99)))["body"]
-    assert "Findings not anchored to a line:" in body
+    assert "### Findings not anchored to a line" in body
     assert "- **`a.py`, line 99** — **Medium severity.**" in body
 
 
@@ -422,7 +458,7 @@ def test_a_demoted_finding_keeps_its_paragraphs_inside_its_list_item() -> None:
     assert "\n`parse`" not in body
 
 
-def test_a_review_with_no_demotions_has_no_lead_in_line() -> None:
+def test_a_review_with_no_demotions_has_no_heading_for_them() -> None:
     body = payload_of(finding_at(line(7)))["body"]
     assert "Findings not anchored" not in body
 
@@ -455,7 +491,7 @@ def test_no_finding_is_lost() -> None:
 
 
 def test_no_finding_is_lost_when_nothing_attaches() -> None:
-    # The payload the retry posts. Everything lands in the summary and nothing is anchored.
+    # The payload the retry posts. Everything lands in the review body and nothing is anchored.
     review = mixed()
     payload = review_payload(COMMIT, review, set(), SPENT)
     assert payload["comments"] == []
@@ -465,17 +501,15 @@ def test_no_finding_is_lost_when_nothing_attaches() -> None:
 
 def test_the_two_empty_outcomes_read_differently() -> None:
     # A second "nothing found" that reads as retracting the first review is what this prevents.
-    assert nothing_to_report(review_of(already_said=True)) != nothing_to_report(review_of())
+    assert headline(review_of(already_said=True)) != headline(review_of())
+    assert headline(review_of()) in review_payload(COMMIT, review_of(), ADDED, SPENT)["body"]
     assert (
-        nothing_to_report(review_of()) in review_payload(COMMIT, review_of(), ADDED, SPENT)["body"]
-    )
-    assert (
-        nothing_to_report(review_of(already_said=True))
+        headline(review_of(already_said=True))
         in review_payload(COMMIT, review_of(already_said=True), ADDED, SPENT)["body"]
     )
 
 
 def test_a_review_with_findings_claims_neither_emptiness() -> None:
     body = payload_of(finding_at(line(7)))["body"]
-    assert nothing_to_report(review_of()) not in body
-    assert nothing_to_report(review_of(already_said=True)) not in body
+    assert headline(review_of()) not in body
+    assert headline(review_of(already_said=True)) not in body

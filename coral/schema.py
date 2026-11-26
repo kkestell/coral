@@ -56,7 +56,8 @@ Anchor = SpanAnchor | LineAnchor | FileAnchor | PullRequestAnchor
 def where(anchor: Anchor) -> str:
     """The place a finding concerns, as prose.
 
-    Read by the label on a finding demoted into the summary and by the location line of an issue.
+    Read by the label on a finding demoted into the review body and by the location line of an
+    issue.
     """
     match anchor:
         case SpanAnchor(path=path, start_line=start_line, end_line=end_line):
@@ -77,8 +78,8 @@ class Finding:
         str,
         Field(
             description=(
-                "The finding, written for the author of the change: the defect, and why it is "
-                "wrong."
+                "The finding, written for the author of the change: one sentence naming the "
+                "defect, a blank line, then at most three sentences on why it is wrong."
             )
         ),
     ]
@@ -91,9 +92,38 @@ class Finding:
 
 @dataclass(frozen=True)
 class Review:
-    """A review of a pull request: an overall summary and the findings it is made of."""
+    """A review of a pull request: what the change is, what the review checked, and its findings.
 
-    summary: str
+    The summary arrives in parts rather than as prose so Coral lays out the review body itself.
+    """
+
+    overview: Annotated[
+        str,
+        Field(
+            description=(
+                "One sentence of at most 25 words: what the change is for and how it looks overall."
+            )
+        ),
+    ]
+    changes: Annotated[
+        list[str],
+        Field(
+            description=(
+                "What the change does, one to five items. Each item is one sentence of at most "
+                "20 words naming one behavior change."
+            )
+        ),
+    ]
+    checked: Annotated[
+        list[str],
+        Field(
+            description=(
+                "The questions the review settled that a reader would otherwise worry about, at "
+                "most four items. Each item is one sentence of at most 25 words stating the "
+                "conclusion and the reason it holds."
+            )
+        ),
+    ]
     findings: list[Finding]
     everything_already_said: Annotated[
         bool,

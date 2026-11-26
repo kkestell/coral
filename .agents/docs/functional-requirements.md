@@ -46,7 +46,7 @@ A review is a quick read-only sanity check: one agent run that takes a few minut
 
 ## Findings
 
-- A completed review is a structured summary and zero or more findings. Each finding carries its text and the place it concerns.
+- A completed review is a one-sentence overview, a list of what the change does, a list of the questions the review settled, and zero or more findings. Each finding carries its text and the place it concerns.
 - A finding reports a correctness, security, or performance defect. Style, naming, structure, documentation, and test coverage alone are not findings.
 - Every finding has low, medium, or high severity.
 - A finding states the defect, where it is, and why it is wrong, citing the code read. Nothing checks it after the review: the person reading the review judges it.
@@ -54,7 +54,8 @@ A review is a quick read-only sanity check: one agent run that takes a few minut
 
 ## Publication
 
-- A pull-request run publishes one comment-only review containing the summary and all findings. It never publishes one comment per finding, approves, requests changes, or blocks a merge.
+- A pull-request run publishes one comment-only review containing the overview, both lists, and all findings. It never publishes one comment per finding, approves, requests changes, or blocks a merge.
+- The review body leads with its outcome, the finding count by severity or which empty outcome it is, then the overview, then the findings not attached to a line, what the change does, and what the review settled, each under its own heading. Coral composes the layout; the model writes no headings.
 - Line and span findings attach to the corresponding changed code. Whole-file findings and change-level findings appear in the review body, with a whole-file finding naming its file.
 - A finding whose requested anchor is invalid still appears in the review body naming its intended location. If GitHub rejects an anchored review, Coral retries once with every finding in the body and no inline comments.
 - Each pull-request review names Coral and the pinned commit it reviewed. Earlier reviews and their threads are never edited, deleted, resolved, or reused.

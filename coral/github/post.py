@@ -32,7 +32,7 @@ def rendered_finding(finding: Finding) -> str:
 
 
 def bullet(entry: str) -> str:
-    """One demoted finding as a list item, its later lines indented to stay inside it."""
+    """One entry as a list item, its later lines indented to stay inside it."""
     lines = entry.splitlines()
     return "\n".join(
         [f"- {lines[0]}"] + [f"  {line}" if line else "" for line in lines[1:]],
@@ -81,24 +81,54 @@ def demotion(finding: Finding) -> str:
             return f"**{where(finding.anchor)}** — {rendered_finding(finding)}"
 
 
-def nothing_to_report(review: Review) -> str:
-    """Which of the two empty outcomes this is, in Coral's words rather than the model's.
+SEVERITIES: Final = ("high", "medium", "low")
 
-    Coral writes the sentence rather than trusting the summary to make the distinction, because a
-    second "nothing found" that reads as retracting the first review is what this prevents.
+
+def headline(review: Review) -> str:
+    """The review's outcome, the first thing its body says, in Coral's words.
+
+    Coral writes it rather than trusting the overview to, because the two empty outcomes must
+    read differently: a second "nothing found" reads as retracting the first review.
     """
+    if review.findings:
+        tally = ", ".join(
+            f"{many} {severity}"
+            for severity in SEVERITIES
+            if (many := sum(finding.severity == severity for finding in review.findings))
+        )
+        return f"🪸 Coral: {count(len(review.findings), 'finding')} ({tally})"
     if review.everything_already_said:
-        return "Everything Coral has to say about this change is already on this pull request."
-    return "Coral found nothing to report on this change."
+        return "🪸 Coral: nothing new since its last review"
+    return "🪸 Coral: no findings"
 
 
-def cost(spent: float) -> str:
-    """What the run spent, as the review reports it.
+def section(title: str, entries: list[str]) -> list[str]:
+    """A headed list, or nothing when it has no entries."""
+    if not entries:
+        return []
+    return ["", f"### {title}", "", *(bullet(entry) for entry in entries)]
+
+
+def dollars(spent: float) -> str:
+    """What a run spent, in dollars.
 
     Four decimal places rather than two: every review measured so far has cost a fraction of a
     cent, and cents would print `$0.00` on all of them.
     """
-    return f"*This review cost ${spent:.4f}.*"
+    return f"${spent:.4f}"
+
+
+def cost(spent: float) -> str:
+    """What the run spent, as an issue reports it."""
+    return f"*This review cost {dollars(spent)}.*"
+
+
+def footer(commit: str, spent: float) -> str:
+    """The review body's last line: the commit reviewed and what the review cost.
+
+    The commit is bare so GitHub renders it as a short link to the commit.
+    """
+    return f"<sub>Reviewed {commit} · {dollars(spent)}</sub>"
 
 
 def review_payload(
@@ -132,20 +162,22 @@ def review_payload(
             case None:
                 demoted.append(demotion(finding))
 
+    # The outcome first, then the findings the reader has to act on, then what the change is and
+    # what the review settled.
     lines = [
         marker(commit),
         "",
-        f"🪸 Coral reviewed `{commit}`.",
+        f"## {headline(review)}",
         "",
-        review.summary,
-    ]
-    if demoted:
+        review.overview,
         # Neutral about the cause: a whole-file finding was never going to attach, and a line
         # finding that could not is not the reader's problem.
-        lines += ["", "Findings not anchored to a line:", "", *(bullet(entry) for entry in demoted)]
-    if not review.findings:
-        lines += ["", nothing_to_report(review)]
-    lines += ["", cost(spent)]
+        *section("Findings not anchored to a line", demoted),
+        *section("Changes", review.changes),
+        *section("Checked", review.checked),
+        "",
+        footer(commit, spent),
+    ]
 
     # Neither `commit_id` nor `event` is here: both are stamped by `submitted` in the job that
     # posts, so neither is a field the job that composed this body gets a say in.

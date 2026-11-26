@@ -441,7 +441,13 @@ class Investigator(BaseChatModel):
         if "execute" in self.offered:
             call = {"name": "execute", "args": {"command": "true"}, "id": f"call-{len(messages)}"}
         else:
-            answer = {"summary": "Fine.", "findings": [], "everything_already_said": False}
+            answer = {
+                "overview": "Fine.",
+                "changes": [],
+                "checked": [],
+                "findings": [],
+                "everything_already_said": False,
+            }
             call = {"name": "Review", "args": answer, "id": "answer"}
         message = AIMessage(content="", tool_calls=[call], response_metadata={"cost": 0.0})
         return ChatResult(generations=[ChatGeneration(message=message)])
@@ -473,7 +479,9 @@ def investigate(monkeypatch: pytest.MonkeyPatch, deadline: Deadline) -> tuple[An
     return result["structured_response"], seen
 
 
-ANSWERED = Review(summary="Fine.", findings=[], everything_already_said=False)
+ANSWERED = Review(
+    overview="Fine.", changes=[], checked=[], findings=[], everything_already_said=False
+)
 
 
 def test_a_run_near_the_step_cap_returns_its_result(monkeypatch: pytest.MonkeyPatch) -> None:

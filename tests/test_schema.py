@@ -39,7 +39,9 @@ def finding_payload(anchor: dict[str, Any], **overrides: Any) -> dict[str, Any]:
 
 def review_payload(*anchors: dict[str, Any]) -> dict[str, Any]:
     return {
-        "summary": "One paragraph of summary.",
+        "overview": "One sentence.",
+        "changes": ["One change."],
+        "checked": [],
         "findings": [finding_payload(anchor) for anchor in anchors],
         "everything_already_said": False,
     }
@@ -58,7 +60,13 @@ def finding(body: str = "Something worth saying.") -> Finding:
 
 
 def review_of(*findings: Finding) -> Review:
-    return Review(summary="One paragraph.", findings=list(findings), everything_already_said=False)
+    return Review(
+        overview="One sentence.",
+        changes=[],
+        checked=[],
+        findings=list(findings),
+        everything_already_said=False,
+    )
 
 
 def test_span_anchor_validates() -> None:
@@ -103,7 +111,13 @@ def test_findings_and_anchors_survive_together() -> None:
 
 def test_empty_review_says_nothing_was_found() -> None:
     review = REVIEWS.validate_python(
-        {"summary": "Nothing to report.", "findings": [], "everything_already_said": False}
+        {
+            "overview": "Nothing to report.",
+            "changes": [],
+            "checked": [],
+            "findings": [],
+            "everything_already_said": False,
+        }
     )
     assert review.findings == []
     assert review.everything_already_said is False
@@ -111,14 +125,22 @@ def test_empty_review_says_nothing_was_found() -> None:
 
 def test_empty_review_says_everything_is_already_said() -> None:
     review = REVIEWS.validate_python(
-        {"summary": "Already said.", "findings": [], "everything_already_said": True}
+        {
+            "overview": "Already said.",
+            "changes": [],
+            "checked": [],
+            "findings": [],
+            "everything_already_said": True,
+        }
     )
     assert review.findings == []
     assert review.everything_already_said is True
 
 
 def test_review_from_result_returns_the_review() -> None:
-    review = Review(summary="Fine.", findings=[], everything_already_said=False)
+    review = Review(
+        overview="Fine.", changes=[], checked=[], findings=[], everything_already_said=False
+    )
     assert review_from_result({"structured_response": review, "messages": []}) is review
 
 
