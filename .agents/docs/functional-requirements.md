@@ -82,7 +82,8 @@ A review is a quick read-only sanity check: one agent run that takes a few minut
 - Coral checks that a pull request is open before reviewing and again before publication. A closed or merged pull request receives no review.
 - Coral publishes no review if the pinned commit is no longer the pull request's head. It posts a notice naming the reviewed commit and invites a fresh request.
 - A failed run does not prevent a later review.
-- The agent run is bounded in steps and in time. A run near either bound stops investigating and returns its review or verdicts from what it has established, and no shell command runs into the time kept back for that answer.
+- The agent run is bounded in steps and in time. A run near either bound stops investigating and returns its review or verdicts from what it has established, and no shell command or model request runs into the time kept back for that answer.
+- A model reply that calls no tool is asked once more for the structured result, which is the only form a review takes.
 - A review that still reaches its time limit is discarded whole and reported as timed out. Findings accumulated before the limit are not published.
 - Coral stops and discards a review that reaches its spend cap or receives a model response whose cost cannot be measured. The failure reports measured spend against the cap.
 - Both review modes refuse a request that cannot be captured, assembled, sent to the selected model, or published whole within their byte and context limits. Coral never silently truncates a diff, agent request, finding, review, or issue into a partial review.

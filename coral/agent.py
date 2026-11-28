@@ -5,10 +5,13 @@ object in `coral/schema.py`, which keeps the framework's import cost off `coral 
 the rest of the code testable without it.
 """
 
+import contextvars
 import functools
 import logging
+import threading
 import time
 from collections.abc import Callable, Mapping
+from concurrent.futures import Future
 from importlib.resources import files
 from typing import Any, Final
 from uuid import UUID
@@ -18,7 +21,7 @@ from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResp
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.model_profile import ModelProfile
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 from langchain_core.tools import StructuredTool
 from langchain_openrouter import ChatOpenRouter
@@ -47,14 +50,12 @@ ANSWER_NOTICE: Final = (
     "This run has reached its step or time bound, and the shell is gone. Call the response tool "
     "now with your real, complete result, written from what you have established so far."
 )
+PROSE_NOTICE: Final = (
+    "Your reply called no tool, and a result is returned only through the response tool. The "
+    "shell is gone. Call the response tool now with your real, complete result, written from what "
+    "you have established so far."
+)
 SHELL_CEILING_SECONDS: Final = 300
-
-# One retry rather than the default two, which is deadline arithmetic. The elapsed check runs
-# between steps, so the worst overshoot past a passing check is one in-flight model request. Two
-# retries make that up to three 180-second attempts plus a 300-second backoff window — about
-# fourteen minutes, past the ten minutes of headroom before the job's own timeout. One makes it
-# about eight and a half. No real run has fired a retry.
-MODEL_RETRIES: Final = 1
 ARGUMENT_PREVIEW_CHARACTERS: Final = 120
 TOOL_ARGUMENT_ORDER: Final = {
     "execute": ("command", "timeout"),
@@ -90,12 +91,38 @@ class DeadlineMiddleware(AgentMiddleware[Any, Any]):
         return None
 
 
+def within[T](seconds: float, call: Callable[[], T]) -> T:
+    """What `call` returns, or `TimeoutError` once `seconds` pass.
+
+    The call runs on a daemon thread that is abandoned, not stopped, when time runs out, because
+    nothing interrupts a blocking request. `ChatOpenRouter`'s own timeout bounds each read rather
+    than the request: a real run on 2026-11-28 sat eight minutes in one request under a
+    180-second timeout.
+    """
+    if seconds <= 0:
+        raise TimeoutError
+    outcome: Future[T] = Future()
+    # The copied context carries the run's LangGraph config and callbacks onto the thread.
+    context = contextvars.copy_context()
+
+    def run() -> None:
+        try:
+            outcome.set_result(context.run(call))
+        except BaseException as error:
+            outcome.set_exception(error)
+
+    threading.Thread(target=run, daemon=True).start()
+    return outcome.result(timeout=seconds)
+
+
 class AnswerMiddleware(AgentMiddleware[Any, Any]):
-    """Makes the model return its structured result once the run nears `STEP_CAP` or its deadline.
+    """Makes the model return its structured result near `STEP_CAP` or its deadline, or after prose.
 
     Every tool but the framework's response-format tool is withdrawn, and that tool is always
-    bound with `tool_choice="any"`, so the model's only move is to answer. Past either bound the
-    run raises instead and has nothing to return.
+    bound with `tool_choice="any"`, so the model's only move is to answer. A request still
+    investigating is cut off where the answer reserve begins, and the run then asks for its result;
+    a reply that calls no tool is asked for it once. An answer still running at the deadline fails
+    the run.
     """
 
     def __init__(self, deadline: Deadline) -> None:
@@ -107,17 +134,47 @@ class AnswerMiddleware(AgentMiddleware[Any, Any]):
     ) -> ModelResponse[Any]:
         # The superstep LangGraph is running, which is what its recursion limit counts.
         steps = STEP_CAP - get_config()["metadata"]["langgraph_step"]
-        seconds = self.deadline.budget - self.deadline.elapsed()
-        if steps > FINAL_STEPS and self.deadline.working() > 0:
-            return handler(request)
-        log.info(
-            "The run has %d steps and %.0f seconds left; asking for its result.", steps, seconds
-        )
+        if steps <= FINAL_STEPS or self.deadline.working() <= 0:
+            log.info(
+                "The run has %d steps and %.0f seconds left; asking for its result.",
+                steps,
+                self.deadline.remaining(),
+            )
+            return self.answer(request, handler, [], ANSWER_NOTICE)
+        try:
+            response = within(self.deadline.working(), lambda: handler(request))
+        except TimeoutError:
+            log.info(
+                "A model request ran into the last %.0f seconds; asking for its result.",
+                self.deadline.reserve(),
+            )
+            return self.answer(request, handler, [], ANSWER_NOTICE)
+        if response.structured_response is not None or any(
+            isinstance(message, AIMessage) and message.tool_calls for message in response.result
+        ):
+            return response
+        log.info("The model replied without calling a tool; asking for its result.")
+        replied = [message for message in response.result if isinstance(message, AIMessage)]
+        return self.answer(request, handler, replied, PROSE_NOTICE)
+
+    def answer(
+        self,
+        request: ModelRequest[Any],
+        handler: Callable[[ModelRequest[Any]], ModelResponse[Any]],
+        replied: list[AIMessage],
+        notice: str,
+    ) -> ModelResponse[Any]:
+        """Ask for the structured result alone, bounded by what is left of the budget."""
         # A user turn rather than a system-prompt addition, because it is the latest thing the
         # model reads before it answers.
-        return handler(
-            request.override(tools=[], messages=[*request.messages, HumanMessage(ANSWER_NOTICE)])
+        answering = request.override(
+            tools=[], messages=[*request.messages, *replied, HumanMessage(notice)]
         )
+        try:
+            return within(self.deadline.remaining(), lambda: handler(answering))
+        except TimeoutError:
+            stop_if_expired(self.deadline)
+            raise
 
 
 class SpendHandler(BaseCallbackHandler):
@@ -297,7 +354,6 @@ def _run(
         model=name,
         api_key=SecretStr(api_key),
         timeout=MODEL_TIMEOUT_MILLISECONDS,
-        max_retries=MODEL_RETRIES,
         # `require_parameters` keeps the request off an endpoint that cannot serve tool calling.
         # Azure is excluded because its OpenRouter route has not accepted the same tool requests.
         openrouter_provider={"require_parameters": True, "ignore": ["azure"]},
@@ -346,8 +402,8 @@ def _run(
         len(result["messages"]),
     )
     # The middleware checks before each model call, so the last response of a run has passed no
-    # check at all: a final request can run past the budget or over the cap and still return an
-    # answer. Checked once more here, that answer fails the run rather than being reviewed on.
+    # check at all: it can carry the run over the cap, or arrive as the budget ends. Checked once
+    # more here, that answer fails the run rather than being reviewed on.
     stop_if_expired(deadline)
     stop_if_over_cap(ledger)
     return result

@@ -20,6 +20,7 @@ import coral.agent
 from coral import container
 from coral.agent import (
     ANSWER_NOTICE,
+    PROSE_NOTICE,
     SHELL_CEILING_SECONDS,
     DeadlineMiddleware,
     SpendHandler,
@@ -417,11 +418,18 @@ def test_an_effort_reaches_openrouters_reasoning_block(
 
 
 class Investigator(BaseChatModel):
-    """A model that runs the shell whenever it is offered and answers only when it is not."""
+    """A model that runs the shell whenever it is offered and answers only when it is not.
+
+    `stall` and `answer_stall` hold an investigating or answering request that many seconds, and
+    `prose` makes an investigating reply call no tool.
+    """
 
     offered: list[str] = []
     # `Any` so validation keeps the caller's list rather than copying it.
     seen: Any
+    stall: float = 0.0
+    answer_stall: float = 0.0
+    prose: bool = False
 
     @property
     def _llm_type(self) -> str:
@@ -438,7 +446,12 @@ class Investigator(BaseChatModel):
         **keywords: Any,
     ) -> ChatResult:
         self.seen.append((self.offered, messages[-1].text))
-        if "execute" in self.offered:
+        investigating = "execute" in self.offered
+        time.sleep(self.stall if investigating else self.answer_stall)
+        if investigating and self.prose:
+            message = AIMessage(content="The change looks fine.", response_metadata={"cost": 0.01})
+            return ChatResult(generations=[ChatGeneration(message=message)])
+        if investigating:
             call = {"name": "execute", "args": {"command": "true"}, "id": f"call-{len(messages)}"}
         else:
             answer = {
@@ -449,14 +462,21 @@ class Investigator(BaseChatModel):
                 "everything_already_said": False,
             }
             call = {"name": "Review", "args": answer, "id": "answer"}
-        message = AIMessage(content="", tool_calls=[call], response_metadata={"cost": 0.0})
+        message = AIMessage(content="", tool_calls=[call], response_metadata={"cost": 0.01})
         return ChatResult(generations=[ChatGeneration(message=message)])
 
 
-def investigate(monkeypatch: pytest.MonkeyPatch, deadline: Deadline) -> tuple[Any, list[Any]]:
+def investigate(
+    monkeypatch: pytest.MonkeyPatch,
+    deadline: Deadline,
+    ledger: Ledger | None = None,
+    **behavior: Any,
+) -> tuple[Any, list[Any]]:
     """Run the reviewer on a model that never stops investigating, and return what it saw."""
     seen: list[tuple[list[str], str]] = []
-    monkeypatch.setattr(coral.agent, "ChatOpenRouter", lambda **keywords: Investigator(seen=seen))
+    monkeypatch.setattr(
+        coral.agent, "ChatOpenRouter", lambda **keywords: Investigator(seen=seen, **behavior)
+    )
     monkeypatch.setattr(
         coral.agent,
         "execute_tool",
@@ -472,7 +492,7 @@ def investigate(monkeypatch: pytest.MonkeyPatch, deadline: Deadline) -> tuple[An
         "coral-reviewer",
         "review this",
         deadline,
-        Ledger(cap=CAP),
+        ledger or Ledger(cap=CAP),
         review_prompt(),
         Review,
     )
@@ -505,3 +525,43 @@ def test_a_run_inside_its_answer_reserve_returns_its_result(
     review, seen = investigate(monkeypatch, reserved)
     assert review == ANSWERED
     assert seen == [(["Review"], ANSWER_NOTICE)]
+
+
+def test_a_request_that_runs_into_the_answer_reserve_is_cut_off_for_the_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A request that hangs would otherwise hold the run past its whole budget, because the
+    # deadline is checked only between steps.
+    almost = Deadline(started=time.monotonic() - (BUDGET - 120 - 0.3), budget=BUDGET)
+    began = time.monotonic()
+    review, seen = investigate(monkeypatch, almost, stall=30)
+    assert time.monotonic() - began < 5
+    assert review == ANSWERED
+    (investigating, _), (answering, last) = seen
+    assert "execute" in investigating
+    assert answering == ["Review"]
+    assert last == ANSWER_NOTICE
+
+
+def test_an_answer_still_running_at_the_deadline_fails_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ending = Deadline(started=time.monotonic() - (BUDGET - 0.3), budget=BUDGET)
+    began = time.monotonic()
+    with pytest.raises(RuntimeError, match="ran out of time"):
+        investigate(monkeypatch, ending, answer_stall=30)
+    assert time.monotonic() - began < 5
+
+
+def test_a_reply_in_prose_is_asked_once_for_the_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A provider can ignore `tool_choice`, and a reply with no tool call would otherwise end the
+    # run with no structured result.
+    ledger = Ledger(cap=CAP)
+    review, seen = investigate(monkeypatch, start(BUDGET), ledger, prose=True)
+    assert review == ANSWERED
+    (investigating, _), (answering, last) = seen
+    assert "execute" in investigating
+    assert answering == ["Review"]
+    assert last == PROSE_NOTICE
+    # Both responses reach the ledger from the thread each request ran on.
+    assert ledger.spent == pytest.approx(0.02)

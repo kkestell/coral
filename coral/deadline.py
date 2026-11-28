@@ -43,13 +43,17 @@ class Deadline:
         """Whether the budget is spent."""
         return self.elapsed() >= self.budget
 
+    def remaining(self) -> float:
+        """How much of the budget is left; negative once past."""
+        return self.budget - self.elapsed()
+
     def reserve(self) -> float:
         """How much of the budget is kept back for the answer."""
         return min(ANSWER_RESERVE_SECONDS, self.budget * ANSWER_RESERVE_FRACTION)
 
     def working(self) -> float:
         """How long the run may still investigate before it has to answer; negative once past."""
-        return self.budget - self.elapsed() - self.reserve()
+        return self.remaining() - self.reserve()
 
 
 def start(budget: float) -> Deadline:
